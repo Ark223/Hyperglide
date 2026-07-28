@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "dev.arkieee.hypergliding.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "InteractionAccessor",
+    "KeyboardInputMixin",
+    "MiningTweaksMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "hypergliding",
+  "version": "${version}",
+  "name": "Hyper Gliding",
+  "description": "A Meteor addon focused on utility modules compatible with 2b2t",
+  "authors": [
+    "Arkieee"
+  ],
+  "icon": "assets/hypergliding/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "meteor": [
+      "dev.arkieee.hypergliding.Hypergliding"
+    ]
+  },
+  "mixins": [
+    "mixins.json"
+  ],
+  "custom": {
+    "meteor-client:color": "225,25,25"
+  },
+  "depends": {
+    "java": ">=21",
+    "minecraft": ["${mc_version}"],
+    "meteor-client": "*"
+  }
+}
