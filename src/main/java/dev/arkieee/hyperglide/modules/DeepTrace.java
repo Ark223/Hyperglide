@@ -26,22 +26,23 @@ import java.util.List;
 
 public class DeepTrace extends Module {
     private final SettingGroup general = this.settings.getDefaultGroup();
-    private final SettingGroup render = this.settings.createGroup("Render");
+    private final SettingGroup visuals = this.settings.createGroup("Visuals");
 
     private final Setting<List<Item>> blacklist = this.general.add(
         new ItemListSetting.Builder()
             .name("blacklist")
-            .description("Dropped items detected below the maximum Y level.")
+            .description("Dropped items ignored by Deep Trace.")
             .defaultValue(
-                Items.ALLIUM, Items.AZALEA, Items.AZURE_BLUET, Items.BLUE_ORCHID,
-                Items.BROWN_MUSHROOM, Items.CORNFLOWER, Items.DANDELION,
-                Items.FLOWERING_AZALEA, Items.GLOW_INK_SAC, Items.GRAVEL,
-                Items.INK_SAC, Items.LILAC, Items.LILY_OF_THE_VALLEY,
-                Items.MOSS_CARPET, Items.ORANGE_TULIP, Items.OXEYE_DAISY,
-                Items.PEONY, Items.PINK_PETALS, Items.PINK_TULIP, Items.POPPY,
-                Items.RAIL, Items.RED_MUSHROOM, Items.RED_SAND, Items.RED_TULIP,
-                Items.ROSE_BUSH, Items.SAND, Items.SPORE_BLOSSOM, Items.STRING,
-                Items.SUNFLOWER, Items.TORCH, Items.WHEAT_SEEDS, Items.WHITE_TULIP
+                Items.ALLIUM, Items.AZALEA, Items.AZURE_BLUET, Items.BIG_DRIPLEAF,
+                Items.BLUE_ORCHID, Items.BROWN_MUSHROOM, Items.CORNFLOWER,
+                Items.DANDELION, Items.FLOWERING_AZALEA, Items.GLOW_INK_SAC,
+                Items.GRAVEL, Items.INK_SAC, Items.LILAC, Items.LILY_OF_THE_VALLEY,
+                Items.LILY_PAD, Items.MOSS_CARPET, Items.ORANGE_TULIP,
+                Items.OXEYE_DAISY, Items.PEONY, Items.PINK_PETALS,
+                Items.PINK_TULIP, Items.POPPY, Items.RAIL, Items.RED_MUSHROOM,
+                Items.RED_SAND, Items.RED_TULIP, Items.ROSE_BUSH, Items.SAND,
+                Items.SPORE_BLOSSOM, Items.STRING, Items.SUNFLOWER, Items.TORCH,
+                Items.WHEAT_SEEDS, Items.WHITE_TULIP
             )
             .build()
     );
@@ -49,14 +50,14 @@ public class DeepTrace extends Module {
     private final Setting<Integer> level = this.general.add(
         new IntSetting.Builder()
             .name("max-level")
-            .description("Maximum Y level where watched items are detected.")
+            .description("Maximum Y level where items are detected.")
             .defaultValue(64)
             .min(-64)
             .sliderMax(64)
             .build()
     );
 
-    private final Setting<ShapeMode> shape = this.render.add(
+    private final Setting<ShapeMode> shape = this.visuals.add(
         new EnumSetting.Builder<ShapeMode>()
             .name("shape")
             .description("How detected item boxes are rendered.")
@@ -64,7 +65,7 @@ public class DeepTrace extends Module {
             .build()
     );
 
-    private final Setting<SettingColor> side = this.render.add(
+    private final Setting<SettingColor> side = this.visuals.add(
         new ColorSetting.Builder()
             .name("side-color")
             .description("The fill color of detected item boxes.")
@@ -72,7 +73,7 @@ public class DeepTrace extends Module {
             .build()
     );
 
-    private final Setting<SettingColor> line = this.render.add(
+    private final Setting<SettingColor> line = this.visuals.add(
         new ColorSetting.Builder()
             .name("line-color")
             .description("The outline and tracer color.")
@@ -80,7 +81,7 @@ public class DeepTrace extends Module {
             .build()
     );
 
-    private final Setting<Boolean> tracers = this.render.add(
+    private final Setting<Boolean> tracers = this.visuals.add(
         new BoolSetting.Builder()
             .name("tracers")
             .description("Draws tracers to detected items.")
@@ -96,6 +97,13 @@ public class DeepTrace extends Module {
         );
     }
 
+    //region Event handlers
+
+    /**
+     * Finds and renders unusual dropped items.
+     *
+     * @param event 3D render event
+     */
     @EventHandler
     private void onRender(Render3DEvent event) {
         this.count = 0;
@@ -112,7 +120,6 @@ public class DeepTrace extends Module {
             }
 
             ItemStack stack = item.getStack();
-
             if (stack.isEmpty() ||
                 this.blacklist.get().contains(stack.getItem())) {
                 continue;
@@ -134,9 +141,8 @@ public class DeepTrace extends Module {
                 Vec3d start = RenderUtils.center;
                 Vec3d end = box.getCenter();
 
-                event.renderer.line(
-                    start.x, start.y, start.z, end.x, end.y, end.z,
-                    this.line.get()
+                event.renderer.line(start.x, start.y, start.z,
+                    end.x, end.y, end.z, this.line.get()
                 );
             }
 
@@ -144,8 +150,19 @@ public class DeepTrace extends Module {
         }
     }
 
+    //endregion
+
+    //region Module information
+
+    /**
+     * Returns the number of unusual dropped items.
+     *
+     * @return detected item count
+     */
     @Override
     public String getInfoString() {
         return Integer.toString(this.count);
     }
+
+    //endregion
 }
