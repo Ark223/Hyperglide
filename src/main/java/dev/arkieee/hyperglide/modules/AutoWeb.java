@@ -80,17 +80,30 @@ public class AutoWeb extends Module {
         );
     }
 
+    /**
+     * Clears runtime state and prepares the placement timer.
+     */
     @Override
     public void onActivate() {
         this.reset();
         this.timer = this.delay.get();
     }
 
+    /**
+     * Clears all queued and marked placement state.
+     */
     @Override
     public void onDeactivate() {
         this.reset();
     }
 
+    //region Event handlers
+
+    /**
+     * Collects target positions and places the next cobweb.
+     *
+     * @param event pre-tick event
+     */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (this.mc.player == null || this.mc.world == null ||
@@ -112,6 +125,9 @@ public class AutoWeb extends Module {
         this.marks.put(pos, this.tick);
     }
 
+    /**
+     * Clears queued positions, placement marks and timers.
+     */
     private void reset() {
         this.queue.clear();
         this.marks.clear();
@@ -120,6 +136,13 @@ public class AutoWeb extends Module {
         this.tick = 0;
     }
 
+    //endregion
+
+    //region Target collection
+
+    /**
+     * Finds valid entities and queues their current and predicted positions.
+     */
     private void collect() {
         this.queue.clear();
 
@@ -151,6 +174,11 @@ public class AutoWeb extends Module {
         }
     }
 
+    /**
+     * Adds every block position intersecting an entity hitbox.
+     *
+     * @param box entity hitbox
+     */
     private void add(Box box) {
         int minx = MathHelper.floor(box.minX + edge);
         int miny = MathHelper.floor(box.minY + edge);
@@ -169,6 +197,11 @@ public class AutoWeb extends Module {
         }
     }
 
+    /**
+     * Adds a valid untracked block position to the queue.
+     *
+     * @param pos candidate block position
+     */
     private void add(BlockPos pos) {
         pos = pos.toImmutable();
 
@@ -178,6 +211,15 @@ public class AutoWeb extends Module {
         this.queue.addLast(pos);
     }
 
+    //endregion
+
+    //region Queue management
+
+    /**
+     * Removes and returns the next valid queued position.
+     *
+     * @return next valid position, or null when none is available
+     */
     private BlockPos next() {
         while (!this.queue.isEmpty()) {
             BlockPos pos = this.queue.removeFirst();
@@ -186,6 +228,9 @@ public class AutoWeb extends Module {
         return null;
     }
 
+    /**
+     * Removes expired or no longer replaceable placement marks.
+     */
     private void clean() {
         this.marks.entrySet().removeIf(entry -> {
             BlockPos pos = entry.getKey();
@@ -194,36 +239,36 @@ public class AutoWeb extends Module {
         });
     }
 
+    //endregion
+
+    //region Movement prediction
+
+    /**
+     * Predicts entity movement from its current velocity.
+     *
+     * @param entity entity to extrapolate
+     * @return predicted movement offset
+     */
     private Vec3d move(Entity entity) {
         if (this.extrapolation.get() == 0) return Vec3d.ZERO;
 
         Vec3d vel = entity.getVelocity();
         if (vel.lengthSquared() < edge) return Vec3d.ZERO;
 
-        return vel.normalize().multiply(this.extrapolation.get());
+        return vel.multiply(this.extrapolation.get());
     }
 
-    private boolean valid(BlockPos pos) {
-        if (!this.mc.world.getBlockState(pos).isReplaceable()) {
-            return false;
-        }
+    //endregion
 
-        Vec3d center = Vec3d.ofCenter(pos);
-        Vec3d eye = this.mc.player.getEyePos();
+    //region Block placement
 
-        return center.squaredDistanceTo(eye) <=
-            this.range.get() * this.range.get();
-    }
-
-    private int slot() {
-        for (int idx = 0; idx < 9; idx++) {
-            if (this.mc.player.getInventory().getStack(idx).isOf(Items.COBWEB)) {
-                return idx;
-            }
-        }
-        return -1;
-    }
-
+    /**
+     * Places a cobweb using a custom interaction packet.
+     *
+     * @param pos destination block position
+     * @param slot hotbar slot containing cobwebs
+     * @return true when the placement packets were sent
+     */
     private boolean place(BlockPos pos, int slot) {
         ItemStack stack = this.mc.player.getInventory().getStack(slot);
 
@@ -256,6 +301,12 @@ public class AutoWeb extends Module {
         }
     }
 
+    /**
+     * Finds a neighboring block face that can support normal placement.
+     *
+     * @param pos destination block position
+     * @return block hit result used for interaction
+     */
     private BlockHitResult hit(BlockPos pos) {
         for (Direction side : Direction.values()) {
             BlockPos near = pos.offset(side);
@@ -275,9 +326,57 @@ public class AutoWeb extends Module {
             return new BlockHitResult(hit, face, near, false);
         }
 
-        return new BlockHitResult(Vec3d.ofCenter(pos), Direction.UP, pos, false);
+        return new BlockHitResult(
+            Vec3d.ofCenter(pos), Direction.UP, pos, false
+        );
     }
 
+    //endregion
+
+    //region Validation and inventory
+
+    /**
+     * Checks whether a block position is replaceable and within range.
+     *
+     * @param pos block position to check
+     * @return true when the position is valid
+     */
+    private boolean valid(BlockPos pos) {
+        if (!this.mc.world.getBlockState(pos).isReplaceable()) {
+            return false;
+        }
+
+        Vec3d center = Vec3d.ofCenter(pos);
+        Vec3d eye = this.mc.player.getEyePos();
+
+        return center.squaredDistanceTo(eye) <=
+            this.range.get() * this.range.get();
+    }
+
+    /**
+     * Finds a cobweb stack in the hotbar.
+     *
+     * @return matching hotbar slot, or -1 when none exists
+     */
+    private int slot() {
+        for (int idx = 0; idx < 9; idx++) {
+            if (this.mc.player.getInventory().getStack(idx).isOf(Items.COBWEB)) {
+                return idx;
+            }
+        }
+        return -1;
+    }
+
+    //endregion
+
+    //region Sound effects
+
+    /**
+     * Plays the local cobweb placement sound.
+     *
+     * @param item placed cobweb block item
+     * @param pos placement position
+     */
     private void sound(BlockItem item, BlockPos pos) {
         BlockSoundGroup sound = item.getBlock().getDefaultState().getSoundGroup();
 
@@ -286,4 +385,6 @@ public class AutoWeb extends Module {
             (sound.getVolume() + 1.0F) / 2.0F, sound.getPitch() * 0.8F, false
         );
     }
+
+    //endregion
 }
