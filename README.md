@@ -29,21 +29,30 @@ Add-on for [Meteor Client][meteor] targeting the 2b2t anarchy server, with pract
 - **[Minecraft 1.21.4][minecraft]**
 - **[Fabric Loader][fabric]**
 - **[Meteor Client][meteor]**
+- **[ViaFabricPlus][viaplus]**
 - **[Baritone][baritone]**
+
+Make sure to downgrade to 1.20.3-1.20.4 in ViaFabricPlus settings before joining the server.
 
 ## 🧩 Modules
 
 - **Air Place** - Allows blocks to be placed in the air without requiring the adjacent surface.
 - **Auto Web** - Places cobwebs around selected entities with optional movement prediction.
+- **Block Farm** - Repeatedly places and mines selected blocks for insanely fast farming.
 - **Bounce Fly** - Uses elytra bouncing for fast highway travel with optional obstacle passing.
 - **Control Fly** - Provides controlled elytra flight using predictive movement stabilization.
+- **Critical Hits** - Triggers critical hits while keeping the player grounded during combat.
 - **Deep Trace** - Highlights unusual dropped items found below the configurable Y level.
 - **Easy Access** - Opens hidden containers and supported interactive entities within range.
+- **Elytra Tweaks** - Adds automatic elytra swap, takeoff, recovery and collision protection.
 - **Fast Portal** - Builds and lights nether portals near the player using minimal obsidian.
 - **FD3 Crafter** - Strictly crafts FD3 firework rockets from available inventory ingredients.
 - **Mining Tweaks** - Enables packet mining, including fast remine and double-break support.
+- **No Sprint FOV** - Removes vanilla sprinting zoom effects for a more consistent field of view.
 - **Overview** - Displays a content icon on shulker boxes and bundles for quick identification.
 - **Scaffolding** - Places selected blocks beneath and ahead of the player for safer bridging.
+- **Self Trapper** - Builds a configurable block trap around the player with queued placements.
+- **Trigger Bot** - Attacks selected entities under the crosshair, including targets through walls.
 
 ## 📁 Project Structure
 
@@ -56,7 +65,7 @@ Hyperglide/
 │       ├── java/dev/arkieee/hyperglide/
 │       │   ├── mixin/              # Mixin classes
 │       │   ├── modules/            # Meteor modules
-│       │   └── Hyperglide.java   # Main entry point
+│       │   └── Hyperglide.java     # Main entry point
 │       └── resources/
 │           ├── assets/hyperglide/
 │           │   └── icon.png
@@ -119,6 +128,7 @@ This add-on is licensed under the [GNU General Public License v3.0][repo-license
 [minecraft]: https://prismlauncher.org/download/
 [fabric]: https://fabricmc.net/use/installer/
 [meteor]: https://meteorclient.com/
+[viaplus]: https://modrinth.com/mod/viafabricplus
 [baritone]: https://maven.meteordev.org/#/snapshots/meteordevelopment/baritone
 
 [shield-repo-license]: https://img.shields.io/github/license/Ark223/Hyperglide?style=flat&labelColor=30363d&color=2ea44f

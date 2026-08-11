@@ -3,9 +3,11 @@
   "package": "dev.arkieee.hyperglide.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "AttackAccessor",
     "CameraMixin",
     "EntityMixin",
     "FireworkMixin",
+    "FovMixin",
     "InteractionAccessor",
     "ItemOverlayMixin",
     "KeyboardInputMixin",

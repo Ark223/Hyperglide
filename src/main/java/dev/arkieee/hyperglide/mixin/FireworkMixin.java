@@ -1,6 +1,7 @@
 package dev.arkieee.hyperglide.mixin;
 
 import dev.arkieee.hyperglide.modules.ControlFly;
+import dev.arkieee.hyperglide.modules.ElytraTweaks;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.LivingEntity;
@@ -11,6 +12,9 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+/**
+ * Tracks firework rockets owned by player.
+ */
 @Mixin(FireworkRocketEntity.class)
 public abstract class FireworkMixin {
     @Shadow
@@ -23,9 +27,17 @@ public abstract class FireworkMixin {
             return;
         }
 
-        ControlFly module = Modules.get().get(ControlFly.class);
-        if (module == null || !module.isActive()) return;
+        FireworkRocketEntity rocket =
+            (FireworkRocketEntity) (Object) this;
 
-        module.track((FireworkRocketEntity) (Object) this);
+        ControlFly control = Modules.get().get(ControlFly.class);
+        if (control != null && control.isActive()) {
+            control.track(rocket);
+        }
+
+        ElytraTweaks tweaks = Modules.get().get(ElytraTweaks.class);
+        if (tweaks != null && tweaks.isActive()) {
+            tweaks.track(rocket);
+        }
     }
 }
