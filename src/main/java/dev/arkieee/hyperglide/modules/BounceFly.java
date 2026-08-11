@@ -28,6 +28,8 @@ public class BounceFly extends Module {
     private static final double stop = 0.2;
     private static final int grid = 10;
     private static final int reach = 5;
+
+    private static final int launch = 3;
     private static final int wait = 20;
     private static final int warmup = 20;
 
@@ -71,14 +73,17 @@ public class BounceFly extends Module {
         .build()
     );
 
-    private int level;
     private int x;
     private int z;
     private int dx;
     private int dz;
+
     private int slow;
     private int warm;
+    private int jump;
+    private int level;
     private boolean pass;
+    private boolean started;
 
     public BounceFly() {
         super(Hyperglide.CATEGORY, "bounce-fly",
@@ -86,6 +91,9 @@ public class BounceFly extends Module {
         );
     }
 
+    /**
+     * Captures the current level and direction before flying.
+     */
     @Override
     public void onActivate() {
         if (this.mc.player == null ||
@@ -97,12 +105,17 @@ public class BounceFly extends Module {
 
         this.slow = 0;
         this.warm = 0;
+        this.jump = 0;
         this.pass = false;
+        this.started = false;
 
         this.mc.player.setSprinting(false);
         this.face();
     }
 
+    /**
+     * Releases forced inputs, cancels active pathing and clears runtime state.
+     */
     @Override
     public void onDeactivate() {
         this.mc.options.forwardKey.setPressed(false);
@@ -118,9 +131,18 @@ public class BounceFly extends Module {
 
         this.slow = 0;
         this.warm = 0;
+        this.jump = 0;
         this.pass = false;
+        this.started = false;
     }
 
+    //region Event handlers
+
+    /**
+     * Controls elytra bouncing and starts obstacle pathing when required.
+     *
+     * @param event pre-tick event
+     */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (this.mc.player == null ||
@@ -138,6 +160,7 @@ public class BounceFly extends Module {
 
                 this.slow = 0;
                 this.warm = 0;
+                this.jump = 0;
                 return;
             }
 
@@ -146,6 +169,7 @@ public class BounceFly extends Module {
 
                 this.slow = 0;
                 this.warm = 0;
+                this.jump = 0;
                 this.pass = false;
             }
         } else if (this.pass) {
@@ -153,6 +177,7 @@ public class BounceFly extends Module {
 
             this.slow = 0;
             this.warm = 0;
+            this.jump = 0;
             this.pass = false;
         }
 
@@ -163,6 +188,8 @@ public class BounceFly extends Module {
 
             this.slow = 0;
             this.warm = 0;
+            this.jump = 0;
+            this.started = false;
             return;
         }
 
@@ -170,6 +197,8 @@ public class BounceFly extends Module {
 
         this.mc.options.forwardKey.setPressed(true);
         this.mc.options.jumpKey.setPressed(true);
+
+        if (!this.takeoff()) return;
 
         if (this.obstacle.get() && this.avoid.get()) {
             Vec3d hit = this.collision();
@@ -181,7 +210,6 @@ public class BounceFly extends Module {
         }
 
         this.warm++;
-        this.mc.player.setSprinting(this.warm >= warmup);
 
         if (this.obstacle.get() && this.warm >= warmup) {
             Vec3d vel = this.mc.player.getVelocity();
@@ -197,17 +225,17 @@ public class BounceFly extends Module {
         } else {
             this.slow = 0;
         }
-
-        if (!this.mc.player.isGliding()) {
-            this.mc.player.startGliding();
-
-            this.mc.player.networkHandler.sendPacket(
-                new ClientCommandC2SPacket(this.mc.player,
-                    ClientCommandC2SPacket.Mode.START_FALL_FLYING)
-            );
-        }
     }
 
+    //endregion
+
+    //region Input control
+
+    /**
+     * Forces forward, jump and sprint input while bouncing.
+     *
+     * @param input player input state
+     */
     public void input(Input input) {
         if (!this.isActive() || this.mc.player == null
             || this.pass || !this.elytra()) return;
@@ -216,12 +244,78 @@ public class BounceFly extends Module {
 
         input.playerInput = new PlayerInput(
             true, false, state.left(), state.right(),
-            true, state.sneak(), this.warm >= warmup
+            true, state.sneak(), this.started
         );
 
         input.movementForward = 1.0F;
     }
 
+    //endregion
+
+    //region Takeoff control
+
+    /**
+     * Handles the initial delayed launch and later bounce restarts.
+     *
+     * @return true when normal bounce flight may continue
+     */
+    private boolean takeoff() {
+        if (this.started) {
+            this.mc.player.setSprinting(true);
+
+            if (!this.mc.player.isGliding() &&
+                !this.mc.player.isOnGround()) {
+                this.glide();
+            }
+
+            return true;
+        }
+
+        this.slow = 0;
+        this.warm = 0;
+        this.mc.player.setSprinting(false);
+
+        if (this.mc.player.isOnGround()) {
+            this.jump = 0;
+            return false;
+        }
+
+        this.jump++;
+
+        if (this.jump < launch ||
+            this.mc.player.getVelocity().y >= 0.0) {
+            return false;
+        }
+
+        this.glide();
+        this.mc.player.setSprinting(true);
+
+        this.jump = 0;
+        this.started = true;
+        return true;
+    }
+
+    /**
+     * Starts elytra flight and sends the matching command packet.
+     */
+    private void glide() {
+        this.mc.player.startGliding();
+
+        this.mc.player.networkHandler.sendPacket(
+            new ClientCommandC2SPacket(this.mc.player,
+                ClientCommandC2SPacket.Mode.START_FALL_FLYING)
+        );
+    }
+
+    //endregion
+
+    //region Collision detection
+
+    /**
+     * Finds the closest obstacle along the current highway direction.
+     *
+     * @return closest collision point, or null when no obstacle is detected
+     */
     private Vec3d collision() {
         Vec3d front = new Vec3d(this.dx, 0, this.dz).normalize();
         Vec3d side = new Vec3d(-front.z, 0, front.x);
@@ -235,9 +329,9 @@ public class BounceFly extends Module {
         for (int idx = -1; idx <= 1; idx += 2) {
             for (double y = 0.5; y <= 1.5; y++) {
                 Vec3d start = new Vec3d(this.mc.player.getX(),
-                    this.level + y, this.mc.player.getZ())
-                    .add(side.multiply(width * idx));
+                    this.level + y, this.mc.player.getZ());
 
+                start = start.add(side.multiply(width * idx));
                 Vec3d end = start.add(front.multiply(scan));
                 BlockHitResult hit = this.ray(start, end);
 
@@ -254,6 +348,13 @@ public class BounceFly extends Module {
         return closest;
     }
 
+    /**
+     * Raycasts between two points using block collision shapes.
+     *
+     * @param start raycast start position
+     * @param end raycast end position
+     * @return block raycast result
+     */
     private BlockHitResult ray(Vec3d start, Vec3d end) {
         return this.mc.world.raycast(new RaycastContext(
             start, end, RaycastContext.ShapeType.COLLIDER,
@@ -261,17 +362,34 @@ public class BounceFly extends Module {
         );
     }
 
+    //endregion
+
+    //region Obstacle pathing
+
+    /**
+     * Starts Baritone pathing from the player's current position.
+     *
+     * @param baritone Baritone instance used for pathing
+     */
     private void path(IBaritone baritone) {
         this.path(baritone, this.mc.player.getPos());
     }
 
+    /**
+     * Starts Baritone pathing toward a point beyond the obstacle.
+     *
+     * @param baritone Baritone instance used for pathing
+     * @param point obstacle or starting reference point
+     */
     private void path(IBaritone baritone, Vec3d point) {
         this.mc.options.forwardKey.setPressed(false);
         this.mc.options.jumpKey.setPressed(false);
 
         this.slow = 0;
         this.warm = 0;
+        this.jump = 0;
         this.pass = true;
+        this.started = false;
 
         this.mc.player.setSprinting(false);
 
@@ -279,6 +397,12 @@ public class BounceFly extends Module {
         baritone.getCustomGoalProcess().setGoalAndPath(goal);
     }
 
+    /**
+     * Calculates a pathing goal beyond an obstacle along the highway.
+     *
+     * @param point obstacle or starting reference point
+     * @return block position used as the Baritone goal
+     */
     private BlockPos goal(Vec3d point) {
         Vec3d dir = new Vec3d(this.dx, 0, this.dz).normalize();
 
@@ -293,6 +417,33 @@ public class BounceFly extends Module {
             this.level, (int) Math.round(z));
     }
 
+    /**
+     * Checks whether Baritone is processing or following a path.
+     *
+     * @param baritone Baritone instance to check
+     * @return true when Baritone pathing is active
+     */
+    private boolean pathing(IBaritone baritone) {
+        return baritone.getCustomGoalProcess().isActive()
+            || baritone.getPathingBehavior().isPathing();
+    }
+
+    /**
+     * Returns the primary Baritone instance.
+     *
+     * @return active primary Baritone instance
+     */
+    private IBaritone baritone() {
+        return BaritoneAPI.getProvider().getPrimaryBaritone();
+    }
+
+    //endregion
+
+    //region Direction control
+
+    /**
+     * Converts the player's current yaw into a highway vector.
+     */
     private void face() {
         float yaw = this.mc.player.getYaw();
         int face = MathHelper.floor((yaw + 22.5F) / 45.0F) & 7;
@@ -301,6 +452,9 @@ public class BounceFly extends Module {
         this.dz = this.dzs[face];
     }
 
+    /**
+     * Rotates the player toward the stored highway direction.
+     */
     private void rotate() {
         float yaw = (float) Math.toDegrees(
             Math.atan2(-this.dx, this.dz)
@@ -311,21 +465,30 @@ public class BounceFly extends Module {
         this.mc.player.setBodyYaw(yaw);
     }
 
+    /**
+     * Rounds a coordinate to the nearest highway grid position.
+     *
+     * @param value coordinate to round
+     * @return coordinate aligned to the highway grid
+     */
     private int snap(double value) {
         return (int) Math.round(value / grid) * grid;
     }
 
-    private boolean pathing(IBaritone baritone) {
-        return baritone.getCustomGoalProcess().isActive()
-            || baritone.getPathingBehavior().isPathing();
-    }
+    //endregion
 
-    private IBaritone baritone() {
-        return BaritoneAPI.getProvider().getPrimaryBaritone();
-    }
+    //region Validation
 
+    /**
+     * Checks whether the player has an elytra equipped.
+     *
+     * @return true when an elytra is equipped in the chest slot
+     */
     private boolean elytra() {
         return this.mc.player.getEquippedStack(
-            EquipmentSlot.CHEST).isOf(Items.ELYTRA);
+            EquipmentSlot.CHEST
+        ).isOf(Items.ELYTRA);
     }
+
+    //endregion
 }
