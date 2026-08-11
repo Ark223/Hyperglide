@@ -56,8 +56,8 @@ public class Scaffolding extends Module {
     );
 
     private final Setting<Boolean> dynamic = this.general.add(new BoolSetting.Builder()
-        .name("dynamic-delay")
-        .description("Uses a one-tick delay when close to an air block.")
+        .name("dynamic-mode")
+        .description("Uses a one-tick delay when close to the edge.")
         .defaultValue(true)
         .build()
     );
@@ -112,6 +112,9 @@ public class Scaffolding extends Module {
         );
     }
 
+    /**
+     * Resets runtime state and prepares the active scaffold layer.
+     */
     @Override
     public void onActivate() {
         this.reset();
@@ -119,11 +122,21 @@ public class Scaffolding extends Module {
         this.level = this.mc.player == null ? 0 : this.layer();
     }
 
+    /**
+     * Clears all runtime state.
+     */
     @Override
     public void onDeactivate() {
         this.reset();
     }
 
+    //region Event handlers
+
+    /**
+     * Updates the scaffold layer, queues and block placement.
+     *
+     * @param event pre-tick event
+     */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (this.mc.player == null || this.mc.world == null
@@ -151,6 +164,11 @@ public class Scaffolding extends Module {
         this.marks.put(pos, this.tick);
     }
 
+    /**
+     * Renders queued and recently placed block positions.
+     *
+     * @param event 3D render event
+     */
     @EventHandler
     private void onRender(Render3DEvent event) {
         if (!this.render.get() || this.mc.world == null) {
@@ -166,6 +184,13 @@ public class Scaffolding extends Module {
         }
     }
 
+    //endregion
+
+    //region State management
+
+    /**
+     * Clears queued positions, placement marks and timers.
+     */
     private void reset() {
         this.queue.clear();
         this.marks.clear();
@@ -174,6 +199,9 @@ public class Scaffolding extends Module {
         this.tick = 0;
     }
 
+    /**
+     * Updates the active scaffold layer and clears queued positions.
+     */
     private void update() {
         int level = this.layer();
         if (this.level == level) return;
@@ -182,6 +210,13 @@ public class Scaffolding extends Module {
         this.queue.clear();
     }
 
+    //endregion
+
+    //region Scaffold structure
+
+    /**
+     * Collects scaffold positions under and ahead of the player.
+     */
     private void collect() {
         this.add(BlockPos.ofFloored(
             this.mc.player.getX(), this.level, this.mc.player.getZ()
@@ -198,6 +233,12 @@ public class Scaffolding extends Module {
         }
     }
 
+    /**
+     * Adds a valid untracked position to the queue.
+     *
+     * @param pos candidate block position
+     * @param first whether the position should be queued first
+     */
     private void add(BlockPos pos, boolean first) {
         pos = pos.toImmutable();
 
@@ -208,6 +249,15 @@ public class Scaffolding extends Module {
         else this.queue.addLast(pos);
     }
 
+    //endregion
+
+    //region Queue management
+
+    /**
+     * Removes and returns the next valid position from the queue.
+     *
+     * @return next valid position, or null when none is available
+     */
     private BlockPos next() {
         while (!this.queue.isEmpty()) {
             BlockPos pos = this.queue.removeFirst();
@@ -216,6 +266,9 @@ public class Scaffolding extends Module {
         return null;
     }
 
+    /**
+     * Removes invalid queued positions and expired placement marks.
+     */
     private void clean() {
         this.queue.removeIf(pos -> !this.valid(pos));
 
@@ -226,6 +279,17 @@ public class Scaffolding extends Module {
         });
     }
 
+    //endregion
+
+    //region Block placement
+
+    /**
+     * Selects the requested hotbar slot and sends a block interaction.
+     *
+     * @param pos destination block position
+     * @param slot hotbar slot containing the block
+     * @return true when the placement interaction was sent
+     */
     private boolean place(BlockPos pos, int slot) {
         ItemStack stack = this.mc.player.getInventory().getStack(slot);
 
@@ -246,14 +310,20 @@ public class Scaffolding extends Module {
         }
     }
 
+    /**
+     * Finds a neighboring block face that can support normal placement.
+     *
+     * @param pos destination block position
+     * @return block hit result used for interaction
+     */
     private BlockHitResult hit(BlockPos pos) {
         for (Direction side : Direction.values()) {
+
             BlockPos near = pos.offset(side);
             BlockState state = this.mc.world.getBlockState(near);
 
-            if (state.isReplaceable() || !state.getFluidState().isEmpty()) {
-                continue;
-            }
+            if (state.isReplaceable()) continue;
+            if (!state.getFluidState().isEmpty()) continue;
 
             Direction face = side.getOpposite();
             Vec3d hit = Vec3d.ofCenter(near).add(
@@ -265,9 +335,17 @@ public class Scaffolding extends Module {
             return new BlockHitResult(hit, face, near, false);
         }
 
-        return new BlockHitResult(Vec3d.ofCenter(pos), Direction.UP, pos, false);
+        return new BlockHitResult(
+            Vec3d.ofCenter(pos), Direction.UP, pos, false
+        );
     }
 
+    /**
+     * Finds a hotbar slot containing an allowed full cube block.
+     *
+     * @param pos destination used to evaluate the block collision shape
+     * @return matching hotbar slot, or -1 when none is available
+     */
     private int slot(BlockPos pos) {
         for (int idx = 0; idx < 9; idx++) {
             ItemStack stack = this.mc.player.getInventory().getStack(idx);
@@ -283,16 +361,36 @@ public class Scaffolding extends Module {
         return -1;
     }
 
+    //endregion
+
+    //region Validation and utilities
+
+    /**
+     * Checks whether a block passes the configured whitelist or blacklist.
+     *
+     * @param block block to check
+     * @return true when the block is allowed
+     */
     private boolean allowed(Block block) {
         return this.mode.get() == Mode.Blacklist
             ? !this.blocks.get().contains(block)
             : this.blocks.get().contains(block);
     }
 
+    /**
+     * Calculates the delay required before the next placement.
+     *
+     * @return required delay in ticks
+     */
     private int pace() {
         return this.dynamic.get() && this.close() ? 1 : this.delay.get();
     }
 
+    /**
+     * Checks whether the player is close to an open block on the scaffold layer.
+     *
+     * @return true when an open block is within edge distance
+     */
     private boolean close() {
         int x = (int) Math.round(this.mc.player.getX());
         int z = (int) Math.round(this.mc.player.getZ());
@@ -305,6 +403,7 @@ public class Scaffolding extends Module {
 
                 double dx = this.scan.getX() + 0.5 - this.mc.player.getX();
                 double dz = this.scan.getZ() + 0.5 - this.mc.player.getZ();
+
                 if (dx * dx + dz * dz < edge * edge) return true;
             }
         }
@@ -312,6 +411,11 @@ public class Scaffolding extends Module {
         return false;
     }
 
+    /**
+     * Calculates the normalized movement direction from pressed keys.
+     *
+     * @return normalized movement direction, or zero when stationary
+     */
     private Vec3d move() {
         Vec3d move = Vec3d.ZERO;
         float yaw = this.mc.player.getYaw();
@@ -335,6 +439,11 @@ public class Scaffolding extends Module {
         return move.lengthSquared() == 0 ? Vec3d.ZERO : move.normalize();
     }
 
+    /**
+     * Calculates the block layer directly below the player.
+     *
+     * @return Y coordinate of the scaffold layer
+     */
     private int layer() {
         return BlockPos.ofFloored(
             this.mc.player.getX(), this.mc.player.getY(),
@@ -342,26 +451,61 @@ public class Scaffolding extends Module {
         ).down().getY();
     }
 
+    /**
+     * Checks whether a position is replaceable on the scaffold layer.
+     *
+     * @param pos position to check
+     * @return true when the position is open on the active layer
+     */
     private boolean open(BlockPos pos) {
         return pos.getY() == this.level &&
             this.mc.world.getBlockState(pos).isReplaceable();
     }
 
+    /**
+     * Checks whether a position is open and within reach.
+     *
+     * @param pos position to check
+     * @return true when the position is valid
+     */
     private boolean valid(BlockPos pos) {
         return this.open(pos) && !this.far(pos);
     }
 
+    /**
+     * Checks whether a position is outside placement reach.
+     *
+     * @param pos position to check
+     * @return true when the position is too far from the player
+     */
     private boolean far(BlockPos pos) {
         double x = pos.getX() + 0.5 - this.mc.player.getX();
         double z = pos.getZ() + 0.5 - this.mc.player.getZ();
         return x * x + z * z > reach * reach;
     }
 
+    //endregion
+
+    //region Visual and sound effects
+
+    /**
+     * Renders a configured box around a block position.
+     *
+     * @param event active 3D render event
+     * @param pos block position to render
+     */
     private void box(Render3DEvent event, BlockPos pos) {
         event.renderer.box(pos, this.side.get(),
-            this.line.get(), this.shape.get(), 0);
+            this.line.get(), this.shape.get(), 0
+        );
     }
 
+    /**
+     * Plays the local placement sound for a selected block.
+     *
+     * @param item placed block item
+     * @param pos placement position
+     */
     private void sound(BlockItem item, BlockPos pos) {
         BlockSoundGroup sound = item.getBlock().getDefaultState().getSoundGroup();
 
@@ -370,4 +514,6 @@ public class Scaffolding extends Module {
             (sound.getVolume() + 1.0F) / 2.0F, sound.getPitch() * 0.8F, false
         );
     }
+
+    //endregion
 }

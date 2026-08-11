@@ -20,6 +20,7 @@ import net.minecraft.screen.slot.SlotActionType;
 public class FD3Crafter extends Module {
     private static final int output = PlayerScreenHandler.CRAFTING_RESULT_ID;
     private static final int paper = PlayerScreenHandler.CRAFTING_INPUT_START;
+
     private static final int first = paper + 1;
     private static final int second = paper + 2;
     private static final int third = paper + 3;
@@ -39,10 +40,12 @@ public class FD3Crafter extends Module {
     private int source;
     private int target;
     private int tick;
+
     private int oldpaper;
     private int oldpowder;
     private int start;
     private int idle;
+
     private boolean bulk;
     private boolean close;
     private String note;
@@ -61,10 +64,13 @@ public class FD3Crafter extends Module {
 
     public FD3Crafter() {
         super(Hyperglide.CATEGORY, "fd3-crafter",
-            "Strictly crafts Fd3 rockets using gunpowder and paper."
+            "Crafts Fd3 rockets using ingredients from the inventory."
         );
     }
 
+    /**
+     * Validates the player state and prepares the crafting workflow.
+     */
     @Override
     public void onActivate() {
         if (this.mc.player == null || this.mc.world == null ||
@@ -101,6 +107,9 @@ public class FD3Crafter extends Module {
         this.mc.setScreen(new InventoryScreen(this.mc.player));
     }
 
+    /**
+     * Closes the inventory when required and clears runtime state.
+     */
     @Override
     public void onDeactivate() {
         if (this.close && this.mc.currentScreen instanceof InventoryScreen) {
@@ -119,6 +128,13 @@ public class FD3Crafter extends Module {
         this.note = null;
     }
 
+    //region Event handlers
+
+    /**
+     * Advances the crafting workflow after the configured action delay.
+     *
+     * @param event post-tick event
+     */
     @EventHandler
     private void onTick(TickEvent.Post event) {
         if (this.mc.player == null || this.mc.world == null
@@ -141,6 +157,13 @@ public class FD3Crafter extends Module {
         this.step();
     }
 
+    //endregion
+
+    //region Crafting workflow
+
+    /**
+     * Executes the action assigned to the current crafting phase.
+     */
     private void step() {
         switch (this.phase) {
             case CLEAR -> this.clear();
@@ -155,6 +178,9 @@ public class FD3Crafter extends Module {
         }
     }
 
+    /**
+     * Clears the cursor and crafting grid before crafting begins.
+     */
     private void clear() {
         if (!this.handler().getCursorStack().isEmpty()) {
             this.error("Clear cursor before enabling crafter.");
@@ -172,6 +198,9 @@ public class FD3Crafter extends Module {
         this.phase = Phase.WORK;
     }
 
+    /**
+     * Evaluates the crafting grid and schedules the next action.
+     */
     private void work() {
         int one = this.stack(first).getCount();
         int two = this.stack(second).getCount();
@@ -291,6 +320,9 @@ public class FD3Crafter extends Module {
         this.phase = Phase.CLEAN;
     }
 
+    /**
+     * Moves the picked paper stack into the selected crafting slot.
+     */
     private void paper() {
         if (!this.handler().getCursorStack().isOf(Items.PAPER)) {
             this.fail("Paper pickup failed.");
@@ -301,6 +333,9 @@ public class FD3Crafter extends Module {
         this.phase = Phase.WORK;
     }
 
+    /**
+     * Moves a full gunpowder stack into the selected crafting slot.
+     */
     private void stack() {
         if (!this.handler().getCursorStack().isOf(Items.GUNPOWDER)
             || this.handler().getCursorStack().getCount() != 64) {
@@ -312,6 +347,9 @@ public class FD3Crafter extends Module {
         this.phase = Phase.WORK;
     }
 
+    /**
+     * Distributes the picked gunpowder stack across 3 crafting slots.
+     */
     private void powder() {
         if (!this.handler().getCursorStack().isOf(Items.GUNPOWDER)) {
             this.fail("Gunpowder pickup failed.");
@@ -350,6 +388,9 @@ public class FD3Crafter extends Module {
         this.phase = Phase.RETURN;
     }
 
+    /**
+     * Returns remaining cursor items to their source slot.
+     */
     private void back() {
         if (this.handler().getCursorStack().isEmpty()) {
             this.phase = Phase.WORK;
@@ -360,6 +401,9 @@ public class FD3Crafter extends Module {
         this.phase = Phase.WORK;
     }
 
+    /**
+     * Merges the picked gunpowder stack into the selected inventory stack.
+     */
     private void merge() {
         if (!this.handler().getCursorStack().isOf(Items.GUNPOWDER)) {
             this.fail("Gunpowder merge failed.");
@@ -370,6 +414,9 @@ public class FD3Crafter extends Module {
         this.phase = Phase.WORK;
     }
 
+    /**
+     * Confirms that ingredients were consumed after collecting rockets.
+     */
     private void check() {
         int paper = this.stack(FD3Crafter.paper).getCount();
         int powder = this.stack(first).getCount();
@@ -387,6 +434,9 @@ public class FD3Crafter extends Module {
         }
     }
 
+    /**
+     * Returns cursor and crafting grid items before finishing.
+     */
     private void clean() {
         if (!this.handler().getCursorStack().isEmpty()) {
             int slot = this.empty();
@@ -411,11 +461,19 @@ public class FD3Crafter extends Module {
         this.done();
     }
 
+    /**
+     * Records an error and moves the workflow into cleanup.
+     *
+     * @param note error message to display
+     */
     private void fail(String note) {
         this.note = note;
         this.phase = Phase.CLEAN;
     }
 
+    /**
+     * Reports the crafting result and disables the module.
+     */
     private void done() {
         int made = Math.max(0, this.rockets() - this.start);
         if (this.note != null) this.error(this.note);
@@ -430,6 +488,17 @@ public class FD3Crafter extends Module {
         this.toggle();
     }
 
+    //endregion
+
+    //region Inventory interaction
+
+    /**
+     * Sends an inventory slot action.
+     *
+     * @param slot slot index
+     * @param button mouse button or action data
+     * @param action slot action type
+     */
     private void click(int slot, int button, SlotActionType action) {
         this.mc.interactionManager.clickSlot(
             this.handler().syncId, slot,
@@ -437,27 +506,56 @@ public class FD3Crafter extends Module {
         );
     }
 
+    /**
+     * Returns the player's inventory screen handler.
+     *
+     * @return player inventory screen handler
+     */
     private PlayerScreenHandler handler() {
         return this.mc.player.playerScreenHandler;
     }
 
+    /**
+     * Returns the item stack stored in an inventory slot.
+     *
+     * @param slot slot index
+     * @return item stack in the slot
+     */
     private ItemStack stack(int slot) {
         return this.handler().getSlot(slot).getStack();
     }
 
+    //endregion
+
+    //region Inventory search
+
+    /**
+     * Checks whether a slot is empty or contains the requested item.
+     *
+     * @param slot slot index
+     * @param item item to match
+     * @return true when the slot is empty or contains the item
+     */
     private boolean same(int slot, Item item) {
         ItemStack stack = this.stack(slot);
         return stack.isEmpty() || stack.isOf(item);
     }
 
+    /**
+     * Finds the largest stack of an item meeting a minimum size.
+     *
+     * @param item item to find
+     * @param min minimum stack size
+     * @return matching slot index, or -1 when none exists
+     */
     private int largest(Item item, int min) {
         int slot = -1;
         int count = min - 1;
 
         for (int idx = PlayerScreenHandler.INVENTORY_START;
             idx < PlayerScreenHandler.HOTBAR_END; idx++) {
-            ItemStack stack = this.stack(idx);
 
+            ItemStack stack = this.stack(idx);
             if (stack.isOf(item) && stack.getCount() > count) {
                 slot = idx;
                 count = stack.getCount();
@@ -467,11 +565,17 @@ public class FD3Crafter extends Module {
         return slot;
     }
 
+    /**
+     * Finds a full inventory stack of an item.
+     *
+     * @param item item to find
+     * @return matching slot index, or -1 when none exists
+     */
     private int full(Item item) {
         for (int idx = PlayerScreenHandler.INVENTORY_START;
             idx < PlayerScreenHandler.HOTBAR_END; idx++) {
-            ItemStack stack = this.stack(idx);
 
+            ItemStack stack = this.stack(idx);
             if (stack.isOf(item) &&
                 stack.getCount() == stack.getMaxCount()) {
                 return idx;
@@ -480,13 +584,19 @@ public class FD3Crafter extends Module {
         return -1;
     }
 
+    /**
+     * Counts full inventory stacks of an item.
+     *
+     * @param item item to count
+     * @return number of full stacks
+     */
     private int fulls(Item item) {
         int count = 0;
 
         for (int idx = PlayerScreenHandler.INVENTORY_START;
             idx < PlayerScreenHandler.HOTBAR_END; idx++) {
-            ItemStack stack = this.stack(idx);
 
+            ItemStack stack = this.stack(idx);
             if (stack.isOf(item) &&
                 stack.getCount() == stack.getMaxCount()) {
                 count++;
@@ -496,6 +606,11 @@ public class FD3Crafter extends Module {
         return count;
     }
 
+    /**
+     * Finds the first empty gunpowder crafting slot.
+     *
+     * @return empty crafting slot index, or -1 when none exists
+     */
     private int powderslot() {
         if (this.stack(first).isEmpty()) return first;
         if (this.stack(second).isEmpty()) return second;
@@ -503,6 +618,12 @@ public class FD3Crafter extends Module {
         return -1;
     }
 
+    /**
+     * Counts all units of an item in the player inventory.
+     *
+     * @param item item to count
+     * @return total item count
+     */
     private int count(Item item) {
         int count = 0;
 
@@ -516,11 +637,17 @@ public class FD3Crafter extends Module {
         return count;
     }
 
+    /**
+     * Finds two partial gunpowder stacks that can be merged.
+     *
+     * @return source and target slot pair, or null when none exists
+     */
     private int[] pair() {
         int first = -1;
 
         for (int idx = PlayerScreenHandler.INVENTORY_START;
             idx < PlayerScreenHandler.HOTBAR_END; idx++) {
+
             ItemStack stack = this.stack(idx);
 
             if (!stack.isOf(Items.GUNPOWDER) ||
@@ -536,6 +663,11 @@ public class FD3Crafter extends Module {
         return null;
     }
 
+    /**
+     * Finds the first empty player inventory slot.
+     *
+     * @return empty slot index, or -1 when none exists
+     */
     private int empty() {
         for (int idx = PlayerScreenHandler.INVENTORY_START;
             idx < PlayerScreenHandler.HOTBAR_END; idx++) {
@@ -544,6 +676,16 @@ public class FD3Crafter extends Module {
         return -1;
     }
 
+    //endregion
+
+    //region Rocket validation
+
+    /**
+     * Checks whether a stack contains Fd3 rockets.
+     *
+     * @param stack item stack to check
+     * @return true when the stack contains Fd3 rockets
+     */
     private boolean rocket(ItemStack stack) {
         if (!stack.isOf(Items.FIREWORK_ROCKET)) return false;
 
@@ -551,6 +693,11 @@ public class FD3Crafter extends Module {
         return component != null && component.flightDuration() == 3;
     }
 
+    /**
+     * Counts all Fd3 rockets in the player inventory.
+     *
+     * @return total Fd3 rocket count
+     */
     private int rockets() {
         int count = 0;
 
@@ -563,4 +710,6 @@ public class FD3Crafter extends Module {
 
         return count;
     }
+
+    //endregion
 }

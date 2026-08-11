@@ -52,6 +52,9 @@ public class EasyAccess extends Module {
         );
     }
 
+    /**
+     * Initializes interaction locks when the module starts.
+     */
     @Override
     public void onActivate() {
         this.lock = this.mc.options.useKey.isPressed();
@@ -59,6 +62,9 @@ public class EasyAccess extends Module {
         this.own = false;
     }
 
+    /**
+     * Clears all interaction locks when the module stops.
+     */
     @Override
     public void onDeactivate() {
         this.lock = false;
@@ -66,6 +72,13 @@ public class EasyAccess extends Module {
         this.own = false;
     }
 
+    //region Event handlers
+
+    /**
+     * Searches for and interacts with a hidden container.
+     *
+     * @param event pre-tick event
+     */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (this.mc.player == null || this.mc.world == null ||
@@ -107,6 +120,11 @@ public class EasyAccess extends Module {
         this.mc.player.swingHand(Hand.MAIN_HAND);
     }
 
+    /**
+     * Cancels the normal interaction after a hidden target was used.
+     *
+     * @param event outgoing packet event
+     */
     @EventHandler
     private void onPacket(PacketEvent.Send event) {
         if (this.block && !this.own &&
@@ -115,6 +133,15 @@ public class EasyAccess extends Module {
         }
     }
 
+    //endregion
+
+    //region Target selection
+
+    /**
+     * Checks whether the current crosshair target is an accessible container.
+     *
+     * @return true when the player is directly targeting a container
+     */
     private boolean visible() {
         if (this.mc.crosshairTarget instanceof BlockHitResult hit
             && hit.getType() == HitResult.Type.BLOCK) {
@@ -128,6 +155,11 @@ public class EasyAccess extends Module {
         return false;
     }
 
+    /**
+     * Finds the closest hidden container intersecting the view direction.
+     *
+     * @return closest hidden container target, or null when none is available
+     */
     private Target target() {
         double reach = this.range.get();
 
@@ -149,6 +181,7 @@ public class EasyAccess extends Module {
 
             Optional<Vec3d> result = new Box(pos)
                 .expand(edge).raycast(eye, end);
+
             if (result.isEmpty()) continue;
 
             Vec3d point = result.get();
@@ -172,6 +205,7 @@ public class EasyAccess extends Module {
 
             Optional<Vec3d> result = entity.getBoundingBox()
                 .expand(edge).raycast(eye, end);
+
             if (result.isEmpty()) continue;
 
             Vec3d point = result.get();
@@ -190,6 +224,14 @@ public class EasyAccess extends Module {
         return best;
     }
 
+    /**
+     * Checks whether a block container is directly visible.
+     *
+     * @param pos container block position
+     * @param eye player eye position
+     * @param point target point on the container
+     * @return true when the raycast reaches the block
+     */
     private boolean visible(BlockPos pos, Vec3d eye, Vec3d point) {
         Vec3d dir = point.subtract(eye);
 
@@ -209,6 +251,13 @@ public class EasyAccess extends Module {
             && hit.getBlockPos().equals(pos);
     }
 
+    /**
+     * Checks whether an entity container is directly visible.
+     *
+     * @param eye player eye position
+     * @param point target point on the entity
+     * @return true when no block obstructs the target
+     */
     private boolean visible(Vec3d eye, Vec3d point) {
         Vec3d dir = point.subtract(eye);
 
@@ -227,6 +276,16 @@ public class EasyAccess extends Module {
         return hit.getType() == HitResult.Type.MISS;
     }
 
+    //endregion
+
+    //region Container interaction
+
+    /**
+     * Checks whether an entity can provide container or merchant interaction.
+     *
+     * @param entity entity to check
+     * @return true when the entity is a supported container
+     */
     private boolean container(Entity entity) {
         if (!entity.isAlive() || entity.isSpectator()) return false;
 
@@ -237,6 +296,11 @@ public class EasyAccess extends Module {
             && donkey.isTame() && donkey.hasChest();
     }
 
+    /**
+     * Interacts with a supported container entity.
+     *
+     * @param entity entity to interact with
+     */
     private void entity(Entity entity) {
         if (!(entity instanceof AbstractDonkeyEntity)) {
             this.mc.interactionManager.interactEntity(
@@ -250,7 +314,8 @@ public class EasyAccess extends Module {
         if (!sneak) {
             this.mc.player.networkHandler.sendPacket(
                 new ClientCommandC2SPacket(this.mc.player,
-                    ClientCommandC2SPacket.Mode.PRESS_SHIFT_KEY)
+                    ClientCommandC2SPacket.Mode.PRESS_SHIFT_KEY
+                )
             );
         }
 
@@ -261,11 +326,18 @@ public class EasyAccess extends Module {
         if (!sneak) {
             this.mc.player.networkHandler.sendPacket(
                 new ClientCommandC2SPacket(this.mc.player,
-                    ClientCommandC2SPacket.Mode.RELEASE_SHIFT_KEY)
+                    ClientCommandC2SPacket.Mode.RELEASE_SHIFT_KEY
+                )
             );
         }
     }
 
+    /**
+     * Checks whether a block position contains a supported container.
+     *
+     * @param pos block position to check
+     * @return true when the block provides container interaction
+     */
     private boolean container(BlockPos pos) {
         BlockState state = this.mc.world.getBlockState(pos);
 
@@ -273,6 +345,13 @@ public class EasyAccess extends Module {
             state.createScreenHandlerFactory(this.mc.world, pos) != null;
     }
 
+    /**
+     * Finds the block face facing most directly toward the player.
+     *
+     * @param pos block position
+     * @param eye player eye position
+     * @return closest block face
+     */
     private Direction side(BlockPos pos, Vec3d eye) {
         Vec3d center = Vec3d.ofCenter(pos);
         Vec3d dir = eye.subtract(center);
@@ -295,5 +374,11 @@ public class EasyAccess extends Module {
         return best;
     }
 
+    //endregion
+
+    //region Data structures
+
     private record Target(BlockHitResult block, Entity entity) {}
+
+    //endregion
 }

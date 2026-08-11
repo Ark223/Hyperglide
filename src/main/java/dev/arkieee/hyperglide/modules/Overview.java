@@ -57,22 +57,38 @@ public class Overview extends Module {
 
     public Overview() {
         super(Hyperglide.CATEGORY, "overview",
-            "Displays the dominant item over shulkers and bundles."
+            "Displays the most common item over shulkers and bundles."
         );
     }
 
+    /**
+     * Clears cached content and resets rendering state.
+     */
     @Override
     public void onActivate() {
         this.cache.clear();
         this.drawing = false;
     }
 
+    /**
+     * Clears cached content and resets rendering state.
+     */
     @Override
     public void onDeactivate() {
         this.cache.clear();
         this.drawing = false;
     }
 
+    //region Rendering
+
+    /**
+     * Renders the most common contained item over a shulker box or bundle.
+     *
+     * @param context draw context
+     * @param stack container item stack
+     * @param x item X coordinate
+     * @param y item Y coordinate
+     */
     public void render(DrawContext context, ItemStack stack, int x, int y) {
         if (!this.isActive() || this.drawing || stack.isEmpty()) {
             return;
@@ -82,7 +98,6 @@ public class Overview extends Module {
         if (data == null) return;
 
         Cached cached = this.cache.get(stack);
-
         if (cached == null || !Objects.equals(cached.data, data)) {
             cached = new Cached(data, this.common(data));
             this.cache.put(stack, cached);
@@ -110,6 +125,16 @@ public class Overview extends Module {
         }
     }
 
+    //endregion
+
+    //region Content analysis
+
+    /**
+     * Retrieves container or bundle content data from an item stack.
+     *
+     * @param stack item stack to inspect
+     * @return container data, bundle data or null when unavailable
+     */
     private Object data(ItemStack stack) {
         if (stack.getItem() instanceof BlockItem item &&
             item.getBlock() instanceof ShulkerBoxBlock) {
@@ -118,6 +143,12 @@ public class Overview extends Module {
         return stack.get(DataComponentTypes.BUNDLE_CONTENTS);
     }
 
+    /**
+     * Finds the item occupying the greatest number of content slots.
+     *
+     * @param data container or bundle content data
+     * @return dominant item stack, or an empty stack when no item exists
+     */
     private ItemStack common(Object data) {
         Iterable<ItemStack> stacks;
 
@@ -153,10 +184,19 @@ public class Overview extends Module {
         return best == null ? ItemStack.EMPTY : best.stack;
     }
 
+    //endregion
+
+    //region Data structures
+
     private static class Count {
         private final ItemStack stack;
         private int slots;
 
+        /**
+         * Creates an item occurrence counter.
+         *
+         * @param stack representative item stack
+         */
         private Count(ItemStack stack) {
             this.stack = stack;
         }
@@ -166,9 +206,17 @@ public class Overview extends Module {
         private final Object data;
         private final ItemStack stack;
 
+        /**
+         * Creates a cached content result.
+         *
+         * @param data source content data
+         * @param stack dominant item stack
+         */
         private Cached(Object data, ItemStack stack) {
             this.data = data;
             this.stack = stack;
         }
     }
+
+    //endregion
 }

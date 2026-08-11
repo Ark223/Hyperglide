@@ -46,6 +46,7 @@ public class AirPlace extends Module {
         .name("shape")
         .description("How the target box is rendered.")
         .defaultValue(ShapeMode.Both)
+        .visible(this.render::get)
         .build()
     );
 
@@ -53,6 +54,7 @@ public class AirPlace extends Module {
         .name("side-color")
         .description("The fill color of the target box.")
         .defaultValue(new SettingColor(255, 255, 255, 32))
+        .visible(this.render::get)
         .build()
     );
 
@@ -60,6 +62,7 @@ public class AirPlace extends Module {
         .name("line-color")
         .description("The outline color of the target box.")
         .defaultValue(new SettingColor(255, 255, 255, 255))
+        .visible(this.render::get)
         .build()
     );
 
@@ -73,6 +76,9 @@ public class AirPlace extends Module {
         );
     }
 
+    /**
+     * Clears the current target and initializes the interaction lock.
+     */
     @Override
     public void onActivate() {
         this.hit = null;
@@ -80,6 +86,9 @@ public class AirPlace extends Module {
         this.own = false;
     }
 
+    /**
+     * Clears the current target and interaction state.
+     */
     @Override
     public void onDeactivate() {
         this.hit = null;
@@ -87,6 +96,13 @@ public class AirPlace extends Module {
         this.own = false;
     }
 
+    //region Event handlers
+
+    /**
+     * Updates the air-place target and handles a new right click.
+     *
+     * @param event post-tick event
+     */
     @EventHandler
     private void onTick(TickEvent.Post event) {
         if (this.mc.player == null ||
@@ -130,6 +146,11 @@ public class AirPlace extends Module {
         this.place(this.hit, stack);
     }
 
+    /**
+     * Cancels the normal interaction packet after an air placement.
+     *
+     * @param event outgoing packet event
+     */
     @EventHandler
     private void onPacket(PacketEvent.Send event) {
         if (this.lock && !this.own &&
@@ -138,6 +159,11 @@ public class AirPlace extends Module {
         }
     }
 
+    /**
+     * Renders the current air-place target.
+     *
+     * @param event 3D render event
+     */
     @EventHandler
     private void onRender(Render3DEvent event) {
         if (!this.render.get() || this.hit == null ||
@@ -152,6 +178,16 @@ public class AirPlace extends Module {
         );
     }
 
+    //endregion
+
+    //region Block placement
+
+    /**
+     * Places the selected item using a custom interaction method.
+     *
+     * @param hit target block hit result
+     * @param stack selected item stack
+     */
     private void place(BlockHitResult hit, ItemStack stack) {
         PlayerActionC2SPacket swap = new PlayerActionC2SPacket(
             PlayerActionC2SPacket.Action.SWAP_ITEM_WITH_OFFHAND,
@@ -179,6 +215,31 @@ public class AirPlace extends Module {
         }
     }
 
+    //endregion
+
+    //region Validation
+
+    /**
+     * Checks whether an item can be placed using Air Place.
+     *
+     * @param stack item stack to check
+     * @return true when the stack contains a block or spawn egg
+     */
+    private boolean valid(ItemStack stack) {
+        return stack.getItem() instanceof BlockItem
+            || stack.getItem() instanceof SpawnEggItem;
+    }
+
+    //endregion
+
+    //region Sound effects
+
+    /**
+     * Plays the local placement sound for a block item.
+     *
+     * @param block placed block item
+     * @param pos placement position
+     */
     private void sound(BlockItem block, BlockPos pos) {
         BlockSoundGroup sound = block.getBlock().getDefaultState().getSoundGroup();
 
@@ -188,8 +249,5 @@ public class AirPlace extends Module {
         );
     }
 
-    private boolean valid(ItemStack stack) {
-        return stack.getItem() instanceof BlockItem
-            || stack.getItem() instanceof SpawnEggItem;
-    }
+    //endregion
 }

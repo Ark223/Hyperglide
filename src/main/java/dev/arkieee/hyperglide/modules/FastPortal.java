@@ -79,6 +79,9 @@ public class FastPortal extends Module {
         );
     }
 
+    /**
+     * Calculates the portal frame and validates the required space and obsidian.
+     */
     @Override
     public void onActivate() {
         if (this.mc.player == null || this.mc.world == null) {
@@ -95,9 +98,7 @@ public class FastPortal extends Module {
         int need = 0;
 
         for (BlockPos pos : this.portal) {
-            if (this.mc.world.getBlockState(pos).isOf(Blocks.OBSIDIAN)) {
-                continue;
-            }
+            if (this.obsidian(pos)) continue;
 
             if (!this.mc.world.getBlockState(pos).isReplaceable()) {
                 this.error("Portal area is obstructed.");
@@ -120,6 +121,9 @@ public class FastPortal extends Module {
         }
     }
 
+    /**
+     * Clears the portal frame and placement state.
+     */
     @Override
     public void onDeactivate() {
         this.portal.clear();
@@ -127,6 +131,13 @@ public class FastPortal extends Module {
         this.timer = 0;
     }
 
+    //region Event handlers
+
+    /**
+     * Places the next required frame block after the delay.
+     *
+     * @param event pre-tick event
+     */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (this.mc.player == null || this.mc.world == null) {
@@ -143,7 +154,6 @@ public class FastPortal extends Module {
         if (++this.timer < this.delay.get()) return;
 
         BlockPos pos = this.portal.get(this.index);
-
         if (!this.mc.world.getBlockState(pos).isReplaceable()) {
             this.error("Portal area became obstructed.");
             this.toggle();
@@ -151,7 +161,6 @@ public class FastPortal extends Module {
         }
 
         int slot = this.slot();
-
         if (slot == -1) {
             this.error("No obsidian found in the hotbar.");
             this.toggle();
@@ -164,24 +173,37 @@ public class FastPortal extends Module {
         this.timer = 0;
         this.skip();
 
-        if (this.index >= this.portal.size()) this.done();
+        if (this.index >= this.portal.size()) {
+            this.done();
+        }
     }
 
+    /**
+     * Renders the remaining incomplete portal frame positions.
+     *
+     * @param event 3D render event
+     */
     @EventHandler
     private void onRender(Render3DEvent event) {
         if (!this.render.get()) return;
 
         for (int idx = this.index; idx < this.portal.size(); idx++) {
             BlockPos pos = this.portal.get(idx);
+            if (this.obsidian(pos)) continue;
 
-            if (!this.mc.world.getBlockState(pos).isOf(Blocks.OBSIDIAN)) {
-                event.renderer.box(pos, this.side.get(),
-                    this.line.get(), this.shape.get(), 0
-                );
-            }
+            event.renderer.box(pos, this.side.get(),
+                this.line.get(), this.shape.get(), 0
+            );
         }
     }
 
+    //endregion
+
+    //region Portal structure
+
+    /**
+     * Calculates the portal frame positions in front of the player.
+     */
     private void collect() {
         Direction front = this.mc.player.getHorizontalFacing();
         Direction right = front.rotateYClockwise();
@@ -207,16 +229,37 @@ public class FastPortal extends Module {
         this.portal.add(base.offset(right, 2).up(4));
     }
 
+    /**
+     * Checks whether a position contains obsidian.
+     *
+     * @param pos block position to check
+     * @return true when the position contains obsidian
+     */
+    private boolean obsidian(BlockPos pos) {
+        return this.mc.world.getBlockState(pos).isOf(Blocks.OBSIDIAN);
+    }
+
+    /**
+     * Advances past frame positions that already contain obsidian.
+     */
     private void skip() {
         while (this.index < this.portal.size() &&
-            this.mc.world.getBlockState(
-                this.portal.get(this.index)
-            ).isOf(Blocks.OBSIDIAN)
-        ) {
+            this.obsidian(this.portal.get(this.index))) {
             this.index++;
         }
     }
 
+    //endregion
+
+    //region Portal interaction
+
+    /**
+     * Places obsidian using an offhand swap and interaction packet.
+     *
+     * @param pos destination block position
+     * @param slot hotbar slot containing obsidian
+     * @return true when the placement packets were sent
+     */
     private boolean place(BlockPos pos, int slot) {
         if (!InvUtils.swap(slot, true)) return false;
 
@@ -231,7 +274,6 @@ public class FastPortal extends Module {
 
         try {
             this.mc.player.networkHandler.sendPacket(swap);
-
             try {
                 this.mc.player.networkHandler.sendPacket(
                     new PlayerInteractBlockC2SPacket(Hand.OFF_HAND, hit,
@@ -251,6 +293,11 @@ public class FastPortal extends Module {
         }
     }
 
+    /**
+     * Attempts to ignite the completed portal using flint and steel.
+     *
+     * @return true when the ignition interaction was sent
+     */
     private boolean ignite() {
         int slot = this.steel();
         if (slot == -1 || this.mc.interactionManager == null) {
@@ -258,15 +305,12 @@ public class FastPortal extends Module {
         }
 
         BlockPos pos = this.portal.get(0);
-
         BlockHitResult hit = new BlockHitResult(
             Vec3d.ofCenter(pos).add(0, 0.5, 0),
             Direction.UP, pos, false
         );
 
-        if (!InvUtils.swap(slot, true)) {
-            return false;
-        }
+        if (!InvUtils.swap(slot, true)) return false;
 
         try {
             this.mc.interactionManager.interactBlock(
@@ -279,6 +323,15 @@ public class FastPortal extends Module {
         }
     }
 
+    //endregion
+
+    //region Hotbar search
+
+    /**
+     * Finds an obsidian stack in the hotbar.
+     *
+     * @return matching hotbar slot, or -1 when none exists
+     */
     private int slot() {
         for (int idx = 0; idx < 9; idx++) {
             if (this.mc.player.getInventory().getStack(idx).isOf(Items.OBSIDIAN)) {
@@ -288,6 +341,11 @@ public class FastPortal extends Module {
         return -1;
     }
 
+    /**
+     * Finds flint and steel in the hotbar.
+     *
+     * @return matching hotbar slot, or -1 when none exists
+     */
     private int steel() {
         for (int idx = 0; idx < 9; idx++) {
             if (this.mc.player.getInventory().getStack(idx).isOf(Items.FLINT_AND_STEEL)) {
@@ -297,6 +355,11 @@ public class FastPortal extends Module {
         return -1;
     }
 
+    /**
+     * Counts all obsidian in the hotbar.
+     *
+     * @return total obsidian count
+     */
     private int count() {
         int count = 0;
 
@@ -308,6 +371,15 @@ public class FastPortal extends Module {
         return count;
     }
 
+    //endregion
+
+    //region Effects and completion
+
+    /**
+     * Plays the local obsidian placement sound.
+     *
+     * @param pos placement position
+     */
     private void sound(BlockPos pos) {
         BlockSoundGroup sound = Blocks.OBSIDIAN.getDefaultState().getSoundGroup();
 
@@ -317,10 +389,15 @@ public class FastPortal extends Module {
         );
     }
 
+    /**
+     * Attempts to ignite the completed portal and disables the module.
+     */
     private void done() {
         if (this.ignite()) this.info("Portal complete.");
         else this.error("Portal complete but unable to ignite.");
 
         this.toggle();
     }
+
+    //endregion
 }

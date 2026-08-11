@@ -12,6 +12,9 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+/**
+ * Redirects vanilla block breaking to Mining Tweaks.
+ */
 @Mixin(ClientPlayerInteractionManager.class)
 public abstract class MiningTweaksMixin {
     @Inject(method = "attackBlock", at = @At("HEAD"), cancellable = true)
