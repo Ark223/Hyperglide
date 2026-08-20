@@ -341,14 +341,14 @@ public class SelfTrapper extends Module {
         Vec3d target = null;
         double distance = Double.MAX_VALUE;
 
-        for (int x = minx; x <= maxx; x++) {
-            for (int z = minz; z <= maxz; z++) {
-                double centerx = x + 0.5, centerz = z + 0.5;
+        for (int px = minx; px <= maxx; px++) {
+            for (int pz = minz; pz <= maxz; pz++) {
+                double centerx = px + 0.5, centerz = pz + 0.5;
                 double dx = centerx - this.mc.player.getX();
                 double dz = centerz - this.mc.player.getZ();
                 double current = dx * dx + dz * dz;
 
-                if (current >= distance || !this.supported(box, x, z)
+                if (current >= distance || !this.supported(box, px, pz)
                     || !this.safe(box, centerx, centerz)) continue;
 
                 target = new Vec3d(centerx, this.mc.player.getY(), centerz);
@@ -463,25 +463,25 @@ public class SelfTrapper extends Module {
 
         int face = MathHelper.floor(this.mc.player.getEyeY());
 
-        for (int y = miny; y <= maxy; y++) {
-            if (this.face.get() && y == face) continue;
+        for (int py = miny; py <= maxy; py++) {
+            if (this.face.get() && py == face) continue;
 
-            for (int x = minx; x <= maxx; x++) {
-                this.add(set, new BlockPos(x, y, minz - 1), box);
-                this.add(set, new BlockPos(x, y, maxz + 1), box);
+            for (int px = minx; px <= maxx; px++) {
+                this.add(set, new BlockPos(px, py, minz - 1), box);
+                this.add(set, new BlockPos(px, py, maxz + 1), box);
             }
 
-            for (int z = minz; z <= maxz; z++) {
-                this.add(set, new BlockPos(minx - 1, y, z), box);
-                this.add(set, new BlockPos(maxx + 1, y, z), box);
+            for (int pz = minz; pz <= maxz; pz++) {
+                this.add(set, new BlockPos(minx - 1, py, pz), box);
+                this.add(set, new BlockPos(maxx + 1, py, pz), box);
             }
         }
 
         int roof = maxy + 1;
 
-        for (int x = minx; x <= maxx; x++) {
-            for (int z = minz; z <= maxz; z++) {
-                this.add(set, new BlockPos(x, roof, z), box);
+        for (int px = minx; px <= maxx; px++) {
+            for (int pz = minz; pz <= maxz; pz++) {
+                this.add(set, new BlockPos(px, roof, pz), box);
             }
         }
 
@@ -784,11 +784,11 @@ public class SelfTrapper extends Module {
     private double distance(BlockPos pos) {
         Vec3d center = this.mc.player.getBoundingBox().getCenter();
 
-        double x = pos.getX() + 0.5 - center.x;
-        double y = pos.getY() + 0.5 - center.y;
-        double z = pos.getZ() + 0.5 - center.z;
+        double px = pos.getX() + 0.5 - center.x;
+        double py = pos.getY() + 0.5 - center.y;
+        double pz = pos.getZ() + 0.5 - center.z;
 
-        return x * x + y * y + z * z;
+        return px * px + py * py + pz * pz;
     }
 
     /**

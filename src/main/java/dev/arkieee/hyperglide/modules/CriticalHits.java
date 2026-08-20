@@ -352,16 +352,16 @@ public class CriticalHits extends Module {
             ));
         }
 
-        double x = this.mc.player.getX();
-        double y = this.mc.player.getY();
-        double z = this.mc.player.getZ();
+        double px = this.mc.player.getX();
+        double py = this.mc.player.getY();
+        double pz = this.mc.player.getZ();
 
         this.send(new PlayerMoveC2SPacket.PositionAndOnGround(
-            x, y + delta, z, true, false
+            px, py + delta, pz, true, false
         ));
 
         this.send(new PlayerMoveC2SPacket.PositionAndOnGround(
-            x, y + 1.0, z, false, false
+            px, py + 1.0, pz, false, false
         ));
 
         this.freeze = 3;
@@ -500,14 +500,14 @@ public class CriticalHits extends Module {
     }
 
     /**
-     * Checks whether required client state is available.
+     * Checks whether the required client state is available.
      *
-     * @return true when packet handling is available
+     * @return true when ready to run the module
      */
     private boolean valid() {
-        return this.mc.player != null &&
-            this.mc.world != null &&
-            this.mc.getNetworkHandler() != null;
+        return this.mc.player != null
+            && this.mc.world != null
+            && this.mc.getNetworkHandler() != null;
     }
 
     //endregion

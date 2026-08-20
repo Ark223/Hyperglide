@@ -365,12 +365,12 @@ public class BlockFarm extends Module {
     /**
      * Checks whether the required client state is available.
      *
-     * @return true when farming can run
+     * @return true when ready to run the module
      */
     private boolean valid() {
-        return this.mc.player != null &&
-            this.mc.world != null &&
-            this.mc.interactionManager != null;
+        return this.mc.player != null
+            && this.mc.world != null
+            && this.mc.interactionManager != null;
     }
 
     //endregion

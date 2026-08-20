@@ -188,10 +188,10 @@ public class AutoWeb extends Module {
         int maxy = MathHelper.floor(box.maxY - edge);
         int maxz = MathHelper.floor(box.maxZ - edge);
 
-        for (int x = minx; x <= maxx; x++) {
-            for (int y = miny; y <= maxy; y++) {
-                for (int z = minz; z <= maxz; z++) {
-                    this.add(new BlockPos(x, y, z));
+        for (int px = minx; px <= maxx; px++) {
+            for (int py = miny; py <= maxy; py++) {
+                for (int pz = minz; pz <= maxz; pz++) {
+                    this.add(new BlockPos(px, py, pz));
                 }
             }
         }

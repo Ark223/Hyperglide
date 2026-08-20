@@ -431,7 +431,7 @@ public class BounceFly extends Module {
     /**
      * Returns the primary Baritone instance.
      *
-     * @return active primary Baritone instance
+     * @return primary Baritone instance
      */
     private IBaritone baritone() {
         return BaritoneAPI.getProvider().getPrimaryBaritone();

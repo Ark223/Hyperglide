@@ -29,7 +29,7 @@ dependencies {
     modImplementation "meteordevelopment:meteor-client:${project.minecraft_version}-SNAPSHOT"
 
     // Baritone
-    modCompileOnly files("libs/baritone-api-fabric-1.21.4-SNAPSHOT.jar")
+    modCompileOnly "meteordevelopment:baritone:${project.minecraft_version}-SNAPSHOT"
 }
 
 tasks {

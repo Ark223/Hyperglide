@@ -392,12 +392,12 @@ public class Scaffolding extends Module {
      * @return true when an open block is within edge distance
      */
     private boolean close() {
-        int x = (int) Math.round(this.mc.player.getX());
-        int z = (int) Math.round(this.mc.player.getZ());
+        int px = (int) Math.round(this.mc.player.getX());
+        int pz = (int) Math.round(this.mc.player.getZ());
 
         for (int ox = -1; ox <= 1; ox++) {
             for (int oz = -1; oz <= 1; oz++) {
-                this.scan.set(x + ox, this.level, z + oz);
+                this.scan.set(px + ox, this.level, pz + oz);
 
                 if (!this.mc.world.getBlockState(this.scan).isAir()) continue;
 
