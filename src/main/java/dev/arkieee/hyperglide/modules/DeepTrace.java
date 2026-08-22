@@ -22,6 +22,8 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.World;
+
 import java.util.List;
 
 public class DeepTrace extends Module {
@@ -35,14 +37,14 @@ public class DeepTrace extends Module {
             .defaultValue(
                 Items.ALLIUM, Items.AZALEA, Items.AZURE_BLUET, Items.BIG_DRIPLEAF,
                 Items.BLUE_ORCHID, Items.BROWN_MUSHROOM, Items.CORNFLOWER,
-                Items.DANDELION, Items.FLOWERING_AZALEA, Items.GLOW_INK_SAC,
-                Items.GRAVEL, Items.INK_SAC, Items.LILAC, Items.LILY_OF_THE_VALLEY,
-                Items.LILY_PAD, Items.MOSS_CARPET, Items.ORANGE_TULIP,
-                Items.OXEYE_DAISY, Items.PEONY, Items.PINK_PETALS,
-                Items.PINK_TULIP, Items.POPPY, Items.RAIL, Items.RED_MUSHROOM,
-                Items.RED_SAND, Items.RED_TULIP, Items.ROSE_BUSH, Items.SAND,
-                Items.SPORE_BLOSSOM, Items.STRING, Items.SUNFLOWER, Items.TORCH,
-                Items.WHEAT_SEEDS, Items.WHITE_TULIP
+                Items.GLOW_BERRIES, Items.DANDELION, Items.FLOWERING_AZALEA,
+                Items.GLOW_INK_SAC, Items.GRAVEL, Items.INK_SAC, Items.LILAC,
+                Items.LILY_OF_THE_VALLEY, Items.LILY_PAD, Items.MOSS_CARPET,
+                Items.ORANGE_TULIP, Items.OXEYE_DAISY, Items.PEONY,
+                Items.PINK_PETALS, Items.PINK_TULIP, Items.POPPY, Items.RAIL,
+                Items.RED_MUSHROOM, Items.RED_SAND, Items.RED_TULIP, Items.ROSE_BUSH,
+                Items.SAND, Items.SPORE_BLOSSOM, Items.STRING, Items.SUNFLOWER,
+                Items.TORCH, Items.WHEAT_SEEDS, Items.WHITE_TULIP
             )
             .build()
     );
@@ -108,8 +110,10 @@ public class DeepTrace extends Module {
     private void onRender(Render3DEvent event) {
         this.count = 0;
 
-        if (this.mc.world == null ||
-            this.mc.player == null) return;
+        if (this.mc.world == null || this.mc.player == null ||
+            !World.OVERWORLD.equals(this.mc.world.getRegistryKey())) {
+            return;
+        }
 
         for (Entity entity : this.mc.world.getEntities()) {
             if (!(entity instanceof ItemEntity item) ||
