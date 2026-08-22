@@ -9,11 +9,15 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/**
- * Redirects player look input to Control Fly's independent view.
- */
 @Mixin(Entity.class)
 public abstract class EntityMixin {
+    /**
+     * Handles player look input through Control Fly.
+     *
+     * @param x horizontal look movement
+     * @param y vertical look movement
+     * @param info injection callback
+     */
     @Inject(method = "changeLookDirection(DD)V", at = @At("HEAD"), cancellable = true)
     private void hyperglide$changeLookDirection(double x, double y, CallbackInfo info) {
         MinecraftClient client = MinecraftClient.getInstance();

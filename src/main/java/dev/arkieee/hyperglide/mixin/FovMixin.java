@@ -7,18 +7,17 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
-/**
- * Removes sprinting zoom effects while the module is active.
- */
 @Mixin(AbstractClientPlayerEntity.class)
 public abstract class FovMixin {
-    @ModifyVariable(method = "getFovMultiplier",
-        at = @At("HEAD"), argsOnly = true, ordinal = 0
-    )
+    /**
+     * Removes the sprinting FOV change when enabled.
+     *
+     * @param scale FOV multiplier
+     * @return adjusted FOV multiplier
+     */
+    @ModifyVariable(method = "getFovMultiplier", at = @At("HEAD"), argsOnly = true, ordinal = 0)
     private float hyperglide$fov(float scale) {
-        AbstractClientPlayerEntity player =
-            (AbstractClientPlayerEntity) (Object) this;
-
+        AbstractClientPlayerEntity player = (AbstractClientPlayerEntity) (Object) this;
         if (!player.isSprinting()) return scale;
 
         NoSprintFov module = Modules.get().get(NoSprintFov.class);

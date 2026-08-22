@@ -8,11 +8,13 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 
-/**
- * Applies Control Fly's independent camera rotation.
- */
 @Mixin(Camera.class)
 public abstract class CameraMixin {
+    /**
+     * Applies the independent camera rotation.
+     *
+     * @param args camera rotation arguments
+     */
     @ModifyArgs(method = "update", at = @At(value = "INVOKE",
         target = "Lnet/minecraft/client/render/Camera;setRotation(FF)V"
     ))

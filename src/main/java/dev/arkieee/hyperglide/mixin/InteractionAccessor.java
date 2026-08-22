@@ -6,11 +6,14 @@ import net.minecraft.client.world.ClientWorld;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
-/**
- * Exposes sequenced interaction packet sending.
- */
 @Mixin(ClientPlayerInteractionManager.class)
 public interface InteractionAccessor {
+    /**
+     * Sends a sequenced interaction packet.
+     *
+     * @param world client world
+     * @param creator packet creator
+     */
     @Invoker("sendSequencedPacket")
     void hyperglide$sendSequencedPacket(
         ClientWorld world, SequencedPacketCreator creator

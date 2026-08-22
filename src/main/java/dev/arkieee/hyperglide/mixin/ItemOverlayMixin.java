@@ -11,11 +11,20 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/**
- * Adds Overview overlays to rendered item stacks.
- */
 @Mixin(DrawContext.class)
 public abstract class ItemOverlayMixin {
+    /**
+     * Renders Overview over an item stack.
+     *
+     * @param entity entity rendering the item
+     * @param world current world
+     * @param stack rendered item stack
+     * @param x item X coordinate
+     * @param y item Y coordinate
+     * @param seed item render seed
+     * @param z render depth
+     * @param info injection callback
+     */
     @Inject(method = "drawItem(Lnet/minecraft/entity/LivingEntity;" +
         "Lnet/minecraft/world/World;Lnet/minecraft/item/ItemStack;" +
         "IIII)V",

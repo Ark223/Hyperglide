@@ -13,11 +13,13 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/**
- * Forwards keyboard input to movement related modules.
- */
 @Mixin(KeyboardInput.class)
 public class KeyboardInputMixin {
+    /**
+     * Forwards player input to movement modules.
+     *
+     * @param info injection callback
+     */
     @Inject(method = "tick", at = @At("TAIL"))
     private void onTick(CallbackInfo info) {
         Input input = (Input) (Object) this;
