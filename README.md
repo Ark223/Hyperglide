@@ -39,7 +39,7 @@ Make sure to downgrade to 1.20.3-1.20.4 in ViaFabricPlus settings before joining
 - **Air Place** - Allows blocks to be placed in the air without requiring the adjacent surface.
 - **Auto Pilot** - Automatically navigates through the nether using calculated travel route.
 - **Auto Web** - Places cobwebs around listed entities with optional movement prediction.
-- **Block Farm** - Repeatedly places and mines selected blocks for insanely fast farming.
+- **Block Farm** - Repeatedly places and mines selected blocks for extremely fast farming.
 - **Bounce Fly** - Uses elytra bouncing for fast highway travel with optional obstacle passing.
 - **Control Fly** - Provides controlled elytra flight using predictive movement stabilization.
 - **Critical Hits** - Triggers critical hits while keeping the player grounded during combat.
