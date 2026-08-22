@@ -254,7 +254,7 @@ public class FastPortal extends Module {
     //region Portal interaction
 
     /**
-     * Places obsidian using an offhand swap and interaction packet.
+     * Places obsidian at a frame position.
      *
      * @param pos destination block position
      * @param slot hotbar slot containing obsidian

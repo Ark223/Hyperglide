@@ -799,7 +799,7 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Sends repeated fake packets to recover stalled mining progress.
+     * Sends repeated mining packets to recover stalled progress.
      *
      * @param target stalled target
      */
@@ -956,7 +956,7 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Selects a hotbar slot and synchronizes it with the server.
+     * Synchronizes a selected hotbar slot with the server.
      *
      * @param slot hotbar slot to select
      */

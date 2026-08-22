@@ -66,7 +66,7 @@ public class CriticalHits extends Module {
     }
 
     /**
-     * Clears pending internal state.
+     * Clears pending attack state.
      */
     @Override
     public void onActivate() {
@@ -74,7 +74,7 @@ public class CriticalHits extends Module {
     }
 
     /**
-     * Releases a pending attack and clears internal state.
+     * Sends any pending attack and clears state.
      */
     @Override
     public void onDeactivate() {
@@ -152,7 +152,7 @@ public class CriticalHits extends Module {
     }
 
     /**
-     * Starts the critical attack once stationary sync finishes.
+     * Starts the delayed attack after movement has stopped.
      *
      * @param event post-tick event
      */
@@ -167,7 +167,7 @@ public class CriticalHits extends Module {
     }
 
     /**
-     * Detects an anti-cheat movement correction during a delayed attack.
+     * Detects a server movement correction during a delayed attack.
      *
      * @param event incoming packet event
      */
@@ -216,10 +216,10 @@ public class CriticalHits extends Module {
     //region Setback handling
 
     /**
-     * Rebuilds the movement packet with rotation toward the target.
+     * Adjusts a movement packet to face the target.
      *
-     * @param packet setback movement packet
-     * @return movement packet sent before the delayed attack
+     * @param packet movement packet to adjust
+     * @return adjusted movement packet
      */
     private PlayerMoveC2SPacket correct(PlayerMoveC2SPacket packet) {
         if (!(this.mc.world.getEntityById(this.entity)
@@ -253,7 +253,7 @@ public class CriticalHits extends Module {
     }
 
     /**
-     * Applies setback resync and post-attack movement suppression.
+     * Handles movement before and after a delayed attack.
      *
      * @param input player input after keyboard processing
      */
@@ -339,7 +339,7 @@ public class CriticalHits extends Module {
     }
 
     /**
-     * Starts the anti-cheat ground simulation for the cached attack.
+     * Starts the movement sequence for the delayed attack.
      */
     private void trigger() {
         if (this.cache == null || !this.valid()) return;
@@ -413,9 +413,9 @@ public class CriticalHits extends Module {
     }
 
     /**
-     * Synchronizes the selected hotbar slot with the server.
+     * Synchronizes a selected hotbar slot with the server.
      *
-     * @param slot selected hotbar slot
+     * @param slot hotbar slot to select
      */
     private void select(int slot) {
         this.send(new UpdateSelectedSlotC2SPacket(slot));
@@ -426,7 +426,7 @@ public class CriticalHits extends Module {
     //region Packet handling
 
     /**
-     * Sends a packet while bypassing the module's own packet listener.
+     * Sends a packet without handling it again.
      *
      * @param packet packet to send
      */
@@ -465,9 +465,9 @@ public class CriticalHits extends Module {
     }
 
     /**
-     * Checks states where critical hit simulation should not run.
+     * Checks whether critical hits should be skipped.
      *
-     * @return true when simulation should be skipped
+     * @return true when hits should be skipped
      */
     private boolean blocked() {
         return this.mc.player.isTouchingWater() ||

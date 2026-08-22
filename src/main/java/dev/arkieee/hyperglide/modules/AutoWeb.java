@@ -263,7 +263,7 @@ public class AutoWeb extends Module {
     //region Block placement
 
     /**
-     * Places a cobweb using a custom interaction packet.
+     * Places a cobweb at a position.
      *
      * @param pos destination block position
      * @param slot hotbar slot containing cobwebs
@@ -302,7 +302,7 @@ public class AutoWeb extends Module {
     }
 
     /**
-     * Finds a neighboring block face that can support normal placement.
+     * Finds a block face that can support normal placement.
      *
      * @param pos destination block position
      * @return block hit result used for interaction
@@ -336,10 +336,10 @@ public class AutoWeb extends Module {
     //region Validation and inventory
 
     /**
-     * Checks whether a block position is replaceable and within range.
+     * Checks whether a cobweb can be placed at a position.
      *
      * @param pos block position to check
-     * @return true when the position is valid
+     * @return true when placement is possible
      */
     private boolean valid(BlockPos pos) {
         if (!this.mc.world.getBlockState(pos).isReplaceable()) {
@@ -372,9 +372,9 @@ public class AutoWeb extends Module {
     //region Sound effects
 
     /**
-     * Plays the local cobweb placement sound.
+     * Plays the local placement sound for a selected block.
      *
-     * @param item placed cobweb block item
+     * @param item placed block item
      * @param pos placement position
      */
     private void sound(BlockItem item, BlockPos pos) {

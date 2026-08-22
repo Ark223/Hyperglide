@@ -687,10 +687,10 @@ public class SelfTrapper extends Module {
     }
 
     /**
-     * Finds a neighboring block face that can support normal placement.
+     * Finds a block face that can support normal placement.
      *
      * @param pos destination block position
-     * @return the block hit result used for interaction
+     * @return block hit result used for interaction
      */
     private BlockHitResult hit(BlockPos pos) {
         for (Direction side : Direction.values()) {
@@ -764,7 +764,7 @@ public class SelfTrapper extends Module {
     }
 
     /**
-     * Checks whether a position already exists in any placement state.
+     * Checks whether a position is already being handled.
      *
      * @param pos position to check
      * @return true when the position is queued, pending or waiting
@@ -794,7 +794,7 @@ public class SelfTrapper extends Module {
     /**
      * Returns the primary Baritone instance.
      *
-     * @return the active primary Baritone instance
+     * @return primary Baritone instance
      */
     private IBaritone baritone() {
         return BaritoneAPI.getProvider().getPrimaryBaritone();

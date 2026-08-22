@@ -79,7 +79,7 @@ public class BlockFarm extends Module {
     //region Event handlers
 
     /**
-     * Places the selected block and starts the first mining cycle.
+     * Updates block placement and mining.
      *
      * @param event pre-tick event
      */
@@ -295,7 +295,7 @@ public class BlockFarm extends Module {
     //region Mining control
 
     /**
-     * Starts mining the farm position once for instant remine setup.
+     * Starts mining the block for instant remine.
      *
      * @param state current farm block state
      */

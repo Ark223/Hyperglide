@@ -296,7 +296,7 @@ public class BounceFly extends Module {
     }
 
     /**
-     * Starts elytra flight and sends the matching command packet.
+     * Starts elytra flight.
      */
     private void glide() {
         this.mc.player.startGliding();
@@ -442,7 +442,7 @@ public class BounceFly extends Module {
     //region Direction control
 
     /**
-     * Converts the player's current yaw into a highway vector.
+     * Stores the highway direction from the player's yaw.
      */
     private void face() {
         float yaw = this.mc.player.getYaw();

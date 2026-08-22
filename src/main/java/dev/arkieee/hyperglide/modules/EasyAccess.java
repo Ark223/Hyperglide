@@ -53,7 +53,7 @@ public class EasyAccess extends Module {
     }
 
     /**
-     * Initializes interaction locks when the module starts.
+     * Resets click state when the module starts.
      */
     @Override
     public void onActivate() {
@@ -63,7 +63,7 @@ public class EasyAccess extends Module {
     }
 
     /**
-     * Clears all interaction locks when the module stops.
+     * Clears click state when the module stops.
      */
     @Override
     public void onDeactivate() {
@@ -75,7 +75,7 @@ public class EasyAccess extends Module {
     //region Event handlers
 
     /**
-     * Searches for and interacts with a hidden container.
+     * Finds and opens a hidden container.
      *
      * @param event pre-tick event
      */
@@ -156,7 +156,7 @@ public class EasyAccess extends Module {
     }
 
     /**
-     * Finds the closest hidden container intersecting the view direction.
+     * Finds the closest hidden container in the view direction.
      *
      * @return closest hidden container target, or null when none is available
      */
@@ -281,10 +281,10 @@ public class EasyAccess extends Module {
     //region Container interaction
 
     /**
-     * Checks whether an entity can provide container or merchant interaction.
+     * Checks whether an entity is a supported container or merchant.
      *
      * @param entity entity to check
-     * @return true when the entity is a supported container
+     * @return true when the entity is supported
      */
     private boolean container(Entity entity) {
         if (!entity.isAlive() || entity.isSpectator()) return false;

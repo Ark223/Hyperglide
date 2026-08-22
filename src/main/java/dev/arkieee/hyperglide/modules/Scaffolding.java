@@ -311,7 +311,7 @@ public class Scaffolding extends Module {
     }
 
     /**
-     * Finds a neighboring block face that can support normal placement.
+     * Finds a block face that can support normal placement.
      *
      * @param pos destination block position
      * @return block hit result used for interaction
