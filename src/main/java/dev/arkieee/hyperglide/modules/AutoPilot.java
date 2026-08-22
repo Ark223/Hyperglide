@@ -291,11 +291,23 @@ public class AutoPilot extends Module {
      */
     private Vec2f entry(Route.Leg leg) {
         Vec2f position = this.position();
-
         Segment segment = new Segment(leg.start(), leg.end());
-        Vec2f point = segment.point(segment.projection(position));
 
-        return point.add(segment.unit().multiply(5.0F));
+        Vec2f point = segment.point(segment.projection(position));
+        return point.add(segment.unit().multiply(3.0F));
+    }
+
+    /**
+     * Converts a route point to a block position at highway level.
+     *
+     * @param point route point
+     * @return block position at highway level
+     */
+    private BlockPos waypoint(Vec2f point) {
+        return new BlockPos(
+            Math.round(point.x), level,
+            Math.round(point.y)
+        );
     }
 
     /**
@@ -326,12 +338,18 @@ public class AutoPilot extends Module {
     private void flight() {
         if (this.goal != null) {
             if (this.join && this.landing()) {
+                if (++this.timer <= 3) return;
+
                 this.cancel();
-                this.timer = 1;
+                this.timer = 0;
+                this.block = null;
+
                 this.mc.player.setPitch(-90.0F);
                 this.state = State.Land;
                 return;
             }
+
+            if (this.join) this.timer = 0;
 
             if (this.waiting() || !this.mc.player.isOnGround()) {
                 return;
@@ -374,12 +392,7 @@ public class AutoPilot extends Module {
             return;
         }
 
-        BlockPos goal = new BlockPos(
-            Math.round(point.x), level,
-            Math.round(point.y)
-        );
-
-        if (this.fly(goal, joining)) {
+        if (this.fly(this.waypoint(point), joining)) {
             this.state = State.Flight;
         }
     }
@@ -434,25 +447,24 @@ public class AutoPilot extends Module {
      * Finishes the normal flight and creates a landing block.
      */
     private void land() {
-        this.lift();
+        this.mc.player.setPitch(-90.0F);
 
-        if (this.timer-- > 0) return;
+        if (this.mc.player.getVelocity().y > 0.0) return;
 
-        if (this.mc.player.getVelocity().y > 0.0) {
+        if (this.block == null) {
+            this.block = this.mc.player.getBlockPos().down(2);
+        }
+
+        if (this.mc.world.getBlockState(this.block).isReplaceable() &&
+            !this.place(this.block)) {
             return;
         }
 
-        if (this.mc.player.isGliding()) {
-            this.mc.player.stopGliding();
-            return;
-        }
+        if (!this.mc.player.isOnGround()) return;
 
-        BlockPos pos = this.mc.player.getBlockPos().down(2);
-        if (this.mc.world.getBlockState(pos).isReplaceable() &&
-            !this.place(pos)) {
-            return;
-        }
+        this.mc.player.stopGliding();
 
+        this.block = null;
         this.state = State.Entry;
     }
 
@@ -486,13 +498,7 @@ public class AutoPilot extends Module {
         }
 
         if (!this.aligned(road)) {
-            Vec2f point = this.entry(road);
-
-            this.walk(new BlockPos(
-                Math.round(point.x), level,
-                Math.round(point.y)
-            ), true);
-
+            this.walk(this.waypoint(this.entry(road)), true);
             return;
         }
 
@@ -557,8 +563,8 @@ public class AutoPilot extends Module {
                 bounce.toggle();
             }
 
-            if (!this.aligned(road)) return;
-            if (!this.close(road.end(), proximity)) {
+            if (!this.aligned(road) ||
+                !this.close(road.end(), proximity)) {
                 return;
             }
 
@@ -595,7 +601,8 @@ public class AutoPilot extends Module {
 
         Route.Leg following = this.route.legs().get(next);
         if (following.type() == Route.Type.Highway) {
-            this.start(next);
+            this.walk(this.waypoint(this.entry(following)), true);
+            this.state = State.Entry;
             return;
         }
 
@@ -828,7 +835,15 @@ public class AutoPilot extends Module {
             return;
         }
 
-        if (!this.mine()) return;
+        if (this.block != null) this.toward(this.block);
+
+        if (!this.mine() || this.mc.player.isOnGround()) {
+            return;
+        }
+
+        this.block = null;
+        this.release();
+
         if (baritone.getElytraProcess().isActive()) return;
 
         if (baritone.getCustomGoalProcess().isActive() ||
@@ -899,7 +914,6 @@ public class AutoPilot extends Module {
                 this.mc.interactionManager.cancelBlockBreaking();
             }
 
-            this.block = null;
             this.mining = false;
             return true;
         }
@@ -1062,17 +1076,21 @@ public class AutoPilot extends Module {
 
     //endregion
 
-    //region Direction control
+    //region Movement control
 
     /**
-     * Keeps entry flight vertical while preserving upward velocity.
+     * Moves toward the center of a block.
+     *
+     * @param pos block position to move toward
      */
-    private void lift() {
+    private void toward(BlockPos pos) {
         this.release();
+        this.rotate(new Vec2f(
+            pos.getX() + 0.5F,
+            pos.getZ() + 0.5F
+        ));
 
-        double velocity = this.mc.player.getVelocity().y;
-        this.mc.player.setVelocity(0.0, velocity, 0.0);
-        this.mc.player.setPitch(-90.0F);
+        this.mc.options.forwardKey.setPressed(true);
     }
 
     /**
