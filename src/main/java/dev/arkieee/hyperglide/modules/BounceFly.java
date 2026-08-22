@@ -73,8 +73,8 @@ public class BounceFly extends Module {
         .build()
     );
 
-    private int x;
-    private int z;
+    private int px;
+    private int pz;
     private int dx;
     private int dz;
 
@@ -100,8 +100,8 @@ public class BounceFly extends Module {
             this.mc.world == null) return;
 
         this.level = this.mc.player.getBlockY();
-        this.x = this.snap(this.mc.player.getX());
-        this.z = this.snap(this.mc.player.getZ());
+        this.face();
+        this.center();
 
         this.slow = 0;
         this.warm = 0;
@@ -110,7 +110,6 @@ public class BounceFly extends Module {
         this.started = false;
 
         this.mc.player.setSprinting(false);
-        this.face();
     }
 
     /**
@@ -406,15 +405,16 @@ public class BounceFly extends Module {
     private BlockPos goal(Vec3d point) {
         Vec3d dir = new Vec3d(this.dx, 0, this.dz).normalize();
 
-        double ox = point.x - this.x;
-        double oz = point.z - this.z;
+        double ox = point.x - this.px;
+        double oz = point.z - this.pz;
         double along = ox * dir.x + oz * dir.z;
 
-        double x = this.x + dir.x * (along + reach);
-        double z = this.z + dir.z * (along + reach);
+        double px = this.px + dir.x * (along + reach);
+        double pz = this.pz + dir.z * (along + reach);
 
-        return new BlockPos((int) Math.round(x),
-            this.level, (int) Math.round(z));
+        return new BlockPos((int) Math.round(px),
+            this.level, (int) Math.round(pz)
+        );
     }
 
     /**
@@ -450,6 +450,26 @@ public class BounceFly extends Module {
 
         this.dx = this.dxs[face];
         this.dz = this.dzs[face];
+    }
+
+    /**
+     * Finds the snapped center line of the current highway.
+     */
+    private void center() {
+        double px = this.mc.player.getX();
+        double pz = this.mc.player.getZ();
+
+        if (this.dx == 0) {
+            this.px = this.snap(px);
+            this.pz = 0;
+        } else if (this.dz == 0) {
+            this.px = 0;
+            this.pz = this.snap(pz);
+        } else {
+            Boolean eq = this.dx == this.dz;
+            this.px = this.snap(eq ? px - pz : px + pz);
+            this.pz = 0;
+        }
     }
 
     /**
