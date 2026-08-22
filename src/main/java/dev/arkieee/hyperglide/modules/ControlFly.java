@@ -17,6 +17,7 @@ import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.FireworksComponent;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.projectile.FireworkRocketEntity;
@@ -31,7 +32,7 @@ import net.minecraft.util.math.Vec3d;
 
 public class ControlFly extends Module {
     private static final double epsilon = 1.0E-6;
-    private static final double vertical = 0.15;
+    private static final double ceiling = 34.0;
     private static final double ticks = 20.0;
 
     private static final float bound = 60.0F;
@@ -42,6 +43,8 @@ public class ControlFly extends Module {
     private static final double gain = 0.30;
     private static final double lift = 0.004;
 
+    private static final double sharp = Math.cos(Math.toRadians(45.0));
+
     private final SettingGroup movement = this.settings.createGroup("Movement");
     private final SettingGroup auto = this.settings.createGroup("Automation");
 
@@ -50,7 +53,7 @@ public class ControlFly extends Module {
         .description("Maximum controlled speed in blocks per second.")
         .defaultValue(34.0)
         .min(20.0)
-        .sliderMax(40.0)
+        .sliderMax(34.0)
         .build()
     );
 
@@ -59,13 +62,13 @@ public class ControlFly extends Module {
         .description("Uses a rocket when speed drops below this value.")
         .defaultValue(30.0)
         .min(20.0)
-        .sliderMax(40.0)
+        .sliderMax(34.0)
         .build()
     );
 
     private final Setting<Double> penalty = this.movement.add(new DoubleSetting.Builder()
         .name("ascent-penalty")
-        .description("Speed removed while flying nearly straight up.")
+        .description("Speed removed from the limit while flying upward.")
         .defaultValue(2.0)
         .min(0.0)
         .sliderMax(5.0)
@@ -162,7 +165,6 @@ public class ControlFly extends Module {
         }
 
         this.view();
-        this.takeoff();
         this.control();
     }
 
@@ -173,12 +175,18 @@ public class ControlFly extends Module {
      */
     @EventHandler
     private void move(PlayerMoveEvent event) {
-        if (!this.valid()
-            || event.type != MovementType.SELF
-            || !this.mc.player.isGliding()) return;
+        if (!this.valid() ||
+            event.type != MovementType.SELF ||
+            !this.mc.player.isGliding()) return;
 
         Vec3d input = this.direction();
         if (input.lengthSquared() < epsilon) {
+            this.stop(event);
+            return;
+        }
+
+        if (this.flight.brake) {
+            this.flight.brake = false;
             this.stop(event);
             return;
         }
@@ -187,7 +195,7 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Detects used rockets and begins waiting for their entity.
+     * Tracks when a firework is used.
      *
      * @param event outgoing packet event
      */
@@ -199,42 +207,15 @@ public class ControlFly extends Module {
         }
 
         ItemStack stack = this.mc.player.getStackInHand(packet.getHand());
-        if (stack.isOf(Items.FIREWORK_ROCKET)) this.await();
+        if (!stack.isOf(Items.FIREWORK_ROCKET)) return;
+
+        this.await();
+        this.count(stack);
     }
 
     //endregion
 
     //region State management
-
-    /**
-     * Clears manual, leveling and steering flight states.
-     */
-    private void idle() {
-        this.flight.manual = false;
-        this.flight.leveling = false;
-        this.flight.steering = false;
-    }
-
-    /**
-     * Clears transient boost, flight and rotation state.
-     */
-    private void clear() {
-        this.boost.expiry = 0;
-        this.boost.pending = false;
-        this.boost.launching = false;
-        this.boost.automatic = false;
-        this.boost.rocket = null;
-
-        this.flight.manual = false;
-        this.flight.leveling = false;
-        this.flight.steering = false;
-
-        this.flight.altitude =
-            this.mc.player == null ?
-            0.0 : this.mc.player.getY();
-
-        this.turn.active = false;
-    }
 
     /**
      * Resets all runtime flight, camera, boost and rotation state.
@@ -251,9 +232,42 @@ public class ControlFly extends Module {
         this.view.yaw = 0.0F;
         this.view.pitch = 0.0F;
 
-        this.turn.active = false;
         this.turn.yaw = 0.0F;
         this.turn.pitch = 0.0F;
+    }
+
+    /**
+     * Clears transient boost, flight and rotation state.
+     */
+    private void clear() {
+        this.boost.expiry = 0;
+        this.boost.end = 0;
+
+        this.boost.pending = false;
+        this.boost.launching = false;
+        this.boost.automatic = false;
+        this.boost.rocket = null;
+
+        this.idle();
+
+        this.flight.input = 0;
+        this.flight.dir = Vec3d.ZERO;
+        this.flight.brake = false;
+
+        this.flight.altitude =
+            this.mc.player == null ?
+            0.0 : this.mc.player.getY();
+
+        this.turn.active = false;
+    }
+
+    /**
+     * Clears manual, leveling and steering flight states.
+     */
+    private void idle() {
+        this.flight.manual = false;
+        this.flight.leveling = false;
+        this.flight.steering = false;
     }
 
     //endregion
@@ -266,22 +280,33 @@ public class ControlFly extends Module {
     private void control() {
         Vec3d input = this.direction();
         if (input.lengthSquared() < epsilon) {
-            this.idle();
+            this.rest();
             return;
         }
 
-        input = input.normalize();
+        int state = this.state();
+        boolean redirect =
+            this.flight.input != 0 &&
+            this.flight.input != state;
 
+        this.flight.input = state;
         this.flight.manual =
             this.mc.options.jumpKey.isPressed() ||
             this.mc.options.sneakKey.isPressed();
 
-        Vec3d dir = this.steer(input);
-        boolean boosted = this.active();
+        Vec3d dir = this.steer(input.normalize());
 
+        if (this.flight.dir.lengthSquared() >= epsilon
+            && this.sharp(this.flight.dir, dir)) {
+            this.flight.brake = true;
+        }
+
+        this.flight.dir = dir;
+
+        boolean boosted = this.active();
         this.aim(dir, boosted);
 
-        boolean launch = this.launch(dir, boosted);
+        boolean launch = this.launch(dir, boosted, redirect);
         if (launch) this.prepare();
 
         this.mc.player.setYaw(this.flight.yaw);
@@ -291,63 +316,22 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Selects manual pitch control or automatic altitude leveling.
-     *
-     * @param dir normalized movement direction
-     * @param boosted whether an active rocket is boosting the player
+     * Keeps normal player look and renews an expiring boost while stopped.
      */
-    private void aim(Vec3d dir, boolean boosted) {
-        if (this.flight.manual) {
-            this.flight.leveling = false;
-            this.flight.altitude = this.mc.player.getY();
-            this.flight.pitch = this.angle(dir);
-            return;
-        }
+    private void rest() {
+        this.idle();
 
-        if (!this.flight.leveling) {
-            this.flight.altitude = this.mc.player.getY();
-            this.flight.leveling = true;
-        }
+        this.flight.yaw = this.mc.player.getYaw();
+        this.flight.pitch = this.mc.player.getPitch();
 
-        this.flight.pitch = !this.gravity.get() ? 0.0F :
-            this.level(this.mc.player.getVelocity(), boosted);
-    }
+        if (!this.renew()) return;
 
-    /**
-     * Checks whether another rocket should be launched.
-     *
-     * @param dir normalized flight direction
-     * @param boosted whether an active rocket is boosting the player
-     * @return true when speed is below the launch threshold
-     */
-    private boolean launch(Vec3d dir, boolean boosted) {
-        Vec3d next = this.predict(
-            this.mc.player.getVelocity(), this.flight.yaw,
-            this.flight.pitch, boosted
-        );
-
-        double low = Math.min(
-            this.minimum.get() / ticks, this.maximum(dir)
-        );
-
-        return !this.busy() && next.length() < low && this.stocked();
-    }
-
-    /**
-     * Marks a rocket launch as pending and adjusts leveling.
-     */
-    private void prepare() {
         this.await();
-
-        if (!this.flight.manual && this.gravity.get()) {
-            this.flight.pitch = this.level(
-                this.mc.player.getVelocity(), true
-            );
-        }
+        this.rotate(true);
     }
 
     /**
-     * Stops movement when no flight direction is provided.
+     * Stops movement after idle input is confirmed.
      *
      * @param event player movement event
      */
@@ -363,9 +347,8 @@ public class ControlFly extends Module {
      * @param dir normalized flight direction
      */
     private void limit(PlayerMoveEvent event, Vec3d dir) {
-        double maximum = this.maximum(dir);
-
         double horizontal = event.movement.horizontalLength();
+        double maximum = this.maximum(dir);
         double amount = horizontal;
 
         if (horizontal > maximum) {
@@ -376,18 +359,19 @@ public class ControlFly extends Module {
 
         if (Math.abs(amount - horizontal) <= epsilon) return;
 
-        Vec3d flat = this.flat(event.movement, amount, horizontal);
-        Vec3d adjusted = new Vec3d(flat.x, event.movement.y, flat.z);
+        Vec3d adjusted = this.flat(event.movement, amount, horizontal);
 
         ((IVec3d) event.movement).meteor$set(
-            adjusted.x, adjusted.y, adjusted.z
+            adjusted.x, event.movement.y, adjusted.z
         );
 
-        this.mc.player.setVelocity(adjusted);
+        this.mc.player.setVelocity(
+            new Vec3d(adjusted.x, event.movement.y, adjusted.z)
+        );
     }
 
     /**
-     * Scales horizontal movement to a requested magnitude.
+     * Scales horizontal movement without changing its direction.
      *
      * @param movement current movement vector
      * @param amount requested horizontal magnitude
@@ -396,9 +380,10 @@ public class ControlFly extends Module {
      */
     private Vec3d flat(Vec3d movement, double amount, double horizontal) {
         if (horizontal > epsilon) {
-            return new Vec3d(movement.x, 0.0, movement.z)
-                .multiply(amount / horizontal);
+            Vec3d flat = new Vec3d(movement.x, 0.0, movement.z);
+            return flat.multiply(amount / horizontal);
         }
+
         return Vec3d.fromPolar(0.0F, this.flight.yaw).multiply(amount);
     }
 
@@ -428,6 +413,48 @@ public class ControlFly extends Module {
         this.boost.expiry = this.mc.player.age + timeout;
     }
 
+    /**
+     * Stores how long the firework can boost the player.
+     *
+     * @param stack used firework stack
+     */
+    private void count(ItemStack stack) {
+        FireworksComponent fireworks = stack.get(DataComponentTypes.FIREWORKS);
+        int duration = fireworks == null ? 1 : fireworks.flightDuration();
+
+        this.boost.end = this.mc.player.age + Math.max(1, (duration + 1) * 10);
+    }
+
+    /**
+     * Checks whether the tracked rocket is currently active.
+     *
+     * @return true when the tracked rocket is alive
+     */
+    private boolean active() {
+        return this.boost.rocket != null && this.boost.rocket.isAlive();
+    }
+
+    /**
+     * Checks whether a rocket is pending, launching or active.
+     *
+     * @return true when another rocket should not be launched
+     */
+    private boolean busy() {
+        return this.boost.pending || this.boost.launching || this.active();
+    }
+
+    /**
+     * Checks whether a stopped flight should renew its active boost.
+     *
+     * @return true one tick before the tracked boost window ends
+     */
+    private boolean renew() {
+        return this.active() && this.boost.end > 0
+            && this.mc.player.age >= this.boost.end - 1
+            && !this.boost.pending && !this.boost.launching
+            && this.stocked();
+    }
+
     //endregion
 
     //region Automatic takeoff
@@ -436,7 +463,7 @@ public class ControlFly extends Module {
      * Starts elytra flight after jump is held for the configured duration.
      */
     private void takeoff() {
-        if (!this.starter.get() || this.mc.player.isGliding()) {
+        if (!this.starter.get()) {
             this.jump = 0;
             return;
         }
@@ -450,7 +477,7 @@ public class ControlFly extends Module {
 
         if (this.jump < this.timer.get()
             || this.mc.player.isOnGround()
-            || !this.glider()) return;
+            || !this.elytra()) return;
 
         this.jump = 0;
 
@@ -459,16 +486,6 @@ public class ControlFly extends Module {
                 ClientCommandC2SPacket.Mode.START_FALL_FLYING
             )
         );
-    }
-
-    /**
-     * Checks whether the equipped chest item supports gliding.
-     *
-     * @return true when a glider is equipped
-     */
-    private boolean glider() {
-        return this.mc.player.getEquippedStack(EquipmentSlot.CHEST)
-            .contains(DataComponentTypes.GLIDER);
     }
 
     //endregion
@@ -495,8 +512,26 @@ public class ControlFly extends Module {
         if (this.mc.options.jumpKey.isPressed()) dir = dir.add(0.0, 1.0, 0.0);
         if (this.mc.options.sneakKey.isPressed()) dir = dir.add(0.0, -1.0, 0.0);
 
-        if (dir.lengthSquared() < epsilon && this.forward.get()) return front;
-        return dir;
+        return dir.lengthSquared() < epsilon && this.forward.get() ? front : dir;
+    }
+
+    /**
+     * Returns the current movement key state.
+     *
+     * @return movement key state
+     */
+    private int state() {
+        int state = 0;
+
+        if (this.mc.options.forwardKey.isPressed()) state |= 1;
+        if (this.mc.options.backKey.isPressed()) state |= 2;
+        if (this.mc.options.rightKey.isPressed()) state |= 4;
+        if (this.mc.options.leftKey.isPressed()) state |= 8;
+        if (this.mc.options.jumpKey.isPressed()) state |= 16;
+        if (this.mc.options.sneakKey.isPressed()) state |= 32;
+
+        if (state == 0 && this.forward.get()) state = 1;
+        return state;
     }
 
     /**
@@ -527,6 +562,17 @@ public class ControlFly extends Module {
     }
 
     /**
+     * Checks whether the direction changes sharply.
+     *
+     * @param first first direction
+     * @param second second direction
+     * @return true when the turn is sharp
+     */
+    private boolean sharp(Vec3d first, Vec3d second) {
+        return first.dotProduct(second) < sharp - epsilon;
+    }
+
+    /**
      * Converts a direction vector into a clamped flight pitch.
      *
      * @param dir normalized flight direction
@@ -541,6 +587,29 @@ public class ControlFly extends Module {
     //endregion
 
     //region Altitude control
+
+    /**
+     * Selects manual pitch control or automatic altitude leveling.
+     *
+     * @param dir normalized movement direction
+     * @param boosted whether an active rocket is boosting the player
+     */
+    private void aim(Vec3d dir, boolean boosted) {
+        if (this.flight.manual) {
+            this.flight.leveling = false;
+            this.flight.altitude = this.mc.player.getY();
+            this.flight.pitch = this.angle(dir);
+            return;
+        }
+
+        if (!this.flight.leveling) {
+            this.flight.altitude = this.mc.player.getY();
+            this.flight.leveling = true;
+        }
+
+        this.flight.pitch = !this.gravity.get() ? 0.0F :
+            this.level(this.mc.player.getVelocity(), boosted);
+    }
 
     /**
      * Finds the pitch that most closely maintains the target altitude.
@@ -672,13 +741,14 @@ public class ControlFly extends Module {
      * @return maximum speed in blocks per tick
      */
     private double maximum(Vec3d dir) {
-        double speed = this.maximum.get() / ticks;
+        double speed = ceiling;
 
-        if (dir.y > 0.0 && Math.hypot(dir.x, dir.z) <= vertical) {
-            speed -= this.penalty.get() / ticks;
+        if (dir.y > 0.0) {
+            speed -= this.penalty.get() * dir.y;
         }
 
-        return Math.max(0.0, speed);
+        speed = Math.min(this.maximum.get(), speed);
+        return Math.max(0.0, speed / ticks);
     }
 
     /**
@@ -818,6 +888,41 @@ public class ControlFly extends Module {
     //region Rocket handling
 
     /**
+     * Checks whether another rocket should be launched.
+     *
+     * @param dir normalized flight direction
+     * @param boosted whether an active rocket is boosting the player
+     * @param redirect whether controlled movement changed direction
+     * @return true when direction or speed requires another rocket
+     */
+    private boolean launch(Vec3d dir, boolean boosted, boolean redirect) {
+        if (this.busy() || !this.stocked()) return false;
+        if (!boosted && redirect) return true;
+
+        Vec3d next = this.predict(
+            this.mc.player.getVelocity(),
+            this.flight.yaw, this.flight.pitch, boosted
+        );
+
+        return next.length() < Math.min(
+            this.minimum.get() / ticks, this.maximum(dir)
+        );
+    }
+
+    /**
+     * Marks a rocket launch as pending and adjusts leveling.
+     */
+    private void prepare() {
+        this.await();
+
+        if (!this.flight.manual && this.gravity.get()) {
+            this.flight.pitch = this.level(
+                this.mc.player.getVelocity(), true
+            );
+        }
+    }
+
+    /**
      * Checks whether a firework rocket is available in the hotbar or offhand.
      *
      * @return true when a rocket is available
@@ -860,6 +965,7 @@ public class ControlFly extends Module {
         try {
             if (swap) this.select(result.slot());
             this.send(hand, yaw, pitch);
+            this.count(stack);
         } finally {
             if (swap) this.select(selected);
             this.boost.automatic = false;
@@ -892,7 +998,7 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Sends a sequenced item interaction using the controlled rotation.
+     * Uses the firework at the current flight rotation.
      *
      * @param hand hand containing the rocket
      * @param yaw controlled flight yaw
@@ -916,34 +1022,22 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Associates a spawned rocket entity with the current boost.
+     * Tracks the firework currently boosting the player.
      *
-     * @param rocket spawned firework rocket entity
+     * @param rocket player-owned firework rocket
      */
     public void track(FireworkRocketEntity rocket) {
-        if (!this.valid()) return;
+        if (!this.valid() || this.boost.rocket == rocket) {
+            return;
+        }
+
+        if (this.boost.rocket != null &&
+            this.boost.rocket.isAlive() &&
+            rocket.age >= this.boost.rocket.age) return;
 
         this.boost.rocket = rocket;
         this.boost.pending = false;
         this.boost.launching = false;
-    }
-
-    /**
-     * Checks whether the tracked rocket is currently active.
-     *
-     * @return true when the tracked rocket is alive
-     */
-    private boolean active() {
-        return this.boost.rocket != null && this.boost.rocket.isAlive();
-    }
-
-    /**
-     * Checks whether a rocket is pending, launching or active.
-     *
-     * @return true when another rocket should not be launched
-     */
-    private boolean busy() {
-        return this.boost.pending || this.boost.launching || this.active();
     }
 
     //endregion
@@ -956,8 +1050,13 @@ public class ControlFly extends Module {
      * @return true when camera control is available
      */
     public boolean view() {
-        if (!this.isActive() || this.mc.player == null
-            || !this.mc.player.isGliding()) return false;
+        if (!this.isActive() || this.mc.player == null ||
+            !this.mc.player.isGliding()) return false;
+
+        if (!this.moving()) {
+            this.restore();
+            return false;
+        }
 
         if (!this.view.active) {
             this.view.yaw = this.mc.player.getYaw();
@@ -988,8 +1087,8 @@ public class ControlFly extends Module {
      * @return true when the custom camera rotation should be used
      */
     public boolean camera() {
-        return this.isActive() && this.view.active &&
-            this.mc.player != null && this.mc.player.isGliding();
+        return this.isActive() && this.mc.player != null &&
+            this.view.active && this.mc.player.isGliding();
     }
 
     /**
@@ -1026,12 +1125,32 @@ public class ControlFly extends Module {
 
     //endregion
 
-    //region Validation
+    //region Validation and utilities
 
     /**
-     * Checks whether the required client and world state is available.
+     * Checks whether flight input currently requests movement.
      *
-     * @return true when player, world and network handler are available
+     * @return true when controlled movement is active
+     */
+    private boolean moving() {
+        return this.direction().lengthSquared() >= epsilon;
+    }
+
+    /**
+     * Checks whether the player has an elytra equipped.
+     *
+     * @return true when an elytra is equipped in the chest slot
+     */
+    private boolean elytra() {
+        return this.mc.player.getEquippedStack(
+            EquipmentSlot.CHEST
+        ).isOf(Items.ELYTRA);
+    }
+
+    /**
+     * Checks whether the required client state is available.
+     *
+     * @return true when ready to run the module
      */
     private boolean valid() {
         return this.mc.player != null
@@ -1055,11 +1174,25 @@ public class ControlFly extends Module {
      * Stores active controlled flight state.
      */
     private static class Flight {
+        private int input;
+
         private boolean manual;
         private boolean leveling;
         private boolean steering;
+        private boolean brake;
 
         private double altitude;
+        private float yaw;
+        private float pitch;
+
+        private Vec3d dir = Vec3d.ZERO;
+    }
+
+    /**
+     * Stores the most recently synchronized flight rotation.
+     */
+    private static class Turn {
+        private boolean active;
         private float yaw;
         private float pitch;
     }
@@ -1078,21 +1211,13 @@ public class ControlFly extends Module {
      */
     private static class Boost {
         private int expiry;
+        private int end;
 
         private boolean pending;
         private boolean launching;
         private boolean automatic;
 
         private FireworkRocketEntity rocket;
-    }
-
-    /**
-     * Stores the most recently synchronized flight rotation.
-     */
-    private static class Turn {
-        private boolean active;
-        private float yaw;
-        private float pitch;
     }
 
     //endregion
