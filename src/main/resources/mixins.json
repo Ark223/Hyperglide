@@ -8,6 +8,7 @@
     "EntityMixin",
     "FireworkMixin",
     "FovMixin",
+    "InGameHudMixin",
     "InteractionAccessor",
     "ItemOverlayMixin",
     "KeyboardInputMixin",

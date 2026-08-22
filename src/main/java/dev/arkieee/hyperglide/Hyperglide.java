@@ -2,6 +2,7 @@ package dev.arkieee.hyperglide;
 
 import com.mojang.logging.LogUtils;
 import dev.arkieee.hyperglide.modules.AirPlace;
+import dev.arkieee.hyperglide.modules.AutoPilot;
 import dev.arkieee.hyperglide.modules.AutoWeb;
 import dev.arkieee.hyperglide.modules.BlockFarm;
 import dev.arkieee.hyperglide.modules.BounceFly;
@@ -13,8 +14,10 @@ import dev.arkieee.hyperglide.modules.ElytraTweaks;
 import dev.arkieee.hyperglide.modules.FastPortal;
 import dev.arkieee.hyperglide.modules.FD3Crafter;
 import dev.arkieee.hyperglide.modules.MiningTweaks;
+import dev.arkieee.hyperglide.modules.Navigation;
 import dev.arkieee.hyperglide.modules.NoSprintFov;
 import dev.arkieee.hyperglide.modules.Overview;
+import dev.arkieee.hyperglide.modules.RocketBoost;
 import dev.arkieee.hyperglide.modules.Scaffolding;
 import dev.arkieee.hyperglide.modules.SelfTrapper;
 import dev.arkieee.hyperglide.modules.TriggerBot;
@@ -33,6 +36,7 @@ public class Hyperglide extends MeteorAddon {
     public void onInitialize() {
         LOG.info("Initializing Hyperglide");
         Modules.get().add(new AirPlace());
+        Modules.get().add(new AutoPilot());
         Modules.get().add(new AutoWeb());
         Modules.get().add(new BlockFarm());
         Modules.get().add(new BounceFly());
@@ -44,8 +48,10 @@ public class Hyperglide extends MeteorAddon {
         Modules.get().add(new FastPortal());
         Modules.get().add(new FD3Crafter());
         Modules.get().add(new MiningTweaks());
+        Modules.get().add(new Navigation());
         Modules.get().add(new NoSprintFov());
         Modules.get().add(new Overview());
+        Modules.get().add(new RocketBoost());
         Modules.get().add(new Scaffolding());
         Modules.get().add(new SelfTrapper());
         Modules.get().add(new TriggerBot());

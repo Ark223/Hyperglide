@@ -14,6 +14,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.SpawnEggItem;
 import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
+import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
 import net.minecraft.sound.BlockSoundGroup;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.util.Hand;
@@ -21,6 +22,7 @@ import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.Vec3d;
 
 public class AirPlace extends Module {
     private final SettingGroup general = this.settings.getDefaultGroup();
@@ -77,7 +79,7 @@ public class AirPlace extends Module {
     }
 
     /**
-     * Clears the current target and initializes the interaction lock.
+     * Resets the target and click state.
      */
     @Override
     public void onActivate() {
@@ -87,7 +89,7 @@ public class AirPlace extends Module {
     }
 
     /**
-     * Clears the current target and interaction state.
+     * Clears the target and click state.
      */
     @Override
     public void onDeactivate() {
@@ -105,9 +107,7 @@ public class AirPlace extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (this.mc.player == null ||
-            this.mc.world == null ||
-            this.mc.getCameraEntity() == null) {
+        if (!this.valid() || this.mc.getCameraEntity() == null) {
             this.hit = null;
             this.lock = false;
             return;
@@ -117,7 +117,6 @@ public class AirPlace extends Module {
         if (!pressed) this.lock = false;
 
         ItemStack stack = this.mc.player.getMainHandStack();
-
         if (!this.valid(stack)) {
             this.hit = null;
             return;
@@ -147,7 +146,7 @@ public class AirPlace extends Module {
     }
 
     /**
-     * Cancels the normal interaction packet after an air placement.
+     * Prevents the normal block interaction after air placement.
      *
      * @param event outgoing packet event
      */
@@ -166,8 +165,7 @@ public class AirPlace extends Module {
      */
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (!this.render.get() || this.hit == null ||
-            this.mc.player == null || this.mc.world == null ||
+        if (!this.render.get() || this.hit == null || !this.valid() ||
             !this.valid(this.mc.player.getMainHandStack()) ||
             !this.mc.world.getBlockState(this.hit.getBlockPos()).isReplaceable()) {
             return;
@@ -183,7 +181,45 @@ public class AirPlace extends Module {
     //region Block placement
 
     /**
-     * Places the selected item using a custom interaction method.
+     * Places a block from hotbar at a specific position.
+     *
+     * @param pos target block position
+     * @param slot hotbar slot containing the block
+     * @return true when the placement packet was sent
+     */
+    public boolean place(BlockPos pos, int slot) {
+        if (!this.valid() || slot < 0 || slot > 8 ||
+            !this.mc.world.getBlockState(pos).isReplaceable()) {
+            return false;
+        }
+
+        ItemStack stack = this.mc.player.getInventory().getStack(slot);
+        if (!(stack.getItem() instanceof BlockItem)) return false;
+
+        int selected = this.mc.player.getInventory().selectedSlot;
+        if (selected != slot) {
+            this.mc.player.getInventory().setSelectedSlot(slot);
+            this.select(slot);
+        }
+
+        try {
+            BlockHitResult hit = new BlockHitResult(
+                Vec3d.ofCenter(pos), Direction.UP, pos, false
+            );
+
+            this.place(hit, stack);
+        } finally {
+            if (selected != slot) {
+                this.mc.player.getInventory().setSelectedSlot(selected);
+                this.select(selected);
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Places the selected item at the target.
      *
      * @param hit target block hit result
      * @param stack selected item stack
@@ -205,9 +241,9 @@ public class AirPlace extends Module {
             );
         } finally {
             this.own = false;
+            this.mc.player.networkHandler.sendPacket(swap);
         }
 
-        this.mc.player.networkHandler.sendPacket(swap);
         this.mc.player.swingHand(Hand.MAIN_HAND);
 
         if (stack.getItem() instanceof BlockItem block) {
@@ -215,9 +251,31 @@ public class AirPlace extends Module {
         }
     }
 
+    /**
+     * Synchronizes a selected hotbar slot with the server.
+     *
+     * @param slot hotbar slot to select
+     */
+    private void select(int slot) {
+        this.mc.getNetworkHandler().sendPacket(
+            new UpdateSelectedSlotC2SPacket(slot)
+        );
+    }
+
     //endregion
 
     //region Validation
+
+    /**
+     * Checks whether the required client state is available.
+     *
+     * @return true when ready to run the module
+     */
+    private boolean valid() {
+        return this.mc.player != null
+            && this.mc.world != null
+            && this.mc.getNetworkHandler() != null;
+    }
 
     /**
      * Checks whether an item can be placed using Air Place.
@@ -235,13 +293,13 @@ public class AirPlace extends Module {
     //region Sound effects
 
     /**
-     * Plays the local placement sound for a block item.
+     * Plays the local placement sound for a selected block.
      *
-     * @param block placed block item
+     * @param item placed block item
      * @param pos placement position
      */
-    private void sound(BlockItem block, BlockPos pos) {
-        BlockSoundGroup sound = block.getBlock().getDefaultState().getSoundGroup();
+    private void sound(BlockItem item, BlockPos pos) {
+        BlockSoundGroup sound = item.getBlock().getDefaultState().getSoundGroup();
 
         this.mc.world.playSound(pos.getX() + 0.5, pos.getY() + 0.5,
             pos.getZ() + 0.5, sound.getPlaceSound(), SoundCategory.BLOCKS,
