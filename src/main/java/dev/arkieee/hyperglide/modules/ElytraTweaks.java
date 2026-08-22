@@ -36,8 +36,8 @@ import net.minecraft.world.RaycastContext;
 
 public class ElytraTweaks extends Module {
     private static final double epsilon = 1.0E-6;
-    private static final double rise = 0.30;
 
+    private static final int delay = 5;
     private static final int chest = 6;
     private static final int xaxis = 1;
     private static final int zaxis = 2;
@@ -81,18 +81,18 @@ public class ElytraTweaks extends Module {
         .build()
     );
 
-    private final Setting<Boolean> redeploy = this.recovery.add(new BoolSetting.Builder()
-        .name("redeploy")
-        .description("Restarts Baritone elytra flight when gliding stops.")
+    private final Setting<Boolean> deploy = this.recovery.add(new BoolSetting.Builder()
+        .name("auto-deploy")
+        .description("Deploys the elytra when Baritone flight is active.")
         .defaultValue(true)
         .build()
     );
 
     private final Setting<Boolean> escape = this.recovery.add(new BoolSetting.Builder()
         .name("liquid-escape")
-        .description("Moves upward when Baritone cannot redeploy inside liquid.")
+        .description("Moves upward when Baritone cannot deploy inside liquid.")
         .defaultValue(true)
-        .visible(this.redeploy::get)
+        .visible(this.deploy::get)
         .build()
     );
 
@@ -102,7 +102,14 @@ public class ElytraTweaks extends Module {
         .defaultValue(5)
         .min(1)
         .sliderMax(10)
-        .visible(this.redeploy::get)
+        .visible(this.deploy::get)
+        .build()
+    );
+
+    private final Setting<Boolean> repair = this.recovery.add(new BoolSetting.Builder()
+        .name("repair-mode")
+        .description("Automatically equips damaged elytras for repair.")
+        .defaultValue(false)
         .build()
     );
 
@@ -116,7 +123,7 @@ public class ElytraTweaks extends Module {
     private final Setting<Integer> ticks = this.safety.add(new IntSetting.Builder()
         .name("collision-ticks")
         .description("How many movement ticks ahead to scan for collisions.")
-        .defaultValue(2)
+        .defaultValue(3)
         .min(1)
         .sliderMax(5)
         .visible(this.avoid::get)
@@ -126,7 +133,7 @@ public class ElytraTweaks extends Module {
     private final Setting<Double> expand = this.safety.add(new DoubleSetting.Builder()
         .name("hitbox-expand")
         .description("Expands the hitbox used for collision prediction.")
-        .defaultValue(0.15)
+        .defaultValue(0.05)
         .min(0.0)
         .sliderMax(0.2)
         .decimalPlaces(2)
@@ -152,7 +159,7 @@ public class ElytraTweaks extends Module {
     );
 
     private final Setting<Integer> timer = this.takeoff.add(new IntSetting.Builder()
-        .name("takeoff-ticks")
+        .name("takeoff-timer")
         .description("Jump hold ticks required before starting flight.")
         .defaultValue(5)
         .min(1)
@@ -163,7 +170,7 @@ public class ElytraTweaks extends Module {
 
     private int tap;
     private int jump;
-    private int deploy;
+    private int sync;
     private int retry;
     private int hold;
 
@@ -219,10 +226,16 @@ public class ElytraTweaks extends Module {
             this.mc.options.sneakKey.setPressed(true);
         }
 
+        if (this.escaping) {
+            this.mc.options.jumpKey.setPressed(true);
+        }
+
         if (this.phase > 0) {
             this.strict();
             return;
         }
+
+        if (this.mend()) return;
 
         this.doublejump();
         this.ground();
@@ -231,7 +244,7 @@ public class ElytraTweaks extends Module {
 
         if (this.bounce()) {
             this.jump = 0;
-            this.deploy = 0;
+            this.sync = 0;
         } else {
             this.takeoff();
             this.deploy();
@@ -241,7 +254,7 @@ public class ElytraTweaks extends Module {
     }
 
     /**
-     * Stops dangerous flight movement until collision release is allowed.
+     * Stops unsafe movement before a collision.
      *
      * @param event player movement event
      */
@@ -319,9 +332,13 @@ public class ElytraTweaks extends Module {
             this.mc.options.sneakKey.setPressed(false);
         }
 
+        if (this.escaping) {
+            this.mc.options.jumpKey.setPressed(false);
+        }
+
         this.tap = 0;
         this.jump = 0;
-        this.deploy = 0;
+        this.sync = 0;
         this.retry = 0;
         this.hold = 0;
 
@@ -337,6 +354,7 @@ public class ElytraTweaks extends Module {
 
         this.speed = 0.0;
         this.rocket = null;
+
     }
 
     //endregion
@@ -347,7 +365,8 @@ public class ElytraTweaks extends Module {
      * Detects double jump and equips an elytra from the hotbar.
      */
     private void doublejump() {
-        boolean current = this.mc.options.jumpKey.isPressed();
+        boolean current = !this.escaping &&
+            this.mc.options.jumpKey.isPressed();
 
         if (current && !this.pressed) {
             if (this.tap > 0 && !this.mc.player.isOnGround()) {
@@ -367,21 +386,21 @@ public class ElytraTweaks extends Module {
      */
     private void launch() {
         if (this.elytra()) {
-            this.deploy = 2;
+            this.sync = 2;
             return;
         }
 
         int slot = this.hotbar(true);
         if (slot < 0 || !this.wear(slot)) return;
 
-        this.deploy = 2;
+        this.sync = 2;
     }
 
     /**
-     * Equips a Baritone elytra or restores a chestplate after landing.
+     * Handles automatic elytra and chestplate swapping.
      */
     private void ground() {
-        if (!this.swap.get()) return;
+        if (!this.swap.get() || this.repair.get()) return;
 
         if (this.baritone()) {
             if (this.elytra()) return;
@@ -408,8 +427,7 @@ public class ElytraTweaks extends Module {
      * @return true when the equip interaction was sent
      */
     private boolean wear(int slot) {
-        if (this.mc.interactionManager == null ||
-            this.mc.currentScreen != null) {
+        if (this.mc.interactionManager == null || !this.inventory()) {
             return false;
         }
 
@@ -431,6 +449,17 @@ public class ElytraTweaks extends Module {
         }
 
         return true;
+    }
+
+    /**
+     * Synchronizes a selected hotbar slot with the server.
+     *
+     * @param slot hotbar slot to select
+     */
+    private void select(int slot) {
+        this.mc.getNetworkHandler().sendPacket(
+            new UpdateSelectedSlotC2SPacket(slot)
+        );
     }
 
     /**
@@ -470,12 +499,36 @@ public class ElytraTweaks extends Module {
     //region Durability replacement
 
     /**
-     * Starts inventory replacement when the equipped elytra is worn.
+     * Equips the most damaged elytra while repair mode is active.
      *
-     * @return true when a strict replacement is active or has just started
+     * @return true when a repair swap starts
+     */
+    private boolean mend() {
+        if (!this.repair.get()) return false;
+
+        ItemStack stack = this.mc.player.getEquippedStack(EquipmentSlot.CHEST);
+        if (stack.isOf(Items.ELYTRA) && stack.getDamage() > 0) return false;
+
+        int slot = this.damaged();
+        if (slot < 0) return false;
+
+        if (!this.inventory()) return false;
+
+        this.slot = slot;
+        this.opened = false;
+        this.phase = 1;
+        return true;
+    }
+
+    /**
+     * Replaces an elytra when its durability gets too low.
+     *
+     * @return true when replacement is active
      */
     private boolean replacement() {
-        if (!this.replace.get() || !this.elytra()) return false;
+        if (this.repair.get() || !this.replace.get() || !this.elytra()) {
+            return false;
+        }
 
         ItemStack stack = this.mc.player.getEquippedStack(EquipmentSlot.CHEST);
         if (this.remaining(stack) > this.minimum.get()) return false;
@@ -483,30 +536,19 @@ public class ElytraTweaks extends Module {
         int slot = this.spare();
         if (slot < 0) return false;
 
-        if (this.mc.currentScreen != null &&
-            !(this.mc.currentScreen instanceof InventoryScreen)) {
-            return false;
-        }
+        if (!this.inventory()) return false;
 
         this.slot = slot;
-        this.opened = this.mc.currentScreen == null;
+        this.opened = false;
         this.phase = 1;
-
-        if (this.opened) {
-            this.mc.setScreen(new InventoryScreen(this.mc.player));
-        }
-
         return true;
     }
 
     /**
-     * Advances the strict elytra replacement one action at a time.
+     * Advances the elytra replacement process.
      */
     private void strict() {
-        if (!(this.mc.currentScreen instanceof InventoryScreen)) {
-            this.mc.setScreen(new InventoryScreen(this.mc.player));
-            return;
-        }
+        if (!this.inventory()) return;
 
         switch (this.phase) {
             case 1 -> {
@@ -526,6 +568,31 @@ public class ElytraTweaks extends Module {
 
             case 4 -> this.finish();
         }
+    }
+
+    /**
+     * Finds the most damaged elytra in the player inventory.
+     *
+     * @return player inventory slot, or -1 when every elytra is repaired
+     */
+    private int damaged() {
+        PlayerInventory inventory = this.mc.player.getInventory();
+
+        int best = -1;
+        int damage = 0;
+
+        for (int idx = 0; idx < 36; idx++) {
+            ItemStack stack = inventory.getStack(idx);
+            if (!stack.isOf(Items.ELYTRA)) continue;
+
+            int current = stack.getDamage();
+            if (current <= damage) continue;
+
+            damage = current;
+            best = idx;
+        }
+
+        return best;
     }
 
     /**
@@ -572,7 +639,7 @@ public class ElytraTweaks extends Module {
         if (this.mc.interactionManager == null) return;
 
         this.mc.interactionManager.clickSlot(
-            this.mc.player.currentScreenHandler.syncId,
+            this.mc.player.playerScreenHandler.syncId,
             slot, 0, SlotActionType.PICKUP, this.mc.player
         );
     }
@@ -592,12 +659,13 @@ public class ElytraTweaks extends Module {
     }
 
     /**
-     * Returns the held item and aborts the active replacement.
+     * Cancels the current elytra replacement safely.
      */
     private void abort() {
         if (!this.valid() || this.phase <= 0) return;
 
-        if (!(this.mc.currentScreen instanceof InventoryScreen)) {
+        if (!this.inventory()) {
+            this.opened = true;
             this.mc.setScreen(new InventoryScreen(this.mc.player));
         }
 
@@ -616,7 +684,8 @@ public class ElytraTweaks extends Module {
      * Starts elytra flight after jump is held for the configured duration.
      */
     private void takeoff() {
-        if (!this.starter.get() || this.mc.player.isGliding()) {
+        if (this.escaping || !this.starter.get()
+            || this.mc.player.isGliding()) {
             this.jump = 0;
             return;
         }
@@ -626,8 +695,7 @@ public class ElytraTweaks extends Module {
             return;
         }
 
-        this.jump++;
-        if (this.jump < this.timer.get()) return;
+        if (++this.jump < this.timer.get()) return;
 
         this.jump = 0;
 
@@ -635,7 +703,7 @@ public class ElytraTweaks extends Module {
             int slot = this.hotbar(true);
             if (slot < 0 || !this.wear(slot)) return;
 
-            this.deploy = 2;
+            this.sync = 2;
             return;
         }
 
@@ -643,17 +711,17 @@ public class ElytraTweaks extends Module {
     }
 
     /**
-     * Starts flight after a newly equipped elytra is synchronized.
+     * Starts flight after equipping a new elytra.
      */
     private void deploy() {
-        if (this.deploy <= 0) return;
+        if (this.sync <= 0) return;
 
         if (this.elytra() && this.start()) {
-            this.deploy = 0;
+            this.sync = 0;
             return;
         }
 
-        this.deploy--;
+        this.sync--;
     }
 
     /**
@@ -662,11 +730,11 @@ public class ElytraTweaks extends Module {
      * @return true when flight was started
      */
     private boolean start() {
-        if (!this.elytra() ||
-            this.mc.player.isGliding() ||
-            !this.mc.player.checkGliding()) {
+        if (!this.elytra() || this.mc.player.isGliding()) {
             return false;
         }
+
+        if (!this.mc.player.checkGliding()) return false;
 
         this.mc.getNetworkHandler().sendPacket(
             new ClientCommandC2SPacket(this.mc.player,
@@ -682,63 +750,77 @@ public class ElytraTweaks extends Module {
     //region Baritone recovery
 
     /**
-     * Restarts interrupted flight and escapes liquid when required.
+     * Keeps Baritone elytra flight active when possible.
      */
     private void recover() {
-        if (!this.redeploy.get() || !this.baritone() || !this.elytra()) {
+        if (!this.deploy.get() || !this.baritone() ||
+            !this.elytra() || this.bounce()) {
             this.retry = 0;
-            this.escaping = false;
+            this.swim(false);
             return;
         }
 
         if (this.mc.player.isGliding()) {
             this.retry = 0;
-            this.escaping = false;
+            this.swim(false);
             return;
         }
 
         if (this.liquid()) {
             this.retry = 0;
+
             if (!this.escape.get()) {
-                this.escaping = false;
+                this.swim(false);
                 return;
             }
 
-            this.escaping = true;
-            Vec3d velocity = this.mc.player.getVelocity();
-
-            this.mc.player.setVelocity(
-                velocity.x, Math.max(velocity.y, rise), velocity.z
-            );
-
-            return;
-        }
-
-        if (this.mc.player.isOnGround()) {
-            this.retry = 0;
-            this.escaping = false;
-            this.mc.player.jump();
+            this.swim(true);
             return;
         }
 
         if (this.escaping) {
             this.retry = 0;
-            this.escaping = false;
-            this.restart();
+            this.swim(false);
+
+            if (!this.mc.player.isOnGround()) {
+                this.restart();
+                return;
+            }
+        }
+
+        if (this.mc.player.isOnGround()) {
+            if (++this.retry < delay) return;
+
+            this.retry = 0;
+            this.mc.player.jump();
             return;
         }
 
-        if (++this.retry < this.cooldown.get()) return;
+        if (++this.retry < this.cooldown.get()) {
+            return;
+        }
 
         this.retry = 0;
         this.restart();
     }
 
     /**
-     * Retries Baritone elytra deployment when vanilla allows it.
+     * Starts another elytra deployment attempt.
      */
     private void restart() {
         this.start();
+    }
+
+    /**
+     * Holds or releases jump during liquid escape.
+     *
+     * @param pressed whether jump should remain held
+     */
+    private void swim(boolean pressed) {
+        if (!pressed && !this.escaping) return;
+
+        this.escaping = pressed;
+        this.mc.options.jumpKey.setPressed(pressed);
     }
 
     /**
@@ -785,10 +867,10 @@ public class ElytraTweaks extends Module {
     //region Collision detection
 
     /**
-     * Predicts whether a horizontal collision would cause gliding damage.
+     * Predicts whether a collision would cause gliding damage.
      *
      * @param motion current movement vector
-     * @return true when predicted horizontal speed loss causes damage
+     * @return true when predicted speed loss causes damage
      */
     private boolean danger(Vec3d motion) {
         if (motion.lengthSquared() < epsilon) return false;
@@ -816,8 +898,8 @@ public class ElytraTweaks extends Module {
         Double expand = this.expand.get();
         box = box.expand(expand, 0.0, expand);
 
-        double x = (box.minX + box.maxX) / 2.0;
-        double z = (box.minZ + box.maxZ) / 2.0;
+        double px = (box.minX + box.maxX) / 2.0;
+        double pz = (box.minZ + box.maxZ) / 2.0;
 
         double halfx = box.getLengthX() / 2.0;
         double halfz = box.getLengthZ() / 2.0;
@@ -828,8 +910,8 @@ public class ElytraTweaks extends Module {
         double width = Math.abs(side.x) *
             halfx + Math.abs(side.z) * halfz;
 
-        double basex = x + front.x * forward;
-        double basez = z + front.z * forward;
+        double basex = px + front.x * forward;
+        double basez = pz + front.z * forward;
 
         double low = box.minY + 0.05;
         double high = box.maxY - 0.05;
@@ -878,7 +960,6 @@ public class ElytraTweaks extends Module {
         if (hit.getType() != HitResult.Type.BLOCK) return 0;
 
         Direction.Axis axis = hit.getSide().getAxis();
-
         if (axis == Direction.Axis.X) return xaxis;
         if (axis == Direction.Axis.Z) return zaxis;
 
@@ -895,29 +976,29 @@ public class ElytraTweaks extends Module {
     private double damage(Vec3d motion, int axis) {
         double old = Math.hypot(motion.x, motion.z);
 
-        double x = (axis & xaxis) != 0 ? 0.0 : motion.x;
-        double z = (axis & zaxis) != 0 ? 0.0 : motion.z;
+        double px = (axis & xaxis) != 0 ? 0.0 : motion.x;
+        double pz = (axis & zaxis) != 0 ? 0.0 : motion.z;
 
-        double speed = Math.hypot(x, z);
+        double speed = Math.hypot(px, pz);
         return Math.max(0.0, (old - speed) * 10.0 - 3.0);
     }
 
     /**
-     * Calculates full-speed movement in the current look direction.
+     * Calculates safe movement in the current look direction.
      *
-     * @return candidate movement used to leave collision stop state
+     * @return movement used to resume flight
      */
     private Vec3d safe() {
         if (this.speed <= epsilon) return Vec3d.ZERO;
 
-        return this.mc.player.getRotationVec(1.0F)
-            .normalize().multiply(this.speed);
+        Vec3d safe = this.mc.player.getRotationVec(1.0F);
+        return safe.normalize().multiply(this.speed);
     }
 
     /**
-     * Stops movement while collision avoidance is latched.
+     * Stops movement during collision avoidance.
      *
-     * @param event player movement event to stop
+     * @param event player movement event
      */
     private void stop(PlayerMoveEvent event) {
         this.sneak(true);
@@ -927,9 +1008,9 @@ public class ElytraTweaks extends Module {
     }
 
     /**
-     * Holds or releases sneak for collision recovery.
+     * Updates sneak during collision recovery.
      *
-     * @param pressed whether sneak should remain held
+     * @param pressed whether sneak should be held
      */
     private void sneak(boolean pressed) {
         this.shift = pressed;
@@ -970,15 +1051,20 @@ public class ElytraTweaks extends Module {
      * @return true when the item is a chestplate
      */
     private boolean chestplate(ItemStack stack) {
-        if (stack.isEmpty() || stack.isOf(Items.ELYTRA)) {
-            return false;
-        }
+        if (stack.isEmpty() || stack.isOf(Items.ELYTRA)) return false;
 
-        EquippableComponent equipment =
-            stack.get(DataComponentTypes.EQUIPPABLE);
+        EquippableComponent equipment = stack.get(DataComponentTypes.EQUIPPABLE);
+        return equipment != null && equipment.slot() == EquipmentSlot.CHEST;
+    }
 
-        return equipment != null &&
-            equipment.slot() == EquipmentSlot.CHEST;
+    /**
+     * Checks whether the player inventory can be used.
+     *
+     * @return true when inventory slots can be changed
+     */
+    private boolean inventory() {
+        return this.mc.player.currentScreenHandler
+            == this.mc.player.playerScreenHandler;
     }
 
     /**
@@ -993,9 +1079,9 @@ public class ElytraTweaks extends Module {
     }
 
     /**
-     * Checks whether the player is touching water or lava.
+     * Checks whether the player is in water or lava.
      *
-     * @return true while inside a liquid that can interrupt flight
+     * @return true while inside liquid
      */
     private boolean liquid() {
         return this.mc.player.isTouchingWater()
@@ -1003,25 +1089,14 @@ public class ElytraTweaks extends Module {
     }
 
     /**
-     * Synchronizes a selected hotbar slot with the server.
+     * Checks whether the required client state is available.
      *
-     * @param slot hotbar slot selected on the server
-     */
-    private void select(int slot) {
-        this.mc.getNetworkHandler().sendPacket(
-            new UpdateSelectedSlotC2SPacket(slot)
-        );
-    }
-
-    /**
-     * Checks whether the required client and world state is available.
-     *
-     * @return true when all required client state is available
+     * @return true when ready to run the module
      */
     private boolean valid() {
-        return this.mc.player != null &&
-            this.mc.world != null &&
-            this.mc.getNetworkHandler() != null;
+        return this.mc.player != null
+            && this.mc.world != null
+            && this.mc.getNetworkHandler() != null;
     }
 
     //endregion
