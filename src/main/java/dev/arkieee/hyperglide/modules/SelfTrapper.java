@@ -389,13 +389,13 @@ public class SelfTrapper extends Module {
         if (this.target == null) return false;
         Box box = this.mc.player.getBoundingBox();
 
-        double x = Math.max(0.01, 0.5 - (box.maxX - box.minX) / 2.0 - edge);
-        double z = Math.max(0.01, 0.5 - (box.maxZ - box.minZ) / 2.0 - edge);
+        double px = Math.max(0.01, 0.5 - (box.maxX - box.minX) / 2.0 - edge);
+        double pz = Math.max(0.01, 0.5 - (box.maxZ - box.minZ) / 2.0 - edge);
 
         double dx = Math.abs(this.target.x - this.mc.player.getX());
         double dz = Math.abs(this.target.z - this.mc.player.getZ());
 
-        return dx <= x && dz <= z;
+        return dx <= px && dz <= pz;
     }
 
     /**

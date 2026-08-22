@@ -479,9 +479,9 @@ public class Scaffolding extends Module {
      * @return true when the position is too far from the player
      */
     private boolean far(BlockPos pos) {
-        double x = pos.getX() + 0.5 - this.mc.player.getX();
-        double z = pos.getZ() + 0.5 - this.mc.player.getZ();
-        return x * x + z * z > reach * reach;
+        double px = pos.getX() + 0.5 - this.mc.player.getX();
+        double pz = pos.getZ() + 0.5 - this.mc.player.getZ();
+        return px * px + pz * pz > reach * reach;
     }
 
     //endregion
