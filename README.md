@@ -37,7 +37,8 @@ Make sure to downgrade to 1.20.3-1.20.4 in ViaFabricPlus settings before joining
 ## 🧩 Modules
 
 - **Air Place** - Allows blocks to be placed in the air without requiring the adjacent surface.
-- **Auto Web** - Places cobwebs around selected entities with optional movement prediction.
+- **Auto Pilot** - Automatically navigates through the nether using calculated travel route.
+- **Auto Web** - Places cobwebs around listed entities with optional movement prediction.
 - **Block Farm** - Repeatedly places and mines selected blocks for insanely fast farming.
 - **Bounce Fly** - Uses elytra bouncing for fast highway travel with optional obstacle passing.
 - **Control Fly** - Provides controlled elytra flight using predictive movement stabilization.
@@ -48,8 +49,10 @@ Make sure to downgrade to 1.20.3-1.20.4 in ViaFabricPlus settings before joining
 - **Fast Portal** - Builds and lights nether portals near the player using minimal obsidian.
 - **FD3 Crafter** - Strictly crafts FD3 firework rockets from available inventory ingredients.
 - **Mining Tweaks** - Enables packet mining, including fast remine and double-break support.
+- **Navigation** - Provides a map of the nether highway network with interactive route planning.
 - **No Sprint FOV** - Removes vanilla sprinting zoom effects for a more consistent field of view.
 - **Overview** - Displays a content icon on shulker boxes and bundles for quick identification.
+- **Rocket Boost** - Enhances firework rocket acceleration during elytra flight for faster travel.
 - **Scaffolding** - Places selected blocks beneath and ahead of the player for safer bridging.
 - **Self Trapper** - Builds a configurable block trap around the player with queued placements.
 - **Trigger Bot** - Attacks selected entities under the crosshair, including targets through walls.
