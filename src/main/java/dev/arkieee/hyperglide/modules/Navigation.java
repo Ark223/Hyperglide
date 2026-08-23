@@ -5,6 +5,7 @@ import dev.arkieee.hyperglide.navigation.Highways;
 import dev.arkieee.hyperglide.navigation.Route;
 import dev.arkieee.hyperglide.navigation.Search;
 import dev.arkieee.hyperglide.navigation.Segment;
+import meteordevelopment.meteorclient.events.meteor.MouseButtonEvent;
 import meteordevelopment.meteorclient.events.meteor.MouseScrollEvent;
 import meteordevelopment.meteorclient.events.render.Render2DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -14,6 +15,7 @@ import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
+import meteordevelopment.meteorclient.utils.misc.input.KeyAction;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
@@ -48,6 +50,14 @@ public class Navigation extends Module {
         .defaultValue("0 0")
         .renderer(Mask.class)
         .onChanged(this::parse)
+        .build()
+    );
+
+    private final Setting<Boolean> convert = this.general.add(new BoolSetting.Builder()
+        .name("eight-to-one")
+        .description("Uses overworld coordinates as input.")
+        .defaultValue(false)
+        .onChanged(value -> this.parse(this.goal.get()))
         .build()
     );
 
@@ -256,6 +266,32 @@ public class Navigation extends Module {
     }
 
     /**
+     * Sets the destination from the middle-clicked map position.
+     *
+     * @param event mouse button event
+     */
+    @EventHandler
+    private void onClick(MouseButtonEvent event) {
+        if (!this.render.get() || !this.nether() ||
+            !(this.mc.currentScreen instanceof ChatScreen) ||
+            event.action != KeyAction.Press ||
+            event.button != GLFW.GLFW_MOUSE_BUTTON_MIDDLE) return;
+
+        Vec2f mouse = this.mouse();
+        if (!this.hovered(mouse.x, mouse.y)) return;
+
+        int left = (int) this.left();
+        int top = (int) this.top();
+
+        View view = this.view(this.position());
+
+        BlockPos point = this.world(mouse, view, left, top);
+        this.goal.set(point.getX() + " " + point.getZ());
+
+        event.cancel();
+    }
+
+    /**
      * Renders highway and route information around the map.
      *
      * @param event 2D render event
@@ -268,21 +304,38 @@ public class Navigation extends Module {
         int left = (int) this.left();
         int top = (int) this.top();
 
+        Vec2f mouse = this.mouse();
         Vec2f current = this.position();
         View view = this.view(current);
 
-        Highways.Road highway = this.road(view, left, top);
-        if (highway == null && this.route == null) return;
+        boolean hovered = this.hovered(mouse.x, mouse.y);
+
+        Highways.Road highway = !hovered ? null
+            : this.road(mouse, view, left, top);
+        if (!hovered && this.route == null) return;
 
         double gui = this.mc.getWindow().getScaleFactor();
         HudRenderer renderer = HudRenderer.INSTANCE;
 
         renderer.begin(event.drawContext);
 
-        if (highway != null) {
-            this.box(renderer, new String[] {highway.name()},
-                left * gui, top * gui, true, gui
-            );
+        if (hovered) {
+            if (this.streamer.get()) {
+                if (highway != null) {
+                    this.box(renderer, new String[] {highway.name()},
+                        left * gui, top * gui, true, gui
+                    );
+                }
+            } else {
+                BlockPos point = this.world(mouse, view, left, top);
+                String position = "X: " + point.getX() + " Z: " + point.getZ();
+
+                this.box(renderer, highway == null
+                    ? new String[] {position}
+                    : new String[] {highway.name(), position},
+                    left * gui, top * gui, true, gui
+                );
+            }
         }
 
         if (this.route != null) {
@@ -498,6 +551,31 @@ public class Navigation extends Module {
         screen = screen.add(new Vec2f(px, py));
 
         return screen;
+    }
+
+    /**
+     * Converts a map screen position to world coordinates.
+     *
+     * @param point map screen position
+     * @param view current map view
+     * @param left map left position
+     * @param top map top position
+     * @return world block position
+     */
+    private BlockPos world(Vec2f point, View view, double left, double top) {
+        float size = this.size.get();
+
+        float px = (float) (left + size * 0.5F);
+        float py = (float) (top + size * 0.5F);
+
+        Vec2f world = point.add(new Vec2f(-px, -py));
+        world = world.multiply((float) view.scale).add(view.center);
+
+        int scale = this.convert.get() ? 8 : 1;
+        return new BlockPos(
+            Math.round(world.x) * scale, 0,
+            Math.round(world.y) * scale
+        );
     }
 
     /**
@@ -726,16 +804,14 @@ public class Navigation extends Module {
     /**
      * Returns the highway currently hovered on the map.
      *
+     * @param mouse mouse position
      * @param view current map view
      * @param left map left position
      * @param top map top position
      * @return hovered highway, or null when none
      */
-    private Highways.Road road(View view, double left, double top) {
+    private Highways.Road road(Vec2f mouse, View view, double left, double top) {
         if (this.mc.currentScreen == null) return null;
-
-        Vec2f mouse = this.mouse();
-        if (!this.hovered(mouse.x, mouse.y)) return null;
 
         Highways.Road result = null;
         float closest = Math.max(4.0F, this.thickness.get() + 2.0F);
@@ -936,6 +1012,11 @@ public class Navigation extends Module {
             int px = Integer.parseInt(parts[0]);
             int py = parts.length == 3 ? Integer.parseInt(parts[1]) : 0;
             int pz = Integer.parseInt(parts[parts.length - 1]);
+
+            if (this.convert.get()) {
+                px = Math.floorDiv(px, 8);
+                pz = Math.floorDiv(pz, 8);
+            }
 
             if (px < -border || px > border ||
                 pz < -border || pz > border) return;
