@@ -338,7 +338,7 @@ public class AutoPilot extends Module {
     private void flight() {
         if (this.goal != null) {
             if (this.join && this.landing()) {
-                if (++this.timer <= 5) return;
+                if (++this.timer <= 7) return;
 
                 this.cancel();
                 this.timer = 0;
