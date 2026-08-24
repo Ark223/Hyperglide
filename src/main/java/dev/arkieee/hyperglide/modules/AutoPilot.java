@@ -17,6 +17,7 @@ import net.minecraft.fluid.Fluid;
 import net.minecraft.fluid.Fluids;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.Items;
+import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
@@ -177,7 +178,10 @@ public class AutoPilot extends Module {
         }
 
         ElytraTweaks tweaks = Modules.get().get(ElytraTweaks.class);
-        if (tweaks != null && !tweaks.isActive()) tweaks.toggle();
+        if (tweaks != null) {
+            if (!tweaks.isActive()) tweaks.toggle();
+            tweaks.deploy(true);
+        }
     }
 
     /**
@@ -338,18 +342,15 @@ public class AutoPilot extends Module {
     private void flight() {
         if (this.goal != null) {
             if (this.join && this.landing()) {
-                if (++this.timer <= 7) return;
-
                 this.cancel();
-                this.timer = 0;
-                this.block = null;
 
+                this.block = null;
+                this.timer = this.rocket() ? 3 : 0;
                 this.mc.player.setPitch(-90.0F);
+
                 this.state = State.Land;
                 return;
             }
-
-            if (this.join) this.timer = 0;
 
             if (this.waiting() || !this.mc.player.isOnGround()) {
                 return;
@@ -449,6 +450,11 @@ public class AutoPilot extends Module {
     private void land() {
         this.mc.player.setPitch(-90.0F);
 
+        if (this.timer > 0) {
+            this.timer--;
+            return;
+        }
+
         if (this.mc.player.getVelocity().y > 0.0) return;
 
         if (this.block == null) {
@@ -466,6 +472,41 @@ public class AutoPilot extends Module {
 
         this.block = null;
         this.state = State.Entry;
+    }
+
+    /**
+     * Uses a firework rocket from the selected hotbar slot.
+     *
+     * @return true when the firework use was sent
+     */
+    private boolean rocket() {
+        if (this.mc.interactionManager == null) return false;
+
+        PlayerInventory inventory = this.mc.player.getInventory();
+        int selected = inventory.selectedSlot;
+
+        if (!inventory.getStack(selected).isOf(Items.FIREWORK_ROCKET)) {
+            int slot = -1;
+
+            for (int idx = 9; idx < 36; idx++) {
+                if (inventory.getStack(idx).isOf(Items.FIREWORK_ROCKET)) {
+                    slot = idx;
+                    break;
+                }
+            }
+
+            if (slot < 0) return false;
+
+            this.mc.interactionManager.clickSlot(
+                this.mc.player.playerScreenHandler.syncId,
+                slot, selected, SlotActionType.SWAP, this.mc.player
+            );
+        }
+
+        this.mc.interactionManager.interactItem(
+            this.mc.player, Hand.MAIN_HAND
+        );
+        return true;
     }
 
     /**

@@ -50,7 +50,7 @@ public class ElytraTweaks extends Module {
     private final Setting<Boolean> swap = this.equipment.add(new BoolSetting.Builder()
         .name("auto-swap")
         .description("Equips an elytra on double jump and a chestplate after landing.")
-        .defaultValue(true)
+        .defaultValue(false)
         .build()
     );
 
@@ -116,7 +116,7 @@ public class ElytraTweaks extends Module {
     private final Setting<Boolean> avoid = this.safety.add(new BoolSetting.Builder()
         .name("avoid-collisions")
         .description("Stops flight before damaging predicted collisions.")
-        .defaultValue(true)
+        .defaultValue(false)
         .build()
     );
 
@@ -318,6 +318,21 @@ public class ElytraTweaks extends Module {
         this.fresh = false;
         this.sneak(true);
         this.stop(event);
+    }
+
+    //endregion
+
+    //region Public API
+
+    /**
+     * Enables or disables automatic Baritone elytra deployment.
+     *
+     * @param active requested auto deploy state
+     */
+    public void deploy(boolean active) {
+        if (this.deploy.get() != active) {
+            this.deploy.set(active);
+        }
     }
 
     //endregion
