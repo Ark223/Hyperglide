@@ -458,7 +458,7 @@ public class AutoPilot extends Module {
         if (this.mc.player.getVelocity().y > 0.0) return;
 
         if (this.block == null) {
-            this.block = this.mc.player.getBlockPos().down(2);
+            this.block = this.mc.player.getBlockPos().down(4);
         }
 
         if (this.mc.world.getBlockState(this.block).isReplaceable() &&
