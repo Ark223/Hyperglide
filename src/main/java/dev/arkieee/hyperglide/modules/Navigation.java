@@ -259,8 +259,22 @@ public class Navigation extends Module {
         Vec2f mouse = this.mouse();
         if (!this.hovered(mouse.x, mouse.y)) return;
 
+        double scale = this.scale();
+
         this.zoom *= event.value > 0.0 ? 1.2 : 1.0 / 1.2;
         this.zoom = Math.max(0.01, Math.min(16.0, this.zoom));
+
+        if (this.mode.get() == Mode.Free) {
+            float size = this.size.get();
+
+            float px = (float) (this.left() + size * 0.5F);
+            float py = (float) (this.top() + size * 0.5F);
+
+            Vec2f shift = mouse.add(new Vec2f(-px, -py));
+            this.offset = this.offset.add(
+                shift.multiply((float) (scale - this.scale()))
+            );
+        }
 
         event.cancel();
     }
