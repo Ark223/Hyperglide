@@ -62,7 +62,6 @@ public final class Highways {
         diagonal(roads);
         square(roads);
         diamond(roads);
-        special(roads);
         grid(roads);
         return List.copyOf(roads);
     }
@@ -162,32 +161,6 @@ public final class Highways {
                 new Segment(south, west), new Segment(west, north)
             )));
         }
-    }
-
-    /**
-     * Adds the Nether Star Ring Road.
-     *
-     * @param roads destination road list
-     */
-    private static void special(List<Road> roads) {
-        float outer = 125000.0F;
-
-        Vec2f north = new Vec2f(0.0F, -outer);
-        Vec2f ne = new Vec2f(grid, -grid);
-        Vec2f east = new Vec2f(outer, 0.0F);
-        Vec2f se = new Vec2f(grid, grid);
-        Vec2f south = new Vec2f(0.0F, outer);
-        Vec2f sw = new Vec2f(-grid, grid);
-        Vec2f west = new Vec2f(-outer, 0.0F);
-        Vec2f nw = new Vec2f(-grid, -grid);
-
-        roads.add(new Road("Nether Star Ring Road",
-            Kind.Special, List.of(
-            new Segment(north, ne), new Segment(ne, east),
-            new Segment(east, se), new Segment(se, south),
-            new Segment(south, sw), new Segment(sw, west),
-            new Segment(west, nw), new Segment(nw, north)
-        )));
     }
 
     /**
