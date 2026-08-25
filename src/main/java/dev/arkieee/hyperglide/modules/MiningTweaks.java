@@ -22,13 +22,14 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.RaycastContext;
-
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Iterator;
 
 public class MiningTweaks extends Module {
     private static final double threshold = 0.7;
+    private static final double reach = 6.0;
+
     private static final long restart = 300;
     private static final long pause = 275;
     private static final int bursts = 22;
@@ -71,7 +72,7 @@ public class MiningTweaks extends Module {
         .build()
     );
 
-    private final Setting<Integer> valid = this.general.add(new IntSetting.Builder()
+    private final Setting<Integer> validation = this.general.add(new IntSetting.Builder()
         .name("validation-wait")
         .description("Checks whether the block was mined after this many ticks.")
         .defaultValue(5)
@@ -210,9 +211,7 @@ public class MiningTweaks extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (this.mc.player == null
-            || this.mc.world == null
-            || this.mc.interactionManager == null) {
+        if (!this.valid() || this.mc.interactionManager == null) {
             return;
         }
 
@@ -265,6 +264,10 @@ public class MiningTweaks extends Module {
         }
     }
 
+    //endregion
+
+    //region State management
+
     /**
      * Clears queues, targets, timers and mining state.
      */
@@ -277,10 +280,10 @@ public class MiningTweaks extends Module {
         this.last = null;
 
         this.tick = 0;
-
-        this.stopped = 0;
-        this.fast = false;
         this.ready = 0;
+        this.stopped = 0;
+
+        this.fast = false;
         this.paired = false;
     }
 
@@ -326,14 +329,10 @@ public class MiningTweaks extends Module {
      * @return true when the rebreak packet was sent
      */
     public boolean rebreak(BlockPos pos, BlockState state, Direction side) {
-        if (!this.remine.get() ||
-            this.mc.player == null ||
-            this.mc.world == null ||
+        if (!this.remine.get() || !this.valid() ||
             this.mc.interactionManager == null ||
             pos == null || state == null || side == null ||
-            !this.breakable(pos, state)) {
-            return false;
-        }
+            !this.breakable(pos, state)) return false;
 
         int slot = this.best(state, pos);
 
@@ -353,8 +352,7 @@ public class MiningTweaks extends Module {
      * @return true when vanilla mining should handle the block
      */
     public boolean bypass(BlockPos pos) {
-        if (this.mc.player == null ||
-            this.mc.world == null || pos == null ||
+        if (!this.valid() || pos == null ||
             this.vanilla.get() <= 0 || this.tracked(pos)) {
             return false;
         }
@@ -377,14 +375,11 @@ public class MiningTweaks extends Module {
      * @return true when the block is tracked or queued
      */
     public boolean mine(BlockPos pos, Direction side) {
-        if (this.mc.player == null
-            || this.mc.world == null
-            || this.mc.interactionManager == null
+        if (!this.valid() || this.mc.interactionManager == null
             || pos == null || side == null) {
             return false;
         }
 
-        pos = pos.toImmutable();
         if (this.tracked(pos)) return true;
 
         BlockState state = this.mc.world.getBlockState(pos);
@@ -441,7 +436,10 @@ public class MiningTweaks extends Module {
      */
     private void fill() {
         if (this.paired) {
-            if (this.primary != null || this.secondary != null) return;
+            if (this.primary != null || this.secondary != null) {
+                return;
+            }
+
             this.paired = false;
         }
 
@@ -454,8 +452,8 @@ public class MiningTweaks extends Module {
             if (target != null) this.begin(target);
         }
 
-        if (this.primary == null || this.secondary != null
-            || this.queue.isEmpty() || !this.parkable()) {
+        if (this.primary == null || this.secondary != null ||
+            this.queue.isEmpty() || !this.parkable()) {
             return;
         }
 
@@ -484,6 +482,60 @@ public class MiningTweaks extends Module {
         return null;
     }
 
+    /**
+     * Checks whether another primary target may begin.
+     *
+     * @return true when the restart delay has elapsed or fast mode is active
+     */
+    private boolean startable() {
+        return this.fast || System.currentTimeMillis() - this.stopped > restart;
+    }
+
+    /**
+     * Checks whether the primary target can be parked as the secondary target.
+     *
+     * @return true when double-break parking is currently allowed
+     */
+    private boolean parkable() {
+        return this.secondary == null
+            && System.currentTimeMillis() >= this.ready
+            && this.primary != null && !this.primary.arming
+            && !this.primary.finished && !this.primary.instant
+            && this.progress(this.primary) < 1.0;
+    }
+
+    /**
+     * Stops and converts the primary target into a parked secondary target.
+     */
+    private void park() {
+        Target target = this.primary;
+
+        this.action(target,
+            PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK, target.pos
+        );
+
+        Target parked = new Target(
+            new Request(target.pos, target.side, target.retry),
+            target.state, target.side
+        );
+
+        long now = System.currentTimeMillis();
+
+        parked.started = now;
+        parked.updated = now;
+
+        parked.slot = target.slot;
+        parked.delta = this.delta(parked);
+        parked.work = Math.max(0.0, parked.delta);
+
+        parked.instant = parked.delta >= 1.0F;
+        parked.burst = target.burst;
+
+        this.secondary = parked;
+        this.primary = null;
+        this.paired = true;
+    }
+
     //endregion
 
     //region Mining control
@@ -507,67 +559,11 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Checks whether another primary target may begin.
-     *
-     * @return true when the restart delay has elapsed or fast mode is active
-     */
-    private boolean startable() {
-        return this.fast || System.currentTimeMillis() - this.stopped > restart;
-    }
-
-    /**
-     * Checks whether the primary target can be parked as the secondary target.
-     *
-     * @return true when double-break parking is currently allowed
-     */
-    private boolean parkable() {
-        return this.secondary == null
-            && System.currentTimeMillis() >= this.ready
-            && this.primary != null && !this.primary.arming
-            && !this.primary.finished && !this.primary.instant
-            && this.primary.progress < 1.0;
-    }
-
-    /**
-     * Stops and converts the primary target into a parked secondary target.
-     */
-    private void park() {
-        Target target = this.primary;
-
-        this.action(target,
-            PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK, target.pos);
-
-        Target parked = new Target(new Request(
-            target.pos, target.side, target.retry
-        ), target.state, target.side);
-
-        long now = System.currentTimeMillis();
-
-        parked.primary = false;
-        parked.started = now;
-        parked.updated = now;
-
-        parked.slot = target.slot;
-        parked.delta = this.delta(parked);
-        parked.work = Math.max(0.0, parked.delta);
-
-        parked.instant = parked.delta >= 1.0F;
-        parked.progress = parked.instant ? 1.0 : this.progress(parked);
-        parked.burst = target.burst;
-
-        this.secondary = parked;
-        this.primary = null;
-        this.paired = true;
-    }
-
-    /**
      * Prepares a target, selects its best tool and starts arming when required.
      *
      * @param target target to begin
      */
     private void begin(Target target) {
-        target.primary = true;
-
         target.side = this.face(target.pos, target.side);
         target.slot = this.best(target.state, target.pos);
 
@@ -602,7 +598,6 @@ public class MiningTweaks extends Module {
         target.work = Math.max(0.0, target.delta);
 
         target.instant = target.delta >= 1.0F;
-        target.progress = target.instant ? 1.0 : this.progress(target);
 
         this.packet(PlayerActionC2SPacket.Action.START_DESTROY_BLOCK,
             target.pos, target.side
@@ -633,7 +628,7 @@ public class MiningTweaks extends Module {
             return;
         }
 
-        if (!state.equals(target.state)) {
+        if (!this.reachable(target.pos) || !state.equals(target.state)) {
             this.fail(target);
             return;
         }
@@ -659,30 +654,27 @@ public class MiningTweaks extends Module {
         }
 
         if (target.finished) {
-            int delay = target.primary ? this.valid.get() : this.valid.get() * 2;
+            int delay = target == this.primary ?
+                this.validation.get() : this.validation.get() * 2;
+
             if (this.tick - target.finish >= delay) this.verify(target);
             return;
         }
 
+        int slot = this.best(target.state, target.pos);
+        if (slot != target.slot) target.slot = slot;
+
         this.advance(target);
 
-        int slot = this.best(target.state, target.pos);
-        if (slot != target.slot) {
-            target.slot = slot;
-            target.delta = this.delta(target);
-        }
-
-        target.progress = this.progress(target);
+        double progress = this.progress(target);
         long elapsed = System.currentTimeMillis() - target.started;
 
         if (!target.burst && elapsed >= pause &&
-            this.expected(target) >= pause && target.progress < 1.0) {
+            this.expected(target) >= pause && progress < 1.0) {
             this.burst(target);
         }
 
-        if (target.progress >= 1.0) {
-            this.finish(target);
-        }
+        if (progress >= 1.0) this.finish(target);
     }
 
     /**
@@ -694,12 +686,42 @@ public class MiningTweaks extends Module {
         long now = System.currentTimeMillis();
         long elapsed = Math.max(0, now - target.updated);
 
+        target.delta = this.delta(target);
+
         if (elapsed > 0 && target.delta > 0.0F) {
             target.work += target.delta * elapsed / 50.0;
         }
 
         target.updated = now;
     }
+
+    /**
+     * Sends repeated mining packets to recover stalled progress.
+     *
+     * @param target stalled target
+     */
+    private void burst(Target target) {
+        this.advance(target);
+
+        target.side = this.face(target.pos, target.side);
+        target.slot = this.best(target.state, target.pos);
+
+        this.select(target.slot);
+
+        BlockPos pos = this.fake(target.pos);
+
+        for (int idx = 0; idx < bursts; idx++) {
+            this.packet(PlayerActionC2SPacket.Action.START_DESTROY_BLOCK,
+                pos, target.side
+            );
+        }
+
+        target.burst = true;
+    }
+
+    //endregion
+
+    //region Target lifecycle
 
     /**
      * Marks a target finished and sends its final stop action.
@@ -711,15 +733,15 @@ public class MiningTweaks extends Module {
 
         this.advance(target);
 
-        target.progress = 1.0;
         target.finished = true;
         target.finish = this.tick;
 
         this.fast = target.burst;
 
-        if (target.primary && !target.instant) {
+        if (target == this.primary && !target.instant) {
             this.action(target,
-                PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK, target.pos);
+                PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK, target.pos
+            );
         }
 
         this.stopped = System.currentTimeMillis();
@@ -747,15 +769,18 @@ public class MiningTweaks extends Module {
      * @param target failed target
      */
     private void fail(Target target) {
+        boolean reachable = this.reachable(target.pos);
+
         Direction side = this.face(target.pos, target.side);
         target.side = side;
 
         this.action(target,
-            PlayerActionC2SPacket.Action.ABORT_DESTROY_BLOCK, target.pos);
+            PlayerActionC2SPacket.Action.ABORT_DESTROY_BLOCK, target.pos
+        );
 
         this.remove(target, false);
 
-        if (target.retry >= this.retries.get()) {
+        if (!reachable || target.retry >= this.retries.get()) {
             return;
         }
 
@@ -796,30 +821,6 @@ public class MiningTweaks extends Module {
             this.ready = System.currentTimeMillis();
             this.ready += (confirmed ? 50L : pause);
         }
-    }
-
-    /**
-     * Sends repeated mining packets to recover stalled progress.
-     *
-     * @param target stalled target
-     */
-    private void burst(Target target) {
-        this.advance(target);
-
-        target.side = this.face(target.pos, target.side);
-        target.slot = this.best(target.state, target.pos);
-
-        this.select(target.slot);
-
-        BlockPos pos = this.fake(target.pos);
-
-        for (int idx = 0; idx < bursts; idx++) {
-            this.packet(PlayerActionC2SPacket.Action.START_DESTROY_BLOCK,
-                pos, target.side
-            );
-        }
-
-        target.burst = true;
     }
 
     //endregion
@@ -863,7 +864,7 @@ public class MiningTweaks extends Module {
      * @return primary threshold or full secondary limit
      */
     private double limit(Target target) {
-        return target.primary ? threshold : 1.0;
+        return target == this.primary ? threshold : 1.0;
     }
 
     /**
@@ -979,7 +980,7 @@ public class MiningTweaks extends Module {
      * @param side block face used by the packet
      */
     private void packet(PlayerActionC2SPacket.Action action, BlockPos pos, Direction side) {
-        if (this.mc.world == null || this.mc.interactionManager == null) {
+        if (!this.valid() || this.mc.interactionManager == null) {
             return;
         }
 
@@ -1077,10 +1078,31 @@ public class MiningTweaks extends Module {
      *
      * @param pos block position
      * @param state block state to check
-     * @return true when the block is non-air and has non-negative hardness
+     * @return true when the block is within reach and can be mined
      */
     private boolean breakable(BlockPos pos, BlockState state) {
-        return !state.isAir() && state.getHardness(this.mc.world, pos) >= 0.0F;
+        return this.reachable(pos) && !state.isAir()
+            && state.getHardness(this.mc.world, pos) >= 0.0F;
+    }
+
+    /**
+     * Checks whether a block is within mining reach.
+     *
+     * @param pos block position to check
+     * @return true when the block is within reach
+     */
+    private boolean reachable(BlockPos pos) {
+        Vec3d eye = this.mc.player.getEyePos();
+
+        double px = Math.max(pos.getX(), Math.min(eye.x, pos.getX() + 1.0));
+        double py = Math.max(pos.getY(), Math.min(eye.y, pos.getY() + 1.0));
+        double pz = Math.max(pos.getZ(), Math.min(eye.z, pos.getZ() + 1.0));
+
+        double dx = px - eye.x;
+        double dy = py - eye.y;
+        double dz = pz - eye.z;
+
+        return dx * dx + dy * dy + dz * dz <= reach * reach;
     }
 
     /**
@@ -1113,6 +1135,17 @@ public class MiningTweaks extends Module {
         return false;
     }
 
+    /**
+     * Checks whether the required client state is available.
+     *
+     * @return true when ready to run the module
+     */
+    private boolean valid() {
+        return this.mc.player != null
+            && this.mc.world != null
+            && this.mc.getNetworkHandler() != null;
+    }
+
     //endregion
 
     //region Visual effects
@@ -1128,7 +1161,7 @@ public class MiningTweaks extends Module {
     private void box(Render3DEvent event, Target target,
         SettingColor side, SettingColor line) {
 
-        double offset = (1.0 - target.progress) / 2.0;
+        double offset = (1.0 - this.progress(target)) / 2.0;
 
         Box box = new Box(
             target.pos.getX() + offset,
@@ -1146,14 +1179,30 @@ public class MiningTweaks extends Module {
 
     //region Data structures
 
+    /**
+     * Represents a queued mining request.
+     *
+     * @param pos block position
+     * @param side preferred block face
+     * @param retry retry count
+     */
     private record Request(BlockPos pos, Direction side, int retry) {
         private Request {
             pos = pos.toImmutable();
         }
     }
 
+    /**
+     * Represents a mining request waiting for another attempt.
+     *
+     * @param request queued mining request
+     * @param ready time when another attempt may begin
+     */
     private record Retry(Request request, long ready) {}
 
+    /**
+     * Tracks the state of an active mining target.
+     */
     private static class Target {
         private final BlockPos pos;
         private final BlockState state;
@@ -1166,18 +1215,15 @@ public class MiningTweaks extends Module {
 
         private float delta;
         private double work;
-        private double progress;
 
         private int slot;
+        private int arm;
+        private int finish;
 
-        private boolean primary;
         private boolean arming;
         private boolean burst;
         private boolean instant;
         private boolean finished;
-
-        private int arm;
-        private int finish;
 
         /**
          * Creates a mining target from a queued request.
