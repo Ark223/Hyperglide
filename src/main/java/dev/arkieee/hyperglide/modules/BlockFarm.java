@@ -90,8 +90,10 @@ public class BlockFarm extends Module {
             return;
         }
 
-        if (this.pos == null || !this.adjacent(this.pos)
-            || this.occupied(this.pos)) {
+        if (this.pos == null ||
+            !this.adjacent(this.pos) ||
+            this.occupied(this.pos)) {
+
             this.clear();
             this.pos = this.target();
         }

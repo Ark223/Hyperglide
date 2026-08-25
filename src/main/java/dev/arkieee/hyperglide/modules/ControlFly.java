@@ -178,8 +178,10 @@ public class ControlFly extends Module {
      */
     @EventHandler
     private void move(PlayerMoveEvent event) {
-        if (!this.valid() || event.type != MovementType.SELF ||
-            !this.mc.player.isGliding() || this.halted()) return;
+    if (!this.valid()
+        || event.type != MovementType.SELF
+        || !this.mc.player.isGliding()
+        || this.halted()) return;
 
         Vec3d input = this.direction();
         if (input.lengthSquared() < epsilon) {

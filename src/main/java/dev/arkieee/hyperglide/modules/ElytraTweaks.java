@@ -708,8 +708,8 @@ public class ElytraTweaks extends Module {
      * Starts elytra flight after jump is held for the configured duration.
      */
     private void takeoff() {
-        if (this.escaping || !this.starter.get()
-            || this.mc.player.isGliding()) {
+        if (this.escaping || !this.starter.get() ||
+            this.mc.player.isGliding()) {
             this.jump = 0;
             return;
         }

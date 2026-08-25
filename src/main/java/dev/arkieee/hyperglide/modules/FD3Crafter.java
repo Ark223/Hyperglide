@@ -340,8 +340,8 @@ public class FD3Crafter extends Module {
      * Moves a full gunpowder stack into the selected crafting slot.
      */
     private void stack() {
-        if (!this.handler().getCursorStack().isOf(Items.GUNPOWDER)
-            || this.handler().getCursorStack().getCount() != 64) {
+        if (!this.handler().getCursorStack().isOf(Items.GUNPOWDER) ||
+            this.handler().getCursorStack().getCount() != 64) {
             this.fail("Full gunpowder pickup failed.");
             return;
         }

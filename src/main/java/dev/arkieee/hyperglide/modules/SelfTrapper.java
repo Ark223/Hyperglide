@@ -527,13 +527,13 @@ public class SelfTrapper extends Module {
         );
 
         this.pending.entrySet().removeIf(entry ->
-            !this.wanted.contains(entry.getKey())
-            || !this.open(entry.getKey())
+            !this.wanted.contains(entry.getKey()) ||
+            !this.open(entry.getKey())
         );
 
         this.waiting.entrySet().removeIf(entry ->
-            !this.wanted.contains(entry.getKey())
-            || !this.open(entry.getKey())
+            !this.wanted.contains(entry.getKey()) ||
+            !this.open(entry.getKey())
         );
     }
 

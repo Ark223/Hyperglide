@@ -375,8 +375,8 @@ public class MiningTweaks extends Module {
      * @return true when the block is tracked or queued
      */
     public boolean mine(BlockPos pos, Direction side) {
-        if (!this.valid() || this.mc.interactionManager == null
-            || pos == null || side == null) {
+        if (!this.valid() || pos == null || side == null ||
+            this.mc.interactionManager == null) {
             return false;
         }
 
