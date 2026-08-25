@@ -8,6 +8,7 @@ import baritone.api.pathing.goals.GoalXZ;
 import dev.arkieee.hyperglide.Hyperglide;
 import dev.arkieee.hyperglide.navigation.Route;
 import dev.arkieee.hyperglide.navigation.Segment;
+import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
@@ -15,6 +16,7 @@ import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.BlockState;
 import net.minecraft.fluid.Fluid;
 import net.minecraft.fluid.Fluids;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.Items;
 import net.minecraft.screen.slot.SlotActionType;
@@ -55,6 +57,7 @@ public class AutoPilot extends Module {
     private boolean join;
     private boolean ready;
     private boolean mining;
+    private boolean emergency;
 
     /**
      * Defines the current travel stage.
@@ -88,6 +91,7 @@ public class AutoPilot extends Module {
         }
 
         BaritoneAPI.getSettings().elytraFireworkSpeed.value = 1.43;
+        BaritoneAPI.getSettings().elytraMinimumAvoidance.value = 0.4;
         BaritoneAPI.getSettings().elytraPredictTerrain.value = false;
 
         this.reset();
@@ -101,7 +105,12 @@ public class AutoPilot extends Module {
     @Override
     public void onDeactivate() {
         this.bounce(false);
-        this.abort();
+
+        if (this.emergency) {
+            this.release();
+        } else {
+            this.abort();
+        }
 
         if (this.mc.interactionManager != null) {
             this.mc.interactionManager.cancelBlockBreaking();
@@ -120,6 +129,12 @@ public class AutoPilot extends Module {
     @EventHandler
     private void tick(TickEvent.Pre event) {
         if (!this.valid()) return;
+
+        if (!this.elytra()) {
+            this.error("Elytra is not equipped.");
+            this.toggle();
+            return;
+        }
 
         this.enable();
 
@@ -141,6 +156,23 @@ public class AutoPilot extends Module {
             case Final -> this.finish();
             case Done -> this.toggle();
         }
+    }
+
+    /**
+     * Stops Auto Pilot when Baritone starts an emergency landing.
+     *
+     * @param event received chat message event
+     */
+    @EventHandler
+    private void message(ReceiveMessageEvent event) {
+        if (!event.getMessage().getString().contains(
+            "Emergency landing - almost out of " +
+            "elytra durability or fireworks")) {
+            return;
+        }
+
+        this.emergency = true;
+        this.toggle();
     }
 
     //endregion
@@ -166,6 +198,7 @@ public class AutoPilot extends Module {
         this.join = false;
         this.ready = false;
         this.mining = false;
+        this.emergency = false;
     }
 
     /**
@@ -455,11 +488,12 @@ public class AutoPilot extends Module {
             return;
         }
 
-        if (this.mc.player.getVelocity().y > 0.0) return;
-
-        if (this.block == null) {
-            this.block = this.mc.player.getBlockPos().down(4);
+        if (this.mc.player.getVelocity().y > 0.01 &&
+            !this.mc.player.verticalCollision) {
+            return;
         }
+
+        this.block = this.mc.player.getBlockPos().down(3);
 
         if (this.mc.world.getBlockState(this.block).isReplaceable() &&
             !this.place(this.block)) {
@@ -1212,6 +1246,17 @@ public class AutoPilot extends Module {
      */
     private Navigation navigation() {
         return Modules.get().get(Navigation.class);
+    }
+
+    /**
+     * Checks whether the player has an elytra equipped.
+     *
+     * @return true when an elytra is equipped in the chest slot
+     */
+    private boolean elytra() {
+        return this.mc.player.getEquippedStack(
+            EquipmentSlot.CHEST
+        ).isOf(Items.ELYTRA);
     }
 
     /**
