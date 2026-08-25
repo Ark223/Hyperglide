@@ -1,5 +1,7 @@
 package dev.arkieee.hyperglide.modules;
 
+import baritone.api.BaritoneAPI;
+import baritone.api.IBaritone;
 import dev.arkieee.hyperglide.Hyperglide;
 import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
@@ -105,7 +107,7 @@ public class RocketBoost extends Module {
             return;
         }
 
-        if (!this.active() || this.control()) return;
+        if (!this.active() || this.controlled()) return;
 
         Vec3d aim = this.mc.player.getRotationVec(1.0F);
         double[] bounds = this.bounds(this.velocity, aim);
@@ -127,7 +129,7 @@ public class RocketBoost extends Module {
         if (!this.valid() || this.target == null
             || event.type != MovementType.SELF
             || !this.mc.player.isGliding()
-            || this.control()) return;
+            || this.controlled()) return;
 
         Vec3d target = this.target;
         this.target = null;
@@ -200,7 +202,7 @@ public class RocketBoost extends Module {
     public void track(FireworkRocketEntity rocket) {
         if (!this.isActive() || !this.valid()
             || !this.mc.player.isGliding()
-            || this.control()) return;
+            || this.controlled()) return;
 
         this.rocket = rocket;
         this.seen = true;
@@ -214,7 +216,7 @@ public class RocketBoost extends Module {
     public boolean boost() {
         return this.isActive() && this.valid()
             && this.mc.player.isGliding()
-            && !this.control() && this.replace;
+            && !this.controlled() && this.replace;
     }
 
     /**
@@ -223,10 +225,14 @@ public class RocketBoost extends Module {
      * @return true while the boost is still active
      */
     private boolean active() {
-        if (this.rocket != null && this.rocket.isAlive()) return true;
+        if (this.rocket != null && this.rocket.isAlive()) {
+            return true;
+        }
 
-        if (this.seen && this.mc.player != null
-            && this.mc.player.age <= this.expiry) return true;
+        if (this.seen && this.mc.player != null &&
+            this.mc.player.age <= this.expiry) {
+            return true;
+        }
 
         this.rocket = null;
         this.seen = false;
@@ -418,13 +424,16 @@ public class RocketBoost extends Module {
     //region Validation
 
     /**
-     * Checks whether Control Fly currently owns player movement.
+     * Checks whether another module owns player movement.
      *
-     * @return true while Control Fly is active
+     * @return true while Control Fly or Baritone flight is active
      */
-    private boolean control() {
+    private boolean controlled() {
         ControlFly module = Modules.get().get(ControlFly.class);
-        return module != null && module.isActive();
+        if (module != null && module.isActive()) return true;
+
+        IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
+        return baritone.getElytraProcess().isActive();
     }
 
     /**
