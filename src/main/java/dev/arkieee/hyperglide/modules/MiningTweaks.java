@@ -1015,12 +1015,15 @@ public class MiningTweaks extends Module {
             Vec3d point = this.point(pos, side);
 
             BlockHitResult hit = this.mc.world.raycast(
-                new RaycastContext(eye, point, RaycastContext.ShapeType.COLLIDER,
-                    RaycastContext.FluidHandling.NONE, this.mc.player
+                new RaycastContext(eye, point,
+                    RaycastContext.ShapeType.COLLIDER,
+                    RaycastContext.FluidHandling.NONE,
+                    this.mc.player
                 )
             );
 
-            if (hit.getType() != HitResult.Type.BLOCK || !hit.getBlockPos().equals(pos)) {
+            if (hit.getType() != HitResult.Type.BLOCK ||
+                !hit.getBlockPos().equals(pos)) {
                 continue;
             }
 
