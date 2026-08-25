@@ -82,6 +82,7 @@ public class BounceFly extends Module {
     private int warm;
     private int jump;
     private int level;
+
     private boolean pass;
     private boolean started;
 
@@ -105,6 +106,7 @@ public class BounceFly extends Module {
         this.slow = 0;
         this.warm = 0;
         this.jump = 0;
+
         this.pass = false;
         this.started = false;
 
@@ -130,6 +132,7 @@ public class BounceFly extends Module {
         this.slow = 0;
         this.warm = 0;
         this.jump = 0;
+
         this.pass = false;
         this.started = false;
     }
@@ -320,8 +323,9 @@ public class BounceFly extends Module {
 
         double scan = Math.hypot(vel.x, vel.z) * this.ticks.get();
         double width = this.mc.player.getWidth() / 2.0;
-        double distance = Double.MAX_VALUE;
+
         Vec3d closest = null;
+        double distance = Double.MAX_VALUE;
 
         for (int idx = -1; idx <= 1; idx += 2) {
             for (double y = 0.5; y <= 1.5; y++) {
@@ -385,6 +389,7 @@ public class BounceFly extends Module {
         this.slow = 0;
         this.warm = 0;
         this.jump = 0;
+
         this.pass = true;
         this.started = false;
 
