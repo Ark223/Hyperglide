@@ -51,14 +51,14 @@ public class BounceFly extends Module {
     private final Setting<Boolean> obstacle = this.general.add(new BoolSetting.Builder()
         .name("obstacle-passer")
         .description("Uses Baritone to pass obstacles when movement stops.")
-        .defaultValue(false)
+        .defaultValue(true)
         .build()
     );
 
     private final Setting<Boolean> avoid = this.general.add(new BoolSetting.Builder()
         .name("avoid-collisions")
         .description("Uses raycasts to detect obstacles and avoid collisions.")
-        .defaultValue(false)
+        .defaultValue(true)
         .visible(this.obstacle::get)
         .build()
     );
@@ -67,7 +67,7 @@ public class BounceFly extends Module {
         .name("collision-ticks")
         .description("How many movement ticks ahead to scan for obstacles.")
         .defaultValue(8)
-        .min(3)
+        .min(5)
         .sliderMax(10)
         .visible(() -> this.obstacle.get() && this.avoid.get())
         .build()
