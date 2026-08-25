@@ -514,17 +514,34 @@ public class CriticalHits extends Module {
 
     //region Data structures
 
+    /**
+     * Tracks whether an entity interaction represents an attack.
+     */
     private static class Attack implements PlayerInteractEntityC2SPacket.Handler {
         private boolean attack;
 
+        /**
+         * Ignores normal entity interaction.
+         *
+         * @param hand interaction hand
+         */
         @Override
         public void interact(Hand hand) {
         }
 
+        /**
+         * Ignores interaction at a specific entity position.
+         *
+         * @param hand interaction hand
+         * @param pos interaction position
+         */
         @Override
         public void interactAt(Hand hand, Vec3d pos) {
         }
 
+        /**
+         * Marks the interaction as an attack.
+         */
         @Override
         public void attack() {
             this.attack = true;

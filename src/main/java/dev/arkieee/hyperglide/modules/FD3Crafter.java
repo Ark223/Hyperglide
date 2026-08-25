@@ -50,16 +50,19 @@ public class FD3Crafter extends Module {
     private boolean close;
     private String note;
 
+    /**
+     * Defines the current crafting workflow stage.
+     */
     private enum Phase {
-        CLEAR,
-        WORK,
-        PAPER,
-        STACK,
-        POWDER,
-        RETURN,
-        MERGE,
-        CHECK,
-        CLEAN
+        Clear,
+        Work,
+        Paper,
+        Stack,
+        Powder,
+        Return,
+        Merge,
+        Check,
+        Clean
     }
 
     public FD3Crafter() {
@@ -73,8 +76,7 @@ public class FD3Crafter extends Module {
      */
     @Override
     public void onActivate() {
-        if (this.mc.player == null || this.mc.world == null ||
-            this.mc.interactionManager == null) {
+        if (!this.valid() || this.mc.interactionManager == null) {
             this.toggle();
             return;
         }
@@ -90,7 +92,7 @@ public class FD3Crafter extends Module {
             this.mc.player.closeHandledScreen();
         }
 
-        this.phase = Phase.CLEAR;
+        this.phase = Phase.Clear;
         this.source = -1;
         this.target = -1;
         this.tick = 0;
@@ -137,8 +139,9 @@ public class FD3Crafter extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (this.mc.player == null || this.mc.world == null
-            || this.mc.interactionManager == null) return;
+        if (!this.valid() || this.mc.interactionManager == null) {
+            return;
+        }
 
         if (!(this.mc.currentScreen instanceof InventoryScreen)
             || this.mc.player.currentScreenHandler !=
@@ -166,15 +169,15 @@ public class FD3Crafter extends Module {
      */
     private void step() {
         switch (this.phase) {
-            case CLEAR -> this.clear();
-            case WORK -> this.work();
-            case PAPER -> this.paper();
-            case STACK -> this.stack();
-            case POWDER -> this.powder();
-            case RETURN -> this.back();
-            case MERGE -> this.merge();
-            case CHECK -> this.check();
-            case CLEAN -> this.clean();
+            case Clear -> this.clear();
+            case Work -> this.work();
+            case Paper -> this.paper();
+            case Stack -> this.stack();
+            case Powder -> this.powder();
+            case Return -> this.back();
+            case Merge -> this.merge();
+            case Check -> this.check();
+            case Clean -> this.clean();
         }
     }
 
@@ -195,7 +198,7 @@ public class FD3Crafter extends Module {
             }
         }
 
-        this.phase = Phase.WORK;
+        this.phase = Phase.Work;
     }
 
     /**
@@ -217,12 +220,12 @@ public class FD3Crafter extends Module {
             this.source = this.largest(Items.PAPER, 1);
 
             if (this.source == -1) {
-                this.phase = Phase.CLEAN;
+                this.phase = Phase.Clean;
                 return;
             }
 
             this.click(this.source, 0, SlotActionType.PICKUP);
-            this.phase = Phase.PAPER;
+            this.phase = Phase.Paper;
             return;
         } else if (!this.stack(paper).isOf(Items.PAPER)) {
             this.fail("The paper slot contains another item.");
@@ -250,7 +253,7 @@ public class FD3Crafter extends Module {
             this.oldpowder = one;
 
             this.click(output, 0, SlotActionType.QUICK_MOVE);
-            this.phase = Phase.CHECK;
+            this.phase = Phase.Check;
             return;
         }
 
@@ -277,7 +280,7 @@ public class FD3Crafter extends Module {
             }
 
             this.click(this.source, 0, SlotActionType.PICKUP);
-            this.phase = Phase.STACK;
+            this.phase = Phase.Stack;
             return;
         }
 
@@ -292,7 +295,7 @@ public class FD3Crafter extends Module {
             this.source = this.full(Items.GUNPOWDER);
 
             this.click(this.source, 0, SlotActionType.PICKUP);
-            this.phase = Phase.STACK;
+            this.phase = Phase.Stack;
             return;
         }
 
@@ -300,7 +303,7 @@ public class FD3Crafter extends Module {
 
         if (this.source != -1) {
             this.click(this.source, 0, SlotActionType.PICKUP);
-            this.phase = Phase.POWDER;
+            this.phase = Phase.Powder;
             return;
         }
 
@@ -312,12 +315,12 @@ public class FD3Crafter extends Module {
                 this.target = pair[1];
 
                 this.click(this.source, 0, SlotActionType.PICKUP);
-                this.phase = Phase.MERGE;
+                this.phase = Phase.Merge;
                 return;
             }
         }
 
-        this.phase = Phase.CLEAN;
+        this.phase = Phase.Clean;
     }
 
     /**
@@ -330,7 +333,7 @@ public class FD3Crafter extends Module {
         }
 
         this.click(paper, 0, SlotActionType.PICKUP);
-        this.phase = Phase.WORK;
+        this.phase = Phase.Work;
     }
 
     /**
@@ -344,7 +347,7 @@ public class FD3Crafter extends Module {
         }
 
         this.click(this.target, 0, SlotActionType.PICKUP);
-        this.phase = Phase.WORK;
+        this.phase = Phase.Work;
     }
 
     /**
@@ -385,7 +388,7 @@ public class FD3Crafter extends Module {
             SlotActionType.QUICK_CRAFT, this.mc.player
         );
 
-        this.phase = Phase.RETURN;
+        this.phase = Phase.Return;
     }
 
     /**
@@ -393,12 +396,12 @@ public class FD3Crafter extends Module {
      */
     private void back() {
         if (this.handler().getCursorStack().isEmpty()) {
-            this.phase = Phase.WORK;
+            this.phase = Phase.Work;
             return;
         }
 
         this.click(this.source, 0, SlotActionType.PICKUP);
-        this.phase = Phase.WORK;
+        this.phase = Phase.Work;
     }
 
     /**
@@ -411,7 +414,7 @@ public class FD3Crafter extends Module {
         }
 
         this.click(this.target, 0, SlotActionType.PICKUP);
-        this.phase = Phase.WORK;
+        this.phase = Phase.Work;
     }
 
     /**
@@ -424,7 +427,7 @@ public class FD3Crafter extends Module {
         if (paper < this.oldpaper || powder < this.oldpowder) {
             this.idle = 0;
             this.bulk = false;
-            this.phase = Phase.WORK;
+            this.phase = Phase.Work;
             this.tick = this.delay.get();
             return;
         }
@@ -468,7 +471,7 @@ public class FD3Crafter extends Module {
      */
     private void fail(String note) {
         this.note = note;
-        this.phase = Phase.CLEAN;
+        this.phase = Phase.Clean;
     }
 
     /**
@@ -501,8 +504,8 @@ public class FD3Crafter extends Module {
      */
     private void click(int slot, int button, SlotActionType action) {
         this.mc.interactionManager.clickSlot(
-            this.handler().syncId, slot,
-            button, action, this.mc.player
+            this.handler().syncId,
+            slot, button, action, this.mc.player
         );
     }
 
@@ -557,8 +560,8 @@ public class FD3Crafter extends Module {
 
             ItemStack stack = this.stack(idx);
             if (stack.isOf(item) && stack.getCount() > count) {
-                slot = idx;
                 count = stack.getCount();
+                slot = idx;
             }
         }
 
@@ -709,6 +712,21 @@ public class FD3Crafter extends Module {
         }
 
         return count;
+    }
+
+    //endregion
+
+    //region Validation and utilities
+
+    /**
+     * Checks whether the required client state is available.
+     *
+     * @return true when ready to run the module
+     */
+    private boolean valid() {
+        return this.mc.player != null
+            && this.mc.world != null
+            && this.mc.getNetworkHandler() != null;
     }
 
     //endregion

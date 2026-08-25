@@ -32,14 +32,13 @@ public class EasyAccess extends Module {
 
     private final SettingGroup general = this.settings.getDefaultGroup();
 
-    private final Setting<Double> range = this.general.add(
-        new DoubleSetting.Builder()
-            .name("max-range")
-            .description("Maximum container interaction range.")
-            .defaultValue(4.5)
-            .min(1)
-            .sliderMax(6.0)
-            .build()
+    private final Setting<Double> range = this.general.add(new DoubleSetting.Builder()
+        .name("max-range")
+        .description("Maximum container interaction range.")
+        .defaultValue(4.5)
+        .min(1)
+        .sliderMax(6.0)
+        .build()
     );
 
     private boolean lock;
@@ -194,7 +193,8 @@ public class EasyAccess extends Module {
             }
 
             BlockHitResult hit = new BlockHitResult(
-                point, this.side(pos, eye), pos, false);
+                point, this.side(pos, eye), pos, false
+            );
 
             best = new Target(hit, null);
             distance = current;
@@ -203,7 +203,8 @@ public class EasyAccess extends Module {
         for (Entity entity : this.mc.world.getEntities()) {
             if (!this.container(entity)) continue;
 
-            Optional<Vec3d> result = entity.getBoundingBox()
+            Optional<Vec3d> result =
+                entity.getBoundingBox()
                 .expand(edge).raycast(eye, end);
 
             if (result.isEmpty()) continue;
@@ -378,6 +379,12 @@ public class EasyAccess extends Module {
 
     //region Data structures
 
+    /**
+     * Stores the selected hidden container target.
+     *
+     * @param block block interaction target, or null
+     * @param entity entity interaction target, or null
+     */
     private record Target(BlockHitResult block, Entity entity) {}
 
     //endregion

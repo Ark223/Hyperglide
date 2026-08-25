@@ -101,6 +101,9 @@ public class Scaffolding extends Module {
     private int tick;
     private int level;
 
+    /**
+     * Controls how the block list is applied.
+     */
     public enum Mode {
         Whitelist,
         Blacklist

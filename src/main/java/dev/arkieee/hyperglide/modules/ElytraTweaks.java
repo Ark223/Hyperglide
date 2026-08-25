@@ -100,7 +100,7 @@ public class ElytraTweaks extends Module {
         .name("retry-cooldown")
         .description("Ticks to wait before retrying Baritone elytra flight.")
         .defaultValue(5)
-        .min(1)
+        .min(3)
         .sliderMax(10)
         .visible(this.deploy::get)
         .build()
@@ -125,7 +125,7 @@ public class ElytraTweaks extends Module {
         .description("How many movement ticks ahead to scan for collisions.")
         .defaultValue(3)
         .min(1)
-        .sliderMax(5)
+        .sliderMax(3)
         .visible(this.avoid::get)
         .build()
     );

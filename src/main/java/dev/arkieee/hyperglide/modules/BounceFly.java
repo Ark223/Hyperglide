@@ -96,8 +96,7 @@ public class BounceFly extends Module {
      */
     @Override
     public void onActivate() {
-        if (this.mc.player == null ||
-            this.mc.world == null) return;
+        if (!this.valid()) return;
 
         this.level = this.mc.player.getBlockY();
         this.face();
@@ -144,8 +143,7 @@ public class BounceFly extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (this.mc.player == null ||
-            this.mc.world == null) return;
+        if (!this.valid()) return;
 
         IBaritone baritone = null;
 
@@ -508,6 +506,17 @@ public class BounceFly extends Module {
         return this.mc.player.getEquippedStack(
             EquipmentSlot.CHEST
         ).isOf(Items.ELYTRA);
+    }
+
+    /**
+     * Checks whether the required client state is available.
+     *
+     * @return true when ready to run the module
+     */
+    private boolean valid() {
+        return this.mc.player != null
+            && this.mc.world != null
+            && this.mc.getNetworkHandler() != null;
     }
 
     //endregion

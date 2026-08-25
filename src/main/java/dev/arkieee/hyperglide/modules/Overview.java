@@ -188,6 +188,9 @@ public class Overview extends Module {
 
     //region Data structures
 
+    /**
+     * Tracks occurrences of an item in container contents.
+     */
     private static class Count {
         private final ItemStack stack;
         private int slots;
@@ -202,6 +205,9 @@ public class Overview extends Module {
         }
     }
 
+    /**
+     * Stores a cached container content result.
+     */
     private static class Cached {
         private final Object data;
         private final ItemStack stack;

@@ -28,7 +28,6 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.shape.VoxelShape;
-
 import java.util.*;
 
 public class SelfTrapper extends Module {
@@ -153,6 +152,9 @@ public class SelfTrapper extends Module {
     private boolean centered;
     private boolean moving;
 
+    /**
+     * Controls how the block list is applied.
+     */
     public enum Mode {
         Whitelist,
         Blacklist
@@ -256,6 +258,10 @@ public class SelfTrapper extends Module {
             }
         }
     }
+
+    //endregion
+
+    //region State management
 
     /**
      * Clears all queues, timers and centering state.

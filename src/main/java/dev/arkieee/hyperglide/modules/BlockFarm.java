@@ -85,8 +85,8 @@ public class BlockFarm extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (!this.valid() || !this.prepare() ||
-            !this.mc.player.isOnGround()) {
+        if (!this.valid() || this.mc.interactionManager == null ||
+            !this.prepare() || !this.mc.player.isOnGround()) {
             return;
         }
 
@@ -370,7 +370,7 @@ public class BlockFarm extends Module {
     private boolean valid() {
         return this.mc.player != null
             && this.mc.world != null
-            && this.mc.interactionManager != null;
+            && this.mc.getNetworkHandler() != null;
     }
 
     //endregion
