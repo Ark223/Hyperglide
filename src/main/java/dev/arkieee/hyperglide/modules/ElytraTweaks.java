@@ -335,6 +335,15 @@ public class ElytraTweaks extends Module {
         }
     }
 
+    /**
+     * Checks whether collision avoidance currently owns player movement.
+     *
+     * @return true while movement is halted for collision avoidance
+     */
+    public boolean halted() {
+        return this.isActive() && this.halt;
+    }
+
     //endregion
 
     //region State management

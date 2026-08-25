@@ -74,10 +74,10 @@ public class RocketBoost extends Module {
         this.reset();
         if (this.mc.player == null) return;
 
-        this.velocity = this.mc.player.getVelocity();
-
         this.yaw = this.mc.player.getYaw();
         this.pitch = this.mc.player.getPitch();
+
+        this.velocity = this.mc.player.getVelocity();
     }
 
     /**
@@ -426,11 +426,14 @@ public class RocketBoost extends Module {
     /**
      * Checks whether another module owns player movement.
      *
-     * @return true while Control Fly or Baritone flight is active
+     * @return true while another module controls movement
      */
     private boolean controlled() {
         ControlFly module = Modules.get().get(ControlFly.class);
         if (module != null && module.isActive()) return true;
+
+        ElytraTweaks tweaks = Modules.get().get(ElytraTweaks.class);
+        if (tweaks != null && tweaks.halted()) return true;
 
         IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
         return baritone.getElytraProcess().isActive();
