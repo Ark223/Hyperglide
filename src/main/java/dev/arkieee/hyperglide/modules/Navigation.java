@@ -1038,7 +1038,9 @@ public class Navigation extends Module {
         if (clean.isEmpty()) return;
 
         String[] parts = clean.split("\\s+");
-        if (parts.length != 2 && parts.length != 3) return;
+        if (parts.length != 2 && parts.length != 3) {
+            return;
+        }
 
         try {
             int px = Integer.parseInt(parts[0]);
@@ -1051,7 +1053,9 @@ public class Navigation extends Module {
             }
 
             if (px < -border || px > border ||
-                pz < -border || pz > border) return;
+                pz < -border || pz > border) {
+                return;
+            }
 
             this.point = new BlockPos(px, py, pz);
             this.calculate();
