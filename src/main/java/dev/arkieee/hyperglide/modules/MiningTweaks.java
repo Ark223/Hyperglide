@@ -316,7 +316,8 @@ public class MiningTweaks extends Module {
      * @return true when the position is stored for instant remine
      */
     public boolean armed(BlockPos pos) {
-        return this.remine.get() && this.last != null
+        return this.remine.get()
+            && this.last != null
             && this.last.pos.equals(pos);
     }
 
@@ -511,7 +512,8 @@ public class MiningTweaks extends Module {
         Target target = this.primary;
 
         this.action(target,
-            PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK, target.pos
+            PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK,
+            target.pos
         );
 
         Target parked = new Target(
@@ -740,7 +742,8 @@ public class MiningTweaks extends Module {
 
         if (target == this.primary && !target.instant) {
             this.action(target,
-                PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK, target.pos
+                PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK,
+                target.pos
             );
         }
 
@@ -775,7 +778,8 @@ public class MiningTweaks extends Module {
         target.side = side;
 
         this.action(target,
-            PlayerActionC2SPacket.Action.ABORT_DESTROY_BLOCK, target.pos
+            PlayerActionC2SPacket.Action.ABORT_DESTROY_BLOCK,
+            target.pos
         );
 
         this.remove(target, false);
