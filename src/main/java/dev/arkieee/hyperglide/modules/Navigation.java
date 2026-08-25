@@ -49,7 +49,7 @@ public class Navigation extends Module {
         .description("Destination position.")
         .defaultValue("0 0")
         .renderer(Mask.class)
-        .onChanged(this::parse)
+        .onChanged(this::change)
         .build()
     );
 
@@ -57,7 +57,7 @@ public class Navigation extends Module {
         .name("eight-to-one")
         .description("Uses overworld coordinates as input.")
         .defaultValue(false)
-        .onChanged(value -> this.parse(this.goal.get()))
+        .onChanged(value -> this.change(this.goal.get()))
         .build()
     );
 
@@ -1008,6 +1008,24 @@ public class Navigation extends Module {
             (float) (this.mc.mouse.getX() * swidth / width),
             (float) (this.mc.mouse.getY() * sheight / height)
         );
+    }
+
+    /**
+     * Applies a destination change and restarts Auto Pilot when active.
+     *
+     * @param value typed destination value
+     */
+    private void change(String value) {
+        BlockPos previous = this.point;
+
+        this.parse(value);
+        if (this.point.equals(previous)) return;
+
+        AutoPilot pilot = Modules.get().get(AutoPilot.class);
+        if (pilot == null || !pilot.isActive()) return;
+
+        pilot.toggle();
+        pilot.toggle();
     }
 
     /**
