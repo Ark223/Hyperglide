@@ -12,6 +12,7 @@ import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.player.FindItemResult;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.player.Rotations;
@@ -164,6 +165,8 @@ public class ControlFly extends Module {
             return;
         }
 
+        if (this.halted()) return;
+
         this.view();
         this.control();
     }
@@ -175,9 +178,8 @@ public class ControlFly extends Module {
      */
     @EventHandler
     private void move(PlayerMoveEvent event) {
-        if (!this.valid() ||
-            event.type != MovementType.SELF ||
-            !this.mc.player.isGliding()) return;
+        if (!this.valid() || event.type != MovementType.SELF ||
+            !this.mc.player.isGliding() || this.halted()) return;
 
         Vec3d input = this.direction();
         if (input.lengthSquared() < epsilon) {
@@ -716,9 +718,11 @@ public class ControlFly extends Module {
      * @return true when yaw or pitch requires synchronization
      */
     private boolean changed() {
-        return !this.turn.active || Math.abs(MathHelper.wrapDegrees(
-            this.flight.yaw - this.turn.yaw)) > 0.05F || Math.abs(
-            this.flight.pitch - this.turn.pitch) > 0.05F;
+        return !this.turn.active ||
+            Math.abs(MathHelper.wrapDegrees(
+                this.flight.yaw - this.turn.yaw
+            )) > 0.05F ||
+            Math.abs(this.flight.pitch - this.turn.pitch) > 0.05F;
     }
 
     /**
@@ -1033,7 +1037,9 @@ public class ControlFly extends Module {
 
         if (this.boost.rocket != null &&
             this.boost.rocket.isAlive() &&
-            rocket.age >= this.boost.rocket.age) return;
+            rocket.age >= this.boost.rocket.age) {
+            return;
+        }
 
         this.boost.rocket = rocket;
         this.boost.pending = false;
@@ -1126,6 +1132,16 @@ public class ControlFly extends Module {
     //endregion
 
     //region Validation and utilities
+
+    /**
+     * Checks whether Elytra Tweaks currently stops movement.
+     *
+     * @return true while collision avoidance is stopping movement
+     */
+    private boolean halted() {
+        ElytraTweaks tweaks = Modules.get().get(ElytraTweaks.class);
+        return tweaks != null && tweaks.halted();
+    }
 
     /**
      * Checks whether flight input currently requests movement.
