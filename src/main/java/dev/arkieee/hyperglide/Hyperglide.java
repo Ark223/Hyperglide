@@ -11,6 +11,7 @@ import dev.arkieee.hyperglide.modules.CriticalHits;
 import dev.arkieee.hyperglide.modules.DeepTrace;
 import dev.arkieee.hyperglide.modules.EasyAccess;
 import dev.arkieee.hyperglide.modules.ElytraTweaks;
+import dev.arkieee.hyperglide.modules.FastFrame;
 import dev.arkieee.hyperglide.modules.FastPortal;
 import dev.arkieee.hyperglide.modules.FD3Crafter;
 import dev.arkieee.hyperglide.modules.MiningTweaks;
@@ -45,6 +46,7 @@ public class Hyperglide extends MeteorAddon {
         Modules.get().add(new DeepTrace());
         Modules.get().add(new EasyAccess());
         Modules.get().add(new ElytraTweaks());
+        Modules.get().add(new FastFrame());
         Modules.get().add(new FastPortal());
         Modules.get().add(new FD3Crafter());
         Modules.get().add(new MiningTweaks());
