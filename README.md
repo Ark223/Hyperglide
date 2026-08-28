@@ -70,6 +70,7 @@ Hyperglide/
 │       │   ├── mixin/              # Mixin classes
 │       │   ├── modules/            # Meteor modules
 │       │   ├── navigation/         # Route planning
+│       │   ├── utilities/          # Utility classes
 │       │   └── Hyperglide.java     # Main entry point
 │       └── resources/
 │           ├── assets/hyperglide/
