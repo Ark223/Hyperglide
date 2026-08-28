@@ -1,6 +1,8 @@
 package dev.arkieee.hyperglide.modules;
 
 import dev.arkieee.hyperglide.Hyperglide;
+import dev.arkieee.hyperglide.utilities.Client;
+import dev.arkieee.hyperglide.utilities.Hotbar;
 import dev.arkieee.hyperglide.mixin.AttackAccessor;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -15,6 +17,7 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
+import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket.Mode;
 import net.minecraft.network.packet.c2s.play.HandSwingC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerInteractEntityC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
@@ -91,7 +94,7 @@ public class CriticalHits extends Module {
      */
     @EventHandler
     private void onPacket(PacketEvent.Send event) {
-        if (this.own || !this.valid()) return;
+        if (this.own || !Client.ready()) return;
 
         if (event.packet instanceof PlayerMoveC2SPacket movement && this.cache != null) {
             event.cancel();
@@ -139,8 +142,8 @@ public class CriticalHits extends Module {
             if (this.mc.player.isSprinting()) {
                 this.mc.player.setSprinting(false);
 
-                this.send(new ClientCommandC2SPacket(this.mc.player,
-                    ClientCommandC2SPacket.Mode.STOP_SPRINTING
+                this.send(new ClientCommandC2SPacket(
+                    this.mc.player, Mode.STOP_SPRINTING
                 ));
             }
 
@@ -258,7 +261,7 @@ public class CriticalHits extends Module {
      * @param input player input after keyboard processing
      */
     public void input(Input input) {
-        if (!this.isActive() || !this.valid() ||
+        if (!this.isActive() || !Client.ready() ||
             input.playerInput == null) return;
 
         PlayerInput state = input.playerInput;
@@ -342,13 +345,13 @@ public class CriticalHits extends Module {
      * Starts the movement sequence for the delayed attack.
      */
     private void trigger() {
-        if (this.cache == null || !this.valid()) return;
+        if (this.cache == null || !Client.ready()) return;
 
         if (this.mc.player.isSprinting()) {
             this.mc.player.setSprinting(false);
 
-            this.send(new ClientCommandC2SPacket(this.mc.player,
-                ClientCommandC2SPacket.Mode.STOP_SPRINTING
+            this.send(new ClientCommandC2SPacket(
+                this.mc.player, Mode.STOP_SPRINTING
             ));
         }
 
@@ -371,11 +374,11 @@ public class CriticalHits extends Module {
      * Sends the delayed attack with the preserved weapon.
      */
     private void release() {
-        if (this.cache == null || !this.valid()) return;
+        if (this.cache == null || !Client.ready()) return;
 
         PlayerInteractEntityC2SPacket packet = this.cache;
 
-        int current = this.mc.player.getInventory().selectedSlot;
+        int current = Hotbar.selected();
         int weapon = current;
 
         if (this.preserve.get() &&
@@ -384,7 +387,10 @@ public class CriticalHits extends Module {
                 this.mc.player.getMainHandStack(), this.stack
             )) {
 
-            int found = this.hotbar(this.stack);
+            int found = Hotbar.find(candidate ->
+                ItemStack.areItemsAndComponentsEqual(candidate, this.stack)
+            );
+
             if (found >= 0) weapon = found;
         }
 
@@ -397,22 +403,6 @@ public class CriticalHits extends Module {
     }
 
     /**
-     * Finds the preserved weapon in the hotbar.
-     *
-     * @param stack preserved weapon stack
-     * @return matching hotbar slot, or -1 when unavailable
-     */
-    private int hotbar(ItemStack stack) {
-        for (int idx = 0; idx < 9; idx++) {
-            ItemStack current = this.mc.player.getInventory().getStack(idx);
-            if (ItemStack.areItemsAndComponentsEqual(current, stack)) {
-                return idx;
-            }
-        }
-        return -1;
-    }
-
-    /**
      * Synchronizes a selected hotbar slot with the server.
      *
      * @param slot hotbar slot to select
@@ -421,17 +411,13 @@ public class CriticalHits extends Module {
         this.send(new UpdateSelectedSlotC2SPacket(slot));
     }
 
-    //endregion
-
-    //region Packet handling
-
     /**
      * Sends a packet without handling it again.
      *
      * @param packet packet to send
      */
     private void send(Packet<?> packet) {
-        if (!this.valid()) return;
+        if (!Client.ready()) return;
 
         boolean own = this.own;
         this.own = true;
@@ -445,7 +431,7 @@ public class CriticalHits extends Module {
 
     //endregion
 
-    //region Validation and utilities
+    //region Attack validation
 
     /**
      * Checks whether movement needs to be stopped before attacking.
@@ -497,17 +483,6 @@ public class CriticalHits extends Module {
         }
 
         return false;
-    }
-
-    /**
-     * Checks whether the required client state is available.
-     *
-     * @return true when ready to run the module
-     */
-    private boolean valid() {
-        return this.mc.player != null
-            && this.mc.world != null
-            && this.mc.getNetworkHandler() != null;
     }
 
     //endregion

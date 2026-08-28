@@ -1,14 +1,16 @@
 package dev.arkieee.hyperglide.modules;
 
-import baritone.api.BaritoneAPI;
-import baritone.api.IBaritone;
 import dev.arkieee.hyperglide.Hyperglide;
+import dev.arkieee.hyperglide.utilities.Baritone;
+import dev.arkieee.hyperglide.utilities.Client;
+import dev.arkieee.hyperglide.utilities.Elytra;
 import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.mixininterface.IVec3d;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
 import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.orbit.EventHandler;
@@ -20,7 +22,6 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
 public class RocketBoost extends Module {
@@ -28,24 +29,24 @@ public class RocketBoost extends Module {
     private static final double rescale = 1.65;
     private static final double base = 1.7;
 
-    private final Setting<Double> maximum = this.settings.getDefaultGroup().add(
-        new DoubleSetting.Builder()
-            .name("max-boost")
-            .description("Maximum extra speed added above normal rocket speed.")
-            .defaultValue(10.0)
-            .min(0.0)
-            .sliderMax(10.0)
-            .build()
+    private final SettingGroup general = this.settings.getDefaultGroup();
+
+    private final Setting<Double> maximum = this.general.add(new DoubleSetting.Builder()
+        .name("max-boost")
+        .description("Maximum extra speed added above normal rocket speed.")
+        .defaultValue(10.0)
+        .min(0.0)
+        .sliderMax(10.0)
+        .build()
     );
 
-    private final Setting<Double> delta = this.settings.getDefaultGroup().add(
-        new DoubleSetting.Builder()
-            .name("safety-delta")
-            .description("Shortens fallback rocket time for ping variation.")
-            .defaultValue(0.1)
-            .min(0.0)
-            .sliderMax(1.0)
-            .build()
+    private final Setting<Double> delta = this.general.add(new DoubleSetting.Builder()
+        .name("safety-delta")
+        .description("Shortens fallback rocket time for ping variation.")
+        .defaultValue(0.1)
+        .min(0.0)
+        .sliderMax(1.0)
+        .build()
     );
 
     private FireworkRocketEntity rocket;
@@ -76,7 +77,6 @@ public class RocketBoost extends Module {
 
         this.yaw = this.mc.player.getYaw();
         this.pitch = this.mc.player.getPitch();
-
         this.velocity = this.mc.player.getVelocity();
     }
 
@@ -100,7 +100,7 @@ public class RocketBoost extends Module {
         this.target = null;
         this.replace = false;
 
-        if (!this.valid()) return;
+        if (!Client.ready()) return;
 
         if (!this.mc.player.isGliding()) {
             this.idle();
@@ -126,10 +126,10 @@ public class RocketBoost extends Module {
      */
     @EventHandler
     private void move(PlayerMoveEvent event) {
-        if (!this.valid() || this.target == null
-            || event.type != MovementType.SELF
-            || !this.mc.player.isGliding()
-            || this.controlled()) return;
+        if (!Client.ready() || this.target == null ||
+            event.type != MovementType.SELF ||
+            !this.mc.player.isGliding() ||
+            this.controlled()) return;
 
         Vec3d target = this.target;
         this.target = null;
@@ -148,7 +148,7 @@ public class RocketBoost extends Module {
      */
     @EventHandler
     private void packet(PacketEvent.Send event) {
-        if (!this.valid()) return;
+        if (!Client.ready()) return;
 
         if (event.packet instanceof PlayerInteractItemC2SPacket packet) {
             if (!this.mc.player.isGliding()) return;
@@ -192,6 +192,35 @@ public class RocketBoost extends Module {
 
     //endregion
 
+    //region State management
+
+    /**
+     * Clears the current rocket boost.
+     */
+    private void idle() {
+        this.target = null;
+        this.rocket = null;
+        this.expiry = 0;
+
+        this.replace = false;
+        this.seen = false;
+    }
+
+    /**
+     * Clears all boost states.
+     */
+    private void reset() {
+        this.idle();
+
+        this.yaw = 0.0F;
+        this.pitch = 0.0F;
+        this.velocity = Vec3d.ZERO;
+
+        this.moved = true;
+    }
+
+    //endregion
+
     //region Boost control
 
     /**
@@ -200,9 +229,9 @@ public class RocketBoost extends Module {
      * @param rocket player-owned firework rocket
      */
     public void track(FireworkRocketEntity rocket) {
-        if (!this.isActive() || !this.valid()
-            || !this.mc.player.isGliding()
-            || this.controlled()) return;
+        if (!this.isActive() || !Client.ready() ||
+            !this.mc.player.isGliding() ||
+            this.controlled()) return;
 
         this.rocket = rocket;
         this.seen = true;
@@ -214,7 +243,7 @@ public class RocketBoost extends Module {
      * @return true when rocket boosting should replace vanilla acceleration
      */
     public boolean boost() {
-        return this.isActive() && this.valid()
+        return this.isActive() && Client.ready()
             && this.mc.player.isGliding()
             && !this.controlled() && this.replace;
     }
@@ -253,6 +282,21 @@ public class RocketBoost extends Module {
         return velocity.multiply(maximum / Math.sqrt(square));
     }
 
+    /**
+     * Checks whether another module owns player movement.
+     *
+     * @return true while another module controls movement
+     */
+    private boolean controlled() {
+        ControlFly module = Modules.get().get(ControlFly.class);
+        if (module != null && module.isActive()) return true;
+
+        ElytraTweaks tweaks = Modules.get().get(ElytraTweaks.class);
+        if (tweaks != null && tweaks.halted()) return true;
+
+        return Baritone.elytra();
+    }
+
     //endregion
 
     //region Boost prediction
@@ -265,7 +309,7 @@ public class RocketBoost extends Module {
      * @return minimum and maximum velocity bounds
      */
     private double[] bounds(Vec3d velocity, Vec3d rotation) {
-        Vec3d simulated = this.glide(
+        Vec3d simulated = Elytra.glide(
             velocity, rotation, this.mc.player.getFinalGravity()
         );
 
@@ -301,62 +345,6 @@ public class RocketBoost extends Module {
     }
 
     /**
-     * Simulates one tick of vanilla elytra velocity.
-     *
-     * @param velocity previous player velocity
-     * @param rotation current flight direction
-     * @param gravity current player gravity
-     * @return simulated gliding velocity
-     */
-    private Vec3d glide(Vec3d velocity, Vec3d rotation, double gravity) {
-        double horizontal = rotation.horizontalLength();
-        double speed = velocity.horizontalLength();
-
-        double pitch = Math.asin(MathHelper.clamp(
-            -rotation.y, -1.0, 1.0
-        ));
-
-        double cosine = Math.cos(pitch);
-        double square = cosine * cosine;
-
-        velocity = velocity.add(
-            0.0, gravity * (square * 0.75 - 1.0), 0.0
-        );
-
-        if (velocity.y < 0.0 && horizontal > 0.0) {
-            double lift = velocity.y * -0.1 * square;
-
-            velocity = velocity.add(
-                rotation.x * lift / horizontal,
-                lift,
-                rotation.z * lift / horizontal
-            );
-        }
-
-        if (pitch < 0.0 && horizontal > 0.0) {
-            double dive = speed * -Math.sin(pitch) * 0.04;
-
-            velocity = velocity.add(
-                -rotation.x * dive / horizontal,
-                dive * 3.2,
-                -rotation.z * dive / horizontal
-            );
-        }
-
-        if (horizontal > 0.0) {
-            double scale = speed / horizontal;
-
-            velocity = velocity.add(
-                (rotation.x * scale - velocity.x) * 0.1,
-                0.0,
-                (rotation.z * scale - velocity.z) * 0.1
-            );
-        }
-
-        return velocity.multiply(0.99, 0.98, 0.99);
-    }
-
-    /**
      * Finds the farthest point inside a velocity box toward the aim direction.
      *
      * @param bounds minimum and maximum velocity bounds
@@ -388,66 +376,6 @@ public class RocketBoost extends Module {
         }
 
         return center.add(aim.multiply(far));
-    }
-
-    //endregion
-
-    //region State management
-
-    /**
-     * Clears the current rocket boost.
-     */
-    private void idle() {
-        this.target = null;
-        this.rocket = null;
-        this.expiry = 0;
-
-        this.replace = false;
-        this.seen = false;
-    }
-
-    /**
-     * Clears all boost states.
-     */
-    private void reset() {
-        this.idle();
-
-        this.yaw = 0.0F;
-        this.pitch = 0.0F;
-        this.velocity = Vec3d.ZERO;
-
-        this.moved = true;
-    }
-
-    //endregion
-
-    //region Validation
-
-    /**
-     * Checks whether another module owns player movement.
-     *
-     * @return true while another module controls movement
-     */
-    private boolean controlled() {
-        ControlFly module = Modules.get().get(ControlFly.class);
-        if (module != null && module.isActive()) return true;
-
-        ElytraTweaks tweaks = Modules.get().get(ElytraTweaks.class);
-        if (tweaks != null && tweaks.halted()) return true;
-
-        IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
-        return baritone.getElytraProcess().isActive();
-    }
-
-    /**
-     * Checks whether the required client state is available.
-     *
-     * @return true when ready to run the module
-     */
-    private boolean valid() {
-        return this.mc.player != null
-            && this.mc.world != null
-            && this.mc.getNetworkHandler() != null;
     }
 
     //endregion

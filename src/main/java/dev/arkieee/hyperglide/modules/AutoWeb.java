@@ -1,71 +1,64 @@
 package dev.arkieee.hyperglide.modules;
 
 import dev.arkieee.hyperglide.Hyperglide;
+import dev.arkieee.hyperglide.utilities.Client;
+import dev.arkieee.hyperglide.utilities.Hotbar;
+import dev.arkieee.hyperglide.utilities.Placement;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
-import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
-import net.minecraft.sound.BlockSoundGroup;
-import net.minecraft.sound.SoundCategory;
 import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import java.util.*;
 
 public class AutoWeb extends Module {
-    private static final double edge = 0.0001;
+    private static final double edge = 1.0E-4;
     private static final int life = 5;
 
     private final SettingGroup general = this.settings.getDefaultGroup();
 
-    private final Setting<Set<EntityType<?>>> entities = this.general.add(
-        new EntityTypeListSetting.Builder()
-            .name("entities")
-            .description("Entities targeted by Auto Web.")
-            .defaultValue(EntityType.PLAYER)
-            .build()
+    private final Setting<Set<EntityType<?>>> entities =
+        this.general.add(new EntityTypeListSetting.Builder()
+        .name("entities")
+        .description("Entities targeted by Auto Web.")
+        .defaultValue(EntityType.PLAYER)
+        .build()
     );
 
-    private final Setting<Double> range = this.general.add(
-        new DoubleSetting.Builder()
-            .name("max-range")
-            .description("Maximum placement range.")
-            .defaultValue(4.5)
-            .min(0.0)
-            .sliderMax(6.0)
-            .build()
+    private final Setting<Double> range = this.general.add(new DoubleSetting.Builder()
+        .name("max-range")
+        .description("Maximum placement range.")
+        .defaultValue(4.5)
+        .min(0.0)
+        .sliderMax(6.0)
+        .build()
     );
 
-    private final Setting<Integer> delay = this.general.add(
-        new IntSetting.Builder()
-            .name("place-delay")
-            .description("Delay in ticks between placements.")
-            .defaultValue(2)
-            .min(0)
-            .sliderMax(4)
-            .build()
+    private final Setting<Integer> delay = this.general.add(new IntSetting.Builder()
+        .name("place-delay")
+        .description("Delay in ticks between placements.")
+        .defaultValue(2)
+        .min(0)
+        .sliderMax(4)
+        .build()
     );
 
-    private final Setting<Integer> extrapolation = this.general.add(
-        new IntSetting.Builder()
-            .name("extrapolation")
-            .description("Ticks used to predict entity movement.")
-            .defaultValue(2)
-            .min(0)
-            .sliderMax(5)
-            .build()
+    private final Setting<Integer> extrapolation = this.general.add(new IntSetting.Builder()
+        .name("extrapolation")
+        .description("Ticks used to predict entity movement.")
+        .defaultValue(2)
+        .min(0)
+        .sliderMax(5)
+        .build()
     );
 
     private final LinkedHashSet<BlockPos> queue = new LinkedHashSet<>();
@@ -106,20 +99,23 @@ public class AutoWeb extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (this.mc.player == null || this.mc.world == null ||
-            this.mc.interactionManager == null) return;
+        if (!Client.interaction()) return;
 
         this.tick++;
         this.clean();
         this.collect();
 
-        if (++this.timer < this.delay.get()) return;
+        if (++this.timer < this.delay.get()) {
+            return;
+        }
 
         BlockPos pos = this.next();
         if (pos == null) return;
 
-        int slot = this.slot();
-        if (slot == -1 || !this.place(pos, slot)) return;
+        int slot = Hotbar.find(Items.COBWEB);
+        if (slot == -1 || !this.place(pos, slot)) {
+            return;
+        }
 
         this.timer = 0;
         this.marks.put(pos, this.tick);
@@ -151,11 +147,11 @@ public class AutoWeb extends Module {
 
         for (Entity entity : this.mc.world.getEntities()) {
             if (entity == this.mc.player || !entity.isAlive() ||
-                entity.isSpectator() ||
                 !this.entities.get().contains(entity.getType()) ||
                 this.mc.player.squaredDistanceTo(entity) > range) {
                 continue;
             }
+
             targets.add(entity);
         }
 
@@ -198,50 +194,21 @@ public class AutoWeb extends Module {
     }
 
     /**
-     * Adds a valid untracked block position to the queue.
+     * Adds a valid untracked position to the queue.
      *
      * @param pos candidate block position
      */
     private void add(BlockPos pos) {
         pos = pos.toImmutable();
 
-        if (!this.valid(pos) || this.queue.contains(pos)
-            || this.marks.containsKey(pos)) return;
+        if (!this.valid(pos) ||
+            this.queue.contains(pos) ||
+            this.marks.containsKey(pos)) {
+            return;
+        }
 
         this.queue.addLast(pos);
     }
-
-    //endregion
-
-    //region Queue management
-
-    /**
-     * Removes and returns the next valid queued position.
-     *
-     * @return next valid position, or null when none is available
-     */
-    private BlockPos next() {
-        while (!this.queue.isEmpty()) {
-            BlockPos pos = this.queue.removeFirst();
-            if (this.valid(pos)) return pos;
-        }
-        return null;
-    }
-
-    /**
-     * Removes expired or no longer replaceable placement marks.
-     */
-    private void clean() {
-        this.marks.entrySet().removeIf(entry -> {
-            BlockPos pos = entry.getKey();
-            return !this.mc.world.getBlockState(pos).isReplaceable()
-                || this.tick - entry.getValue() > life;
-        });
-    }
-
-    //endregion
-
-    //region Movement prediction
 
     /**
      * Predicts entity movement from its current velocity.
@@ -260,6 +227,34 @@ public class AutoWeb extends Module {
 
     //endregion
 
+    //region Queue management
+
+    /**
+     * Removes and returns the next valid position from the queue.
+     *
+     * @return next valid position, or null when none is available
+     */
+    private BlockPos next() {
+        while (!this.queue.isEmpty()) {
+            BlockPos pos = this.queue.removeFirst();
+            if (this.valid(pos)) return pos;
+        }
+        return null;
+    }
+
+    /**
+     * Removes expired or no longer replaceable placement marks.
+     */
+    private void clean() {
+        this.marks.entrySet().removeIf(entry -> {
+            BlockPos pos = entry.getKey();
+            return this.tick - entry.getValue() > life
+                || !this.mc.world.getBlockState(pos).isReplaceable();
+        });
+    }
+
+    //endregion
+
     //region Block placement
 
     /**
@@ -270,70 +265,23 @@ public class AutoWeb extends Module {
      * @return true when the placement packets were sent
      */
     private boolean place(BlockPos pos, int slot) {
-        ItemStack stack = this.mc.player.getInventory().getStack(slot);
+        ItemStack stack = Hotbar.stack(slot);
 
         if (!(stack.getItem() instanceof BlockItem item) ||
-            !stack.isOf(Items.COBWEB) || !InvUtils.swap(slot, true)) {
+            !stack.isOf(Items.COBWEB) || !Hotbar.swap(slot)) {
             return false;
         }
 
-        PlayerActionC2SPacket swap = new PlayerActionC2SPacket(
-            PlayerActionC2SPacket.Action.SWAP_ITEM_WITH_OFFHAND,
-            BlockPos.ORIGIN, Direction.DOWN
-        );
-
         try {
-            this.mc.player.networkHandler.sendPacket(swap);
-
-            this.mc.player.networkHandler.sendPacket(
-                new PlayerInteractBlockC2SPacket(Hand.OFF_HAND, this.hit(pos),
-                    this.mc.player.currentScreenHandler.getRevision() + 2
-                )
-            );
-
-            this.mc.player.networkHandler.sendPacket(swap);
+            Placement.place(pos);
             this.mc.player.swingHand(Hand.MAIN_HAND);
-            this.sound(item, pos);
 
+            Placement.sound(item, pos);
             return true;
         } finally {
-            InvUtils.swapBack();
+            Hotbar.restore();
         }
     }
-
-    /**
-     * Finds a block face that can support normal placement.
-     *
-     * @param pos destination block position
-     * @return block hit result used for interaction
-     */
-    private BlockHitResult hit(BlockPos pos) {
-        for (Direction side : Direction.values()) {
-            BlockPos near = pos.offset(side);
-
-            if (this.mc.world.getBlockState(near).isReplaceable() ||
-                !this.mc.world.getFluidState(near).isEmpty()) {
-                continue;
-            }
-
-            Direction face = side.getOpposite();
-            Vec3d hit = Vec3d.ofCenter(near).add(
-                face.getOffsetX() * 0.5,
-                face.getOffsetY() * 0.5,
-                face.getOffsetZ() * 0.5
-            );
-
-            return new BlockHitResult(hit, face, near, false);
-        }
-
-        return new BlockHitResult(
-            Vec3d.ofCenter(pos), Direction.UP, pos, false
-        );
-    }
-
-    //endregion
-
-    //region Validation and inventory
 
     /**
      * Checks whether a cobweb can be placed at a position.
@@ -349,41 +297,8 @@ public class AutoWeb extends Module {
         Vec3d center = Vec3d.ofCenter(pos);
         Vec3d eye = this.mc.player.getEyePos();
 
-        return center.squaredDistanceTo(eye) <=
-            this.range.get() * this.range.get();
-    }
-
-    /**
-     * Finds a cobweb stack in the hotbar.
-     *
-     * @return matching hotbar slot, or -1 when none exists
-     */
-    private int slot() {
-        for (int idx = 0; idx < 9; idx++) {
-            if (this.mc.player.getInventory().getStack(idx).isOf(Items.COBWEB)) {
-                return idx;
-            }
-        }
-        return -1;
-    }
-
-    //endregion
-
-    //region Sound effects
-
-    /**
-     * Plays the local placement sound for a selected block.
-     *
-     * @param item placed block item
-     * @param pos placement position
-     */
-    private void sound(BlockItem item, BlockPos pos) {
-        BlockSoundGroup sound = item.getBlock().getDefaultState().getSoundGroup();
-
-        this.mc.world.playSound(pos.getX() + 0.5, pos.getY() + 0.5,
-            pos.getZ() + 0.5, sound.getPlaceSound(), SoundCategory.BLOCKS,
-            (sound.getVolume() + 1.0F) / 2.0F, sound.getPitch() * 0.8F, false
-        );
+        double range = this.range.get() * this.range.get();
+        return center.squaredDistanceTo(eye) <= range;
     }
 
     //endregion

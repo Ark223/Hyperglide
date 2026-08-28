@@ -1,11 +1,11 @@
 package dev.arkieee.hyperglide.modules;
 
-import baritone.api.BaritoneAPI;
-import baritone.api.IBaritone;
-import baritone.api.pathing.goals.Goal;
-import baritone.api.pathing.goals.GoalBlock;
-import baritone.api.pathing.goals.GoalXZ;
 import dev.arkieee.hyperglide.Hyperglide;
+import dev.arkieee.hyperglide.utilities.Baritone;
+import dev.arkieee.hyperglide.utilities.Client;
+import dev.arkieee.hyperglide.utilities.Elytra;
+import dev.arkieee.hyperglide.utilities.Hotbar;
+import dev.arkieee.hyperglide.utilities.Inventory;
 import dev.arkieee.hyperglide.navigation.Route;
 import dev.arkieee.hyperglide.navigation.Segment;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
@@ -16,10 +16,7 @@ import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.BlockState;
 import net.minecraft.fluid.Fluid;
 import net.minecraft.fluid.Fluids;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.Items;
-import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
@@ -90,9 +87,7 @@ public class AutoPilot extends Module {
             return;
         }
 
-        BaritoneAPI.getSettings().elytraFireworkSpeed.value = 1.43;
-        BaritoneAPI.getSettings().elytraMinimumAvoidance.value = 0.4;
-        BaritoneAPI.getSettings().elytraPredictTerrain.value = false;
+        Baritone.settings(1.43, 0.4, false);
 
         this.reset();
         this.enable();
@@ -130,7 +125,7 @@ public class AutoPilot extends Module {
     private void tick(TickEvent.Pre event) {
         if (!this.valid()) return;
 
-        if (!this.elytra()) {
+        if (!Elytra.equipped()) {
             this.error("Elytra is not equipped.");
             this.toggle();
             return;
@@ -410,6 +405,7 @@ public class AutoPilot extends Module {
 
         Route.Leg leg = this.route.legs().get(this.leg);
         boolean highway = leg.type() == Route.Type.Highway;
+
         if (highway && this.aligned(leg)) {
             this.start(this.leg);
             return;
@@ -516,30 +512,18 @@ public class AutoPilot extends Module {
     private boolean rocket() {
         if (this.mc.interactionManager == null) return false;
 
-        PlayerInventory inventory = this.mc.player.getInventory();
-        int selected = inventory.selectedSlot;
+        int selected = Hotbar.selected();
 
-        if (!inventory.getStack(selected).isOf(Items.FIREWORK_ROCKET)) {
-            int slot = -1;
-
-            for (int idx = 9; idx < 36; idx++) {
-                if (inventory.getStack(idx).isOf(Items.FIREWORK_ROCKET)) {
-                    slot = idx;
-                    break;
-                }
-            }
+        if (!Hotbar.stack(selected).isOf(Items.FIREWORK_ROCKET)) {
+            int slot = Inventory.find(9, 35,
+                stack -> stack.isOf(Items.FIREWORK_ROCKET)
+            );
 
             if (slot < 0) return false;
-
-            this.mc.interactionManager.clickSlot(
-                this.mc.player.playerScreenHandler.syncId,
-                slot, selected, SlotActionType.SWAP, this.mc.player
-            );
+            Inventory.swap(Inventory.slot(slot), selected);
         }
 
-        this.mc.interactionManager.interactItem(
-            this.mc.player, Hand.MAIN_HAND
-        );
+        this.mc.interactionManager.interactItem(this.mc.player, Hand.MAIN_HAND);
         return true;
     }
 
@@ -880,14 +864,11 @@ public class AutoPilot extends Module {
      * @param destination next standard route point
      */
     private void deploy(BlockPos destination) {
-        IBaritone baritone = this.baritone();
-
         if (!this.ready) {
             if (this.reach(this.point, lava)) this.fill();
 
             if (this.goal != null && this.goal.equals(this.point)) {
-                if (baritone.getCustomGoalProcess().isActive() ||
-                    baritone.getPathingBehavior().isPathing()) {
+                if (Baritone.moving()) {
                     this.seen = true;
                     return;
                 }
@@ -919,10 +900,9 @@ public class AutoPilot extends Module {
         this.block = null;
         this.release();
 
-        if (baritone.getElytraProcess().isActive()) return;
+        if (Baritone.elytra()) return;
 
-        if (baritone.getCustomGoalProcess().isActive() ||
-            baritone.getPathingBehavior().isPathing()) {
+        if (Baritone.moving()) {
             this.abort();
             return;
         }
@@ -1014,17 +994,7 @@ public class AutoPilot extends Module {
      * @return netherrack hotbar slot, or -1 when unavailable
      */
     private int netherrack() {
-        if (this.mc.player == null) return -1;
-
-        PlayerInventory inventory = this.mc.player.getInventory();
-
-        for (int idx = 0; idx < 9; idx++) {
-            if (inventory.getStack(idx).isOf(Items.NETHERRACK)) {
-                return idx;
-            }
-        }
-
-        return -1;
+        return this.mc.player == null ? -1 : Hotbar.find(Items.NETHERRACK);
     }
 
     //endregion
@@ -1039,23 +1009,17 @@ public class AutoPilot extends Module {
      * @return true when elytra pathing was started
      */
     private boolean fly(BlockPos pos, boolean exact) {
-        IBaritone baritone = this.baritone();
-        if (!baritone.getElytraProcess().isLoaded()) {
-            return false;
-        }
+        if (!Baritone.loaded()) return false;
 
         if (this.goal != null && this.goal.equals(pos) &&
-            baritone.getElytraProcess().isActive()) {
+            Baritone.elytra()) {
             return true;
         }
 
         if (this.pathing()) this.cancel();
 
-        Goal goal = exact ? new GoalBlock(pos) :
-            new GoalXZ(pos.getX(), pos.getZ());
-
         try {
-            baritone.getElytraProcess().pathTo(goal);
+            Baritone.fly(pos, exact);
 
             this.goal = pos.toImmutable();
             this.seen = false;
@@ -1080,11 +1044,7 @@ public class AutoPilot extends Module {
 
         if (this.pathing()) this.cancel();
 
-        Goal goal = exact ? new GoalBlock(pos) :
-            new GoalXZ(pos.getX(), pos.getZ());
-
-        IBaritone baritone = this.baritone();
-        baritone.getCustomGoalProcess().setGoalAndPath(goal);
+        Baritone.walk(pos, exact);
 
         this.goal = pos.toImmutable();
         this.seen = false;
@@ -1103,11 +1063,7 @@ public class AutoPilot extends Module {
      * Cancels active Baritone movement.
      */
     private void cancel() {
-        IBaritone baritone = this.baritone();
-
-        baritone.getElytraProcess().onLostControl();
-        baritone.getCustomGoalProcess().onLostControl();
-        baritone.getPathingBehavior().forceCancel();
+        Baritone.stop();
 
         this.goal = null;
         this.seen = false;
@@ -1120,7 +1076,7 @@ public class AutoPilot extends Module {
      * @return true when the elytra destination changed internally
      */
     private boolean landing() {
-        BlockPos current = this.baritone().getElytraProcess().currentDestination();
+        BlockPos current = Baritone.destination();
         return current != null && this.goal != null && !current.equals(this.goal);
     }
 
@@ -1143,10 +1099,7 @@ public class AutoPilot extends Module {
      * @return true while any owned path is active
      */
     private boolean pathing() {
-        IBaritone baritone = this.baritone();
-        return baritone.getElytraProcess().isActive()
-            || baritone.getCustomGoalProcess().isActive()
-            || baritone.getPathingBehavior().isPathing();
+        return Baritone.elytra() || Baritone.moving();
     }
 
     //endregion
@@ -1228,16 +1181,7 @@ public class AutoPilot extends Module {
 
     //endregion
 
-    //region Validation and utilities
-
-    /**
-     * Returns the primary Baritone instance.
-     *
-     * @return primary Baritone instance
-     */
-    private IBaritone baritone() {
-        return BaritoneAPI.getProvider().getPrimaryBaritone();
-    }
+    //region Navigation and position
 
     /**
      * Returns the Navigation module.
@@ -1246,17 +1190,6 @@ public class AutoPilot extends Module {
      */
     private Navigation navigation() {
         return Modules.get().get(Navigation.class);
-    }
-
-    /**
-     * Checks whether the player has an elytra equipped.
-     *
-     * @return true when an elytra is equipped in the chest slot
-     */
-    private boolean elytra() {
-        return this.mc.player.getEquippedStack(
-            EquipmentSlot.CHEST
-        ).isOf(Items.ELYTRA);
     }
 
     /**
@@ -1317,10 +1250,9 @@ public class AutoPilot extends Module {
      * @return true when ready to run the module
      */
     private boolean valid() {
-        return this.mc.player != null
-            && this.mc.world != null
-            && this.mc.getNetworkHandler() != null
-            && World.NETHER.equals(this.mc.world.getRegistryKey());
+        return Client.ready() && World.NETHER.equals(
+            this.mc.world.getRegistryKey()
+        );
     }
 
     //endregion

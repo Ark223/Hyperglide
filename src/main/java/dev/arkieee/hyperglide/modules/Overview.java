@@ -22,34 +22,31 @@ import java.util.WeakHashMap;
 public class Overview extends Module {
     private final SettingGroup general = this.settings.getDefaultGroup();
 
-    private final Setting<Integer> size = this.general.add(
-        new IntSetting.Builder()
-            .name("icon-size")
-            .description("Size of the content icon.")
-            .defaultValue(10)
-            .min(5)
-            .sliderMax(15)
-            .build()
+    private final Setting<Integer> size = this.general.add(new IntSetting.Builder()
+        .name("icon-size")
+        .description("Size of the content icon.")
+        .defaultValue(10)
+        .min(5)
+        .sliderMax(15)
+        .build()
     );
 
-    private final Setting<Integer> xoffset = this.general.add(
-        new IntSetting.Builder()
-            .name("x-offset")
-            .description("Horizontal content icon offset.")
-            .defaultValue(3)
-            .min(-10)
-            .sliderMax(5)
-            .build()
+    private final Setting<Integer> xoffset = this.general.add(new IntSetting.Builder()
+        .name("x-offset")
+        .description("Horizontal content icon offset.")
+        .defaultValue(3)
+        .min(-10)
+        .sliderMax(5)
+        .build()
     );
 
-    private final Setting<Integer> yoffset = this.general.add(
-        new IntSetting.Builder()
-            .name("y-offset")
-            .description("Vertical content icon offset.")
-            .defaultValue(3)
-            .min(-10)
-            .sliderMax(5)
-            .build()
+    private final Setting<Integer> yoffset = this.general.add(new IntSetting.Builder()
+        .name("y-offset")
+        .description("Vertical content icon offset.")
+        .defaultValue(3)
+        .min(-10)
+        .sliderMax(5)
+        .build()
     );
 
     private boolean drawing;
@@ -79,8 +76,6 @@ public class Overview extends Module {
         this.drawing = false;
     }
 
-    //region Rendering
-
     /**
      * Renders the most common contained item over a shulker box or bundle.
      *
@@ -89,7 +84,7 @@ public class Overview extends Module {
      * @param x item X coordinate
      * @param y item Y coordinate
      */
-    public void render(DrawContext context, ItemStack stack, int x, int y) {
+    public void render(DrawContext context, ItemStack stack, int px, int py) {
         if (!this.isActive() || this.drawing || stack.isEmpty()) {
             return;
         }
@@ -106,9 +101,10 @@ public class Overview extends Module {
         if (cached.stack.isEmpty()) return;
 
         int size = this.size.get();
-        int ox = x + (16 - size) / 2 + this.xoffset.get();
-        int oy = y + (16 - size) / 2 + this.yoffset.get();
         float scale = size / 16.0F;
+
+        int ox = px + (16 - size) / 2 + this.xoffset.get();
+        int oy = py + (16 - size) / 2 + this.yoffset.get();
 
         MatrixStack matrices = context.getMatrices();
 
@@ -124,8 +120,6 @@ public class Overview extends Module {
             this.drawing = false;
         }
     }
-
-    //endregion
 
     //region Content analysis
 

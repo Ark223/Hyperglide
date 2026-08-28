@@ -1,7 +1,10 @@
 package dev.arkieee.hyperglide.modules;
 
 import dev.arkieee.hyperglide.Hyperglide;
-import dev.arkieee.hyperglide.mixin.InteractionAccessor;
+import dev.arkieee.hyperglide.utilities.Client;
+import dev.arkieee.hyperglide.utilities.Elytra;
+import dev.arkieee.hyperglide.utilities.Hotbar;
+import dev.arkieee.hyperglide.utilities.Packets;
 import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -19,14 +22,11 @@ import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.FireworksComponent;
-import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.projectile.FireworkRocketEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -116,7 +116,7 @@ public class ControlFly extends Module {
 
     public ControlFly() {
         super(Hyperglide.CATEGORY, "control-fly",
-            "Provides controlled elytra flight with automatic rocket boosting."
+            "Provides controlled flight with automatic rocket boosting."
         );
     }
 
@@ -154,7 +154,7 @@ public class ControlFly extends Module {
      */
     @EventHandler
     private void tick(TickEvent.Pre event) {
-        if (!this.valid()) return;
+        if (!Client.ready()) return;
 
         this.update();
 
@@ -178,10 +178,10 @@ public class ControlFly extends Module {
      */
     @EventHandler
     private void move(PlayerMoveEvent event) {
-    if (!this.valid()
-        || event.type != MovementType.SELF
-        || !this.mc.player.isGliding()
-        || this.halted()) return;
+        if (!Client.ready() ||
+            event.type != MovementType.SELF ||
+            !this.mc.player.isGliding() ||
+            this.halted()) return;
 
         Vec3d input = this.direction();
         if (input.lengthSquared() < epsilon) {
@@ -205,7 +205,7 @@ public class ControlFly extends Module {
      */
     @EventHandler
     private void packet(PacketEvent.Send event) {
-        if (!this.valid() || this.boost.automatic || !this.mc.player.isGliding()
+        if (!Client.ready() || this.boost.automatic || !this.mc.player.isGliding()
             || !(event.packet instanceof PlayerInteractItemC2SPacket packet)) {
             return;
         }
@@ -300,8 +300,8 @@ public class ControlFly extends Module {
 
         Vec3d dir = this.steer(input.normalize());
 
-        if (this.flight.dir.lengthSquared() >= epsilon
-            && this.sharp(this.flight.dir, dir)) {
+        if (this.flight.dir.lengthSquared() >= epsilon &&
+            this.sharp(this.flight.dir, dir)) {
             this.flight.brake = true;
         }
 
@@ -391,6 +391,16 @@ public class ControlFly extends Module {
         return Vec3d.fromPolar(0.0F, this.flight.yaw).multiply(amount);
     }
 
+    /**
+     * Checks whether Elytra Tweaks currently stops movement.
+     *
+     * @return true while collision avoidance is stopping movement
+     */
+    private boolean halted() {
+        ElytraTweaks tweaks = Modules.get().get(ElytraTweaks.class);
+        return tweaks != null && tweaks.halted();
+    }
+
     //endregion
 
     //region Boost state
@@ -461,7 +471,7 @@ public class ControlFly extends Module {
 
     //endregion
 
-    //region Automatic takeoff
+    //region Takeoff and steering
 
     /**
      * Starts elytra flight after jump is held for the configured duration.
@@ -479,22 +489,14 @@ public class ControlFly extends Module {
 
         this.jump++;
 
-        if (this.jump < this.timer.get()
-            || this.mc.player.isOnGround()
-            || !this.elytra()) return;
+        if (this.jump < this.timer.get() ||
+            this.mc.player.isOnGround() ||
+            !Elytra.equipped()) return;
 
         this.jump = 0;
 
-        this.mc.getNetworkHandler().sendPacket(
-            new ClientCommandC2SPacket(this.mc.player,
-                ClientCommandC2SPacket.Mode.START_FALL_FLYING
-            )
-        );
+        Elytra.start();
     }
-
-    //endregion
-
-    //region Direction and steering
 
     /**
      * Calculates movement input relative to the active camera direction.
@@ -539,14 +541,14 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Updates flight yaw from horizontal input while preserving vertical input.
+     * Updates flight yaw from input while preserving vertical input.
      *
      * @param input normalized movement input
      * @return normalized steering direction
      */
     private Vec3d steer(Vec3d input) {
-        double horizontal = Math.hypot(input.x, input.z);
-        if (horizontal < epsilon) {
+        double length = input.horizontalLength();
+        if (length < epsilon) {
             if (!this.flight.steering) {
                 this.flight.yaw = this.mc.player.getYaw();
                 this.flight.steering = true;
@@ -560,7 +562,7 @@ public class ControlFly extends Module {
         );
 
         Vec3d flat = Vec3d.fromPolar(0.0F, this.flight.yaw);
-        flat = flat.multiply(horizontal);
+        flat = flat.multiply(length);
 
         return flat.add(0.0, input.y, 0.0).normalize();
     }
@@ -584,8 +586,17 @@ public class ControlFly extends Module {
      */
     private float angle(Vec3d dir) {
         return MathHelper.clamp((float) -Math.toDegrees(
-            Math.atan2(dir.y, Math.hypot(dir.x, dir.z))
+            Math.atan2(dir.y, dir.horizontalLength())
         ), -90.0F, 90.0F);
+    }
+
+    /**
+     * Checks whether flight input currently requests movement.
+     *
+     * @return true when controlled movement is active
+     */
+    private boolean moving() {
+        return this.direction().lengthSquared() >= epsilon;
     }
 
     //endregion
@@ -630,8 +641,8 @@ public class ControlFly extends Module {
             this.flight.pitch, Double.POSITIVE_INFINITY
         );
 
-        choice = this.search(velocity, boosted,
-            desired, -bound, 1.0F, 80, choice
+        choice = this.search(velocity, boosted, desired,
+            -bound, 1.0F, 80, choice
         );
 
         choice = this.search(velocity, boosted, desired,
@@ -724,7 +735,9 @@ public class ControlFly extends Module {
             Math.abs(MathHelper.wrapDegrees(
                 this.flight.yaw - this.turn.yaw
             )) > 0.05F ||
-            Math.abs(this.flight.pitch - this.turn.pitch) > 0.05F;
+            Math.abs(
+                this.flight.pitch - this.turn.pitch
+            ) > 0.05F;
     }
 
     /**
@@ -767,114 +780,24 @@ public class ControlFly extends Module {
      * @return predicted next velocity
      */
     private Vec3d predict(Vec3d velocity, float yaw, float pitch, boolean boosted) {
-        Vec3d look = Vec3d.fromPolar(pitch, yaw);
-        Vec3d next = this.glide(velocity, look);
+        Vec3d rotation = Vec3d.fromPolar(pitch, yaw);
+        Vec3d next = Elytra.glide(velocity, rotation);
 
-        return boosted ? this.firework(next, look) : next;
-    }
-
-    /**
-     * Applies one predicted tick of elytra movement physics.
-     *
-     * @param velocity current velocity
-     * @param look current look direction
-     * @return predicted gliding velocity
-     */
-    private Vec3d glide(Vec3d velocity, Vec3d look) {
-        double horizontal = Math.hypot(look.x, look.z);
-        double speed = velocity.horizontalLength();
-
-        double cosine = horizontal * horizontal
-            * Math.min(1.0, look.length() / 0.4);
-
-        velocity = velocity.add(0.0, -0.08 + cosine * 0.06, 0.0);
-
-        velocity = this.fall(velocity, look, horizontal, cosine);
-        velocity = this.rise(velocity, look, horizontal, speed);
-        velocity = this.align(velocity, look, horizontal, speed);
-
-        return velocity.multiply(0.99, 0.98, 0.99);
-    }
-
-    /**
-     * Converts downward velocity into forward lift.
-     *
-     * @param velocity current velocity
-     * @param look current look direction
-     * @param horizontal horizontal look magnitude
-     * @param cosine glide lift factor
-     * @return adjusted velocity
-     */
-    private Vec3d fall(Vec3d velocity, Vec3d look, double horizontal, double cosine) {
-        if (velocity.y < 0.0 && horizontal > 0.0) {
-            double lift = velocity.y * -0.1 * cosine;
-
-            velocity = velocity.add(
-                look.x * lift / horizontal,
-                lift,
-                look.z * lift / horizontal
-            );
-        }
-        return velocity;
-    }
-
-    /**
-     * Applies climbing motion while facing upward.
-     *
-     * @param velocity current velocity
-     * @param look current look direction
-     * @param horizontal horizontal look magnitude
-     * @param speed horizontal movement speed
-     * @return adjusted velocity
-     */
-    private Vec3d rise(Vec3d velocity, Vec3d look, double horizontal, double speed) {
-        double angle = Math.asin(MathHelper.clamp(-look.y, -1.0, 1.0));
-
-        if (angle < 0.0 && horizontal > 0.0) {
-            double lift = speed * -Math.sin(angle) * 0.04;
-
-            velocity = velocity.add(
-                -look.x * lift / horizontal,
-                lift * 3.2,
-                -look.z * lift / horizontal
-            );
-        }
-
-        return velocity;
-    }
-
-    /**
-     * Aligns horizontal velocity toward the current look direction.
-     *
-     * @param velocity current velocity
-     * @param look current look direction
-     * @param horizontal horizontal look magnitude
-     * @param speed horizontal movement speed
-     * @return adjusted velocity
-     */
-    private Vec3d align(Vec3d velocity, Vec3d look, double horizontal, double speed) {
-        if (horizontal > 0.0) {
-            velocity = velocity.add(
-                (look.x / horizontal * speed - velocity.x) * 0.1,
-                0.0,
-                (look.z / horizontal * speed - velocity.z) * 0.1
-            );
-        }
-        return velocity;
+        return boosted ? this.firework(next, rotation) : next;
     }
 
     /**
      * Applies firework acceleration to a predicted velocity.
      *
      * @param velocity current velocity
-     * @param look current look direction
+     * @param rotation current rotation direction
      * @return boosted velocity
      */
-    private Vec3d firework(Vec3d velocity, Vec3d look) {
+    private Vec3d firework(Vec3d velocity, Vec3d rotation) {
         return velocity.add(
-            this.thrust(velocity.x, look.x),
-            this.thrust(velocity.y, look.y),
-            this.thrust(velocity.z, look.z)
+            this.thrust(velocity.x, rotation.x),
+            this.thrust(velocity.y, rotation.y),
+            this.thrust(velocity.z, rotation.z)
         );
     }
 
@@ -882,11 +805,11 @@ public class ControlFly extends Module {
      * Calculates firework acceleration for one velocity axis.
      *
      * @param velocity current axis velocity
-     * @param look look direction on the same axis
+     * @param rotation rotation direction on the same axis
      * @return acceleration applied to the axis
      */
-    private double thrust(double velocity, double look) {
-        return look * 0.1 + (look * 1.5 - velocity) * 0.5;
+    private double thrust(double velocity, double rotation) {
+        return rotation * 0.1 + (rotation * 1.5 - velocity) * 0.5;
     }
 
     //endregion
@@ -944,7 +867,7 @@ public class ControlFly extends Module {
      * @param pitch controlled flight pitch
      */
     private void rocket(float yaw, float pitch) {
-        if (!this.valid() || this.mc.interactionManager == null) {
+        if (!Client.ready() || !Client.interaction()) {
             this.cancel();
             return;
         }
@@ -963,17 +886,17 @@ public class ControlFly extends Module {
             return;
         }
 
-        int selected = this.mc.player.getInventory().selectedSlot;
+        int selected = Hotbar.selected();
         boolean swap = !result.isOffhand() && result.slot() != selected;
 
         this.boost.automatic = true;
 
         try {
-            if (swap) this.select(result.slot());
-            this.send(hand, yaw, pitch);
+            if (swap) Hotbar.sync(result.slot());
+            Packets.item(hand, yaw, pitch);
             this.count(stack);
         } finally {
-            if (swap) this.select(selected);
+            if (swap) Hotbar.sync(selected);
             this.boost.automatic = false;
         }
 
@@ -988,35 +911,9 @@ public class ControlFly extends Module {
      * @return matching item stack
      */
     private ItemStack stack(FindItemResult result) {
-        return result.isOffhand() ? this.mc.player.getOffHandStack()
-            : this.mc.player.getInventory().getStack(result.slot());
-    }
-
-    /**
-     * Synchronizes a selected hotbar slot with the server.
-     *
-     * @param slot hotbar slot to select
-     */
-    private void select(int slot) {
-        this.mc.getNetworkHandler().sendPacket(
-            new UpdateSelectedSlotC2SPacket(slot)
-        );
-    }
-
-    /**
-     * Uses the firework at the current flight rotation.
-     *
-     * @param hand hand containing the rocket
-     * @param yaw controlled flight yaw
-     * @param pitch controlled flight pitch
-     */
-    private void send(Hand hand, float yaw, float pitch) {
-        ((InteractionAccessor) this.mc.interactionManager)
-            .hyperglide$sendSequencedPacket(this.mc.world,
-                sequence -> new PlayerInteractItemC2SPacket(
-                    hand, sequence, yaw, pitch
-                )
-            );
+        return result.isOffhand()
+            ? this.mc.player.getOffHandStack()
+            : Hotbar.stack(result.slot());
     }
 
     /**
@@ -1033,7 +930,7 @@ public class ControlFly extends Module {
      * @param rocket player-owned firework rocket
      */
     public void track(FireworkRocketEntity rocket) {
-        if (!this.valid() || this.boost.rocket == rocket) {
+        if (!Client.ready() || this.boost.rocket == rocket) {
             return;
         }
 
@@ -1095,8 +992,8 @@ public class ControlFly extends Module {
      * @return true when the custom camera rotation should be used
      */
     public boolean camera() {
-        return this.isActive() && this.mc.player != null &&
-            this.view.active && this.mc.player.isGliding();
+        return this.isActive() && this.mc.player != null
+            && this.view.active && this.mc.player.isGliding();
     }
 
     /**
@@ -1129,51 +1026,6 @@ public class ControlFly extends Module {
         }
 
         this.view.active = false;
-    }
-
-    //endregion
-
-    //region Validation and utilities
-
-    /**
-     * Checks whether Elytra Tweaks currently stops movement.
-     *
-     * @return true while collision avoidance is stopping movement
-     */
-    private boolean halted() {
-        ElytraTweaks tweaks = Modules.get().get(ElytraTweaks.class);
-        return tweaks != null && tweaks.halted();
-    }
-
-    /**
-     * Checks whether flight input currently requests movement.
-     *
-     * @return true when controlled movement is active
-     */
-    private boolean moving() {
-        return this.direction().lengthSquared() >= epsilon;
-    }
-
-    /**
-     * Checks whether the player has an elytra equipped.
-     *
-     * @return true when an elytra is equipped in the chest slot
-     */
-    private boolean elytra() {
-        return this.mc.player.getEquippedStack(
-            EquipmentSlot.CHEST
-        ).isOf(Items.ELYTRA);
-    }
-
-    /**
-     * Checks whether the required client state is available.
-     *
-     * @return true when ready to run the module
-     */
-    private boolean valid() {
-        return this.mc.player != null
-            && this.mc.world != null
-            && this.mc.getNetworkHandler() != null;
     }
 
     //endregion

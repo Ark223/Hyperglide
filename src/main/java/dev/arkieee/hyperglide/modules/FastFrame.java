@@ -1,6 +1,8 @@
 package dev.arkieee.hyperglide.modules;
 
 import dev.arkieee.hyperglide.Hyperglide;
+import dev.arkieee.hyperglide.utilities.Client;
+import dev.arkieee.hyperglide.utilities.Hotbar;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.IntSetting;
@@ -9,7 +11,6 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.entity.decoration.ItemFrameEntity;
-import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemFrameItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
@@ -85,7 +86,7 @@ public class FastFrame extends Module {
      */
     @EventHandler
     private void onPreTick(TickEvent.Pre event) {
-        if (!this.valid()) {
+        if (!Client.ready()) {
             this.reset();
             return;
         }
@@ -101,7 +102,7 @@ public class FastFrame extends Module {
      */
     @EventHandler
     private void onPacket(PacketEvent.Send event) {
-        if (!this.valid() ||
+        if (!Client.ready() ||
             !(event.packet instanceof PlayerInteractBlockC2SPacket packet)) {
             return;
         }
@@ -125,7 +126,7 @@ public class FastFrame extends Module {
      */
     @EventHandler
     private void onPostTick(TickEvent.Post event) {
-        if (!this.valid() || this.mc.interactionManager == null) {
+        if (!Client.ready() || !Client.interaction()) {
             this.reset();
             return;
         }
@@ -160,7 +161,7 @@ public class FastFrame extends Module {
 
     //endregion
 
-    //region State management
+    //region Frame handling
 
     /**
      * Clears pending placements and cached hand state.
@@ -171,10 +172,6 @@ public class FastFrame extends Module {
         this.main = false;
         this.off = false;
     }
-
-    //endregion
-
-    //region Frame handling
 
     /**
      * Finds the newly spawned empty item frame for a placement.
@@ -236,10 +233,8 @@ public class FastFrame extends Module {
         EntityHitResult hit = this.hit(frame);
         if (hit == null) return false;
 
-        PlayerInventory inventory = this.mc.player.getInventory();
-        int selected = inventory.selectedSlot;
-
-        if (selected != slot) inventory.setSelectedSlot(slot);
+        int selected = Hotbar.selected();
+        if (selected != slot) Hotbar.set(slot);
 
         try {
             ActionResult result = this.mc.interactionManager.interactEntityAtLocation(
@@ -259,7 +254,7 @@ public class FastFrame extends Module {
 
             return false;
         } finally {
-            if (selected != slot) inventory.setSelectedSlot(selected);
+            if (selected != slot) Hotbar.set(selected);
         }
     }
 
@@ -290,20 +285,13 @@ public class FastFrame extends Module {
      * @return matching hotbar slot, or -1 when no item is available
      */
     private int slot() {
-        PlayerInventory inventory = this.mc.player.getInventory();
+        int start = this.first.get() - 1;
+        int end = this.last.get() - 1;
 
-        int start = Math.min(this.first.get(), this.last.get()) - 1;
-        int end = Math.max(this.first.get(), this.last.get()) - 1;
-
-        for (int slot = start; slot <= end; slot++) {
-            ItemStack stack = inventory.getStack(slot);
-
-            if (!stack.isEmpty() && !(stack.getItem() instanceof ItemFrameItem)) {
-                return slot;
-            }
-        }
-
-        return -1;
+        return Hotbar.find(start, end, stack ->
+            !stack.isEmpty() &&
+            !(stack.getItem() instanceof ItemFrameItem)
+        );
     }
 
     /**
@@ -325,21 +313,6 @@ public class FastFrame extends Module {
      */
     private boolean cached(Hand hand) {
         return hand == Hand.MAIN_HAND ? this.main : this.off;
-    }
-
-    //endregion
-
-    //region Validation and utilities
-
-    /**
-     * Checks whether the required client state is available.
-     *
-     * @return true when ready to run the module
-     */
-    private boolean valid() {
-        return this.mc.player != null
-            && this.mc.world != null
-            && this.mc.getNetworkHandler() != null;
     }
 
     //endregion

@@ -1,9 +1,10 @@
 package dev.arkieee.hyperglide.modules;
 
 import dev.arkieee.hyperglide.Hyperglide;
+import dev.arkieee.hyperglide.utilities.Client;
+import dev.arkieee.hyperglide.utilities.Render;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
-import meteordevelopment.meteorclient.renderer.ShapeMode;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
@@ -23,13 +24,13 @@ public class TriggerBot extends Module {
     private final SettingGroup general = this.settings.getDefaultGroup();
     private final SettingGroup visuals = this.settings.createGroup("Visuals");
 
-    private final Setting<Set<EntityType<?>>> entities = this.general.add(
-        new EntityTypeListSetting.Builder()
-            .name("entities")
-            .description("Selected entities to attack.")
-            .onlyAttackable()
-            .defaultValue(EntityType.PLAYER)
-            .build()
+    private final Setting<Set<EntityType<?>>> entities =
+        this.general.add(new EntityTypeListSetting.Builder()
+        .name("entities")
+        .description("Selected entities to attack.")
+        .onlyAttackable()
+        .defaultValue(EntityType.PLAYER)
+        .build()
     );
 
     private final Setting<Double> range = this.general.add(new DoubleSetting.Builder()
@@ -48,35 +49,14 @@ public class TriggerBot extends Module {
         .build()
     );
 
-    private final Setting<Boolean> render = this.visuals.add(new BoolSetting.Builder()
-        .name("render")
-        .description("Renders the current attack target.")
-        .defaultValue(true)
-        .build()
-    );
-
-    private final Setting<ShapeMode> shape = this.visuals.add(new EnumSetting.Builder<ShapeMode>()
-        .name("shape")
-        .description("How the target box is rendered.")
-        .defaultValue(ShapeMode.Both)
-        .visible(this.render::get)
-        .build()
-    );
-
-    private final Setting<SettingColor> side = this.visuals.add(new ColorSetting.Builder()
-        .name("side-color")
-        .description("The fill color of the target box.")
-        .defaultValue(new SettingColor(255, 255, 255, 32))
-        .visible(this.render::get)
-        .build()
-    );
-
-    private final Setting<SettingColor> line = this.visuals.add(new ColorSetting.Builder()
-        .name("line-color")
-        .description("The outline color of the target box.")
-        .defaultValue(new SettingColor(255, 255, 255, 255))
-        .visible(this.render::get)
-        .build()
+    private final Render box = new Render(
+        this.visuals,
+        "Renders the current attack target.",
+        "How the target box is rendered.",
+        "The fill color of the target box.",
+        "The outline color of the target box.",
+        new SettingColor(255, 255, 255, 32),
+        new SettingColor(255, 255, 255, 255)
     );
 
     private Entity target;
@@ -112,9 +92,7 @@ public class TriggerBot extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (this.mc.player == null ||
-            this.mc.world == null ||
-            this.mc.interactionManager == null ||
+        if (!Client.interaction() ||
             this.mc.getCameraEntity() == null) {
             this.target = null;
             return;
@@ -146,16 +124,13 @@ public class TriggerBot extends Module {
      */
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (!this.render.get() || !this.valid(this.target)) return;
-
-        event.renderer.box(this.target.getBoundingBox(),
-            this.side.get(), this.line.get(), this.shape.get(), 0
-        );
+        if (!this.box.enabled() || !this.valid(this.target)) return;
+        this.box.box(event, this.target.getBoundingBox());
     }
 
     //endregion
 
-    //region Targeting
+    //region Entity targeting
 
     /**
      * Finds the selected entity whose hitbox is under the crosshair.
@@ -194,10 +169,6 @@ public class TriggerBot extends Module {
         return hit.getEntity();
     }
 
-    //endregion
-
-    //region Validation
-
     /**
      * Checks whether the player is eating or drinking.
      *
@@ -220,9 +191,7 @@ public class TriggerBot extends Module {
         return entity != null &&
             entity != this.mc.player &&
             entity != this.mc.getCameraEntity() &&
-            entity.isAlive() &&
-            !entity.isSpectator() &&
-            entity.canHit() &&
+            entity.isAlive() && entity.canHit() &&
             this.entities.get().contains(entity.getType());
     }
 

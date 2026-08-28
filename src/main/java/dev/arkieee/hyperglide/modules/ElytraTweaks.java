@@ -1,8 +1,11 @@
 package dev.arkieee.hyperglide.modules;
 
-import baritone.api.BaritoneAPI;
-import baritone.api.IBaritone;
 import dev.arkieee.hyperglide.Hyperglide;
+import dev.arkieee.hyperglide.utilities.Baritone;
+import dev.arkieee.hyperglide.utilities.Client;
+import dev.arkieee.hyperglide.utilities.Elytra;
+import dev.arkieee.hyperglide.utilities.Hotbar;
+import dev.arkieee.hyperglide.utilities.Inventory;
 import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.mixininterface.IVec3d;
@@ -20,12 +23,8 @@ import net.minecraft.component.type.EquippableComponent;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.projectile.FireworkRocketEntity;
-import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
-import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -220,7 +219,7 @@ public class ElytraTweaks extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (!this.valid()) return;
+        if (!Client.ready()) return;
 
         if (this.shift) {
             this.mc.options.sneakKey.setPressed(true);
@@ -260,9 +259,9 @@ public class ElytraTweaks extends Module {
      */
     @EventHandler
     private void onMove(PlayerMoveEvent event) {
-        if (!this.valid() || event.type != MovementType.SELF ||
+        if (!Client.ready() || event.type != MovementType.SELF ||
             !this.mc.player.isGliding() || !this.avoid.get() ||
-            this.baritone() || this.bounce()) {
+            Baritone.elytra() || this.bounce()) {
 
             this.halt = false;
             this.hold = 0;
@@ -309,7 +308,8 @@ public class ElytraTweaks extends Module {
 
         if (!this.danger(event.movement)) return;
 
-        this.speed = Math.max(event.movement.length(),
+        this.speed = Math.max(
+            event.movement.length(),
             this.mc.player.getVelocity().length()
         );
 
@@ -409,7 +409,7 @@ public class ElytraTweaks extends Module {
      * Equips a hotbar elytra and prepares it for takeoff.
      */
     private void launch() {
-        if (this.elytra()) {
+        if (Elytra.equipped()) {
             this.sync = 2;
             return;
         }
@@ -426,8 +426,8 @@ public class ElytraTweaks extends Module {
     private void ground() {
         if (!this.swap.get() || this.repair.get()) return;
 
-        if (this.baritone()) {
-            if (this.elytra()) return;
+        if (Baritone.elytra()) {
+            if (Elytra.equipped()) return;
 
             int slot = this.hotbar(true);
             if (slot >= 0) this.wear(slot);
@@ -436,7 +436,7 @@ public class ElytraTweaks extends Module {
 
         if (!this.mc.player.isOnGround() ||
             this.mc.options.jumpKey.isPressed() ||
-            !this.elytra()) {
+            !Elytra.equipped()) {
             return;
         }
 
@@ -451,39 +451,19 @@ public class ElytraTweaks extends Module {
      * @return true when the equip interaction was sent
      */
     private boolean wear(int slot) {
-        if (this.mc.interactionManager == null || !this.inventory()) {
+        if (this.mc.interactionManager == null || !Inventory.ready()) {
             return false;
         }
 
-        PlayerInventory inventory = this.mc.player.getInventory();
-        int selected = inventory.selectedSlot;
-
-        if (selected != slot) {
-            inventory.setSelectedSlot(slot);
-            this.select(slot);
-        }
+        int selected = Hotbar.selected();
+        if (selected != slot) Hotbar.select(slot);
 
         this.mc.interactionManager.interactItem(
             this.mc.player, Hand.MAIN_HAND
         );
 
-        if (selected != slot) {
-            inventory.setSelectedSlot(selected);
-            this.select(selected);
-        }
-
+        if (selected != slot) Hotbar.select(selected);
         return true;
-    }
-
-    /**
-     * Synchronizes a selected hotbar slot with the server.
-     *
-     * @param slot hotbar slot to select
-     */
-    private void select(int slot) {
-        this.mc.getNetworkHandler().sendPacket(
-            new UpdateSelectedSlotC2SPacket(slot)
-        );
     }
 
     /**
@@ -493,29 +473,12 @@ public class ElytraTweaks extends Module {
      * @return matching hotbar slot, or -1 when unavailable
      */
     private int hotbar(boolean elytra) {
-        PlayerInventory inventory = this.mc.player.getInventory();
+        if (!elytra) return Hotbar.find(this::chestplate);
 
-        int best = -1;
-        int durability = -1;
-
-        for (int idx = 0; idx < 9; idx++) {
-            ItemStack stack = inventory.getStack(idx);
-
-            if (elytra) {
-                if (!stack.isOf(Items.ELYTRA)) continue;
-
-                int current = this.remaining(stack);
-                if (current <= durability) continue;
-
-                durability = current;
-                best = idx;
-                continue;
-            }
-
-            if (this.chestplate(stack)) return idx;
-        }
-
-        return best;
+        return Hotbar.best(
+            stack -> stack.isOf(Items.ELYTRA),
+            Elytra::remaining
+        );
     }
 
     //endregion
@@ -536,7 +499,7 @@ public class ElytraTweaks extends Module {
         int slot = this.damaged();
         if (slot < 0) return false;
 
-        if (!this.inventory()) return false;
+        if (!Inventory.ready()) return false;
 
         this.slot = slot;
         this.opened = false;
@@ -550,17 +513,17 @@ public class ElytraTweaks extends Module {
      * @return true when replacement is active
      */
     private boolean replacement() {
-        if (this.repair.get() || !this.replace.get() || !this.elytra()) {
+        if (this.repair.get() || !this.replace.get() || !Elytra.equipped()) {
             return false;
         }
 
         ItemStack stack = this.mc.player.getEquippedStack(EquipmentSlot.CHEST);
-        if (this.remaining(stack) > this.minimum.get()) return false;
+        if (Elytra.remaining(stack) > this.minimum.get()) return false;
 
         int slot = this.spare();
         if (slot < 0) return false;
 
-        if (!this.inventory()) return false;
+        if (!Inventory.ready()) return false;
 
         this.slot = slot;
         this.opened = false;
@@ -572,11 +535,11 @@ public class ElytraTweaks extends Module {
      * Advances the elytra replacement process.
      */
     private void strict() {
-        if (!this.inventory()) return;
+        if (!Inventory.ready()) return;
 
         switch (this.phase) {
             case 1 -> {
-                this.click(this.screen(this.slot));
+                this.click(Inventory.slot(this.slot));
                 this.phase = 2;
             }
 
@@ -586,7 +549,7 @@ public class ElytraTweaks extends Module {
             }
 
             case 3 -> {
-                this.click(this.screen(this.slot));
+                this.click(Inventory.slot(this.slot));
                 this.phase = 4;
             }
 
@@ -600,23 +563,10 @@ public class ElytraTweaks extends Module {
      * @return player inventory slot, or -1 when every elytra is repaired
      */
     private int damaged() {
-        PlayerInventory inventory = this.mc.player.getInventory();
-
-        int best = -1;
-        int damage = 0;
-
-        for (int idx = 0; idx < 36; idx++) {
-            ItemStack stack = inventory.getStack(idx);
-            if (!stack.isOf(Items.ELYTRA)) continue;
-
-            int current = stack.getDamage();
-            if (current <= damage) continue;
-
-            damage = current;
-            best = idx;
-        }
-
-        return best;
+        return Inventory.best(
+            stack -> stack.isOf(Items.ELYTRA) &&
+            stack.getDamage() > 0, ItemStack::getDamage
+        );
     }
 
     /**
@@ -625,33 +575,13 @@ public class ElytraTweaks extends Module {
      * @return player inventory slot, or -1 when no safe spare exists
      */
     private int spare() {
-        PlayerInventory inventory = this.mc.player.getInventory();
+        int minimum = this.minimum.get();
 
-        int best = -1;
-        int durability = this.minimum.get();
-
-        for (int idx = 0; idx < 36; idx++) {
-            ItemStack stack = inventory.getStack(idx);
-            if (!stack.isOf(Items.ELYTRA)) continue;
-
-            int current = this.remaining(stack);
-            if (current <= durability) continue;
-
-            durability = current;
-            best = idx;
-        }
-
-        return best;
-    }
-
-    /**
-     * Converts a player inventory slot to its screen slot.
-     *
-     * @param slot player inventory slot
-     * @return matching inventory screen slot
-     */
-    private int screen(int slot) {
-        return slot < 9 ? slot + 36 : slot;
+        return Inventory.best(
+            stack -> stack.isOf(Items.ELYTRA) &&
+                Elytra.remaining(stack) > minimum,
+            Elytra::remaining
+        );
     }
 
     /**
@@ -660,12 +590,9 @@ public class ElytraTweaks extends Module {
      * @param slot player screen slot to click
      */
     private void click(int slot) {
-        if (this.mc.interactionManager == null) return;
-
-        this.mc.interactionManager.clickSlot(
-            this.mc.player.playerScreenHandler.syncId,
-            slot, 0, SlotActionType.PICKUP, this.mc.player
-        );
+        if (this.mc.interactionManager != null) {
+            Inventory.pick(slot);
+        }
     }
 
     /**
@@ -686,15 +613,15 @@ public class ElytraTweaks extends Module {
      * Cancels the current elytra replacement safely.
      */
     private void abort() {
-        if (!this.valid() || this.phase <= 0) return;
+        if (!Client.ready() || this.phase <= 0) return;
 
-        if (!this.inventory()) {
+        if (!Inventory.ready()) {
             this.opened = true;
             this.mc.setScreen(new InventoryScreen(this.mc.player));
         }
 
         if (this.phase == 2 || this.phase == 3) {
-            this.click(this.screen(this.slot));
+            this.click(Inventory.slot(this.slot));
         }
 
         this.finish();
@@ -723,7 +650,7 @@ public class ElytraTweaks extends Module {
 
         this.jump = 0;
 
-        if (!this.elytra()) {
+        if (!Elytra.equipped()) {
             int slot = this.hotbar(true);
             if (slot < 0 || !this.wear(slot)) return;
 
@@ -740,7 +667,7 @@ public class ElytraTweaks extends Module {
     private void deploy() {
         if (this.sync <= 0) return;
 
-        if (this.elytra() && this.start()) {
+        if (Elytra.equipped() && this.start()) {
             this.sync = 0;
             return;
         }
@@ -754,18 +681,15 @@ public class ElytraTweaks extends Module {
      * @return true when flight was started
      */
     private boolean start() {
-        if (!this.elytra() || this.mc.player.isGliding()) {
+        if (!Elytra.equipped() || this.mc.player.isGliding()) {
             return false;
         }
 
-        if (!this.mc.player.checkGliding()) return false;
+        if (!this.mc.player.checkGliding()) {
+            return false;
+        }
 
-        this.mc.getNetworkHandler().sendPacket(
-            new ClientCommandC2SPacket(this.mc.player,
-                ClientCommandC2SPacket.Mode.START_FALL_FLYING
-            )
-        );
-
+        Elytra.start();
         return true;
     }
 
@@ -777,8 +701,8 @@ public class ElytraTweaks extends Module {
      * Keeps Baritone elytra flight active when possible.
      */
     private void recover() {
-        if (!this.deploy.get() || !this.baritone() ||
-            !this.elytra() || this.bounce()) {
+        if (!this.deploy.get() || !Baritone.elytra() ||
+            !Elytra.equipped() || this.bounce()) {
             this.retry = 0;
             this.swim(false);
             return;
@@ -807,7 +731,7 @@ public class ElytraTweaks extends Module {
             this.swim(false);
 
             if (!this.mc.player.isOnGround()) {
-                this.restart();
+                this.start();
                 return;
             }
         }
@@ -825,13 +749,6 @@ public class ElytraTweaks extends Module {
         }
 
         this.retry = 0;
-        this.restart();
-    }
-
-    /**
-     * Starts another elytra deployment attempt.
-     */
-    private void restart() {
         this.start();
     }
 
@@ -845,16 +762,6 @@ public class ElytraTweaks extends Module {
 
         this.escaping = pressed;
         this.mc.options.jumpKey.setPressed(pressed);
-    }
-
-    /**
-     * Checks whether Baritone elytra flight is active.
-     *
-     * @return true while Baritone elytra flight is active
-     */
-    private boolean baritone() {
-        IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
-        return baritone.getElytraProcess().isActive();
     }
 
     //endregion
@@ -998,7 +905,7 @@ public class ElytraTweaks extends Module {
      * @return predicted raw collision damage
      */
     private double damage(Vec3d motion, int axis) {
-        double old = Math.hypot(motion.x, motion.z);
+        double old = motion.horizontalLength();
 
         double px = (axis & xaxis) != 0 ? 0.0 : motion.x;
         double pz = (axis & zaxis) != 0 ? 0.0 : motion.z;
@@ -1045,7 +952,7 @@ public class ElytraTweaks extends Module {
 
     //endregion
 
-    //region Validation and utilities
+    //region General utilities
 
     /**
      * Checks whether Bounce Fly is currently active.
@@ -1055,17 +962,6 @@ public class ElytraTweaks extends Module {
     private boolean bounce() {
         BounceFly module = Modules.get().get(BounceFly.class);
         return module != null && module.isActive();
-    }
-
-    /**
-     * Checks whether the player has an elytra equipped.
-     *
-     * @return true when an elytra is equipped in the chest slot
-     */
-    private boolean elytra() {
-        return this.mc.player.getEquippedStack(
-            EquipmentSlot.CHEST
-        ).isOf(Items.ELYTRA);
     }
 
     /**
@@ -1082,27 +978,6 @@ public class ElytraTweaks extends Module {
     }
 
     /**
-     * Checks whether the player inventory can be used.
-     *
-     * @return true when inventory slots can be changed
-     */
-    private boolean inventory() {
-        return this.mc.player.currentScreenHandler
-            == this.mc.player.playerScreenHandler;
-    }
-
-    /**
-     * Calculates the remaining durability of an item.
-     *
-     * @param stack damageable item stack
-     * @return remaining durability, or maximum integer
-     */
-    private int remaining(ItemStack stack) {
-        if (!stack.isDamageable()) return Integer.MAX_VALUE;
-        return stack.getMaxDamage() - stack.getDamage();
-    }
-
-    /**
      * Checks whether the player is in water or lava.
      *
      * @return true while inside liquid
@@ -1110,17 +985,6 @@ public class ElytraTweaks extends Module {
     private boolean liquid() {
         return this.mc.player.isTouchingWater()
             || this.mc.player.isInLava();
-    }
-
-    /**
-     * Checks whether the required client state is available.
-     *
-     * @return true when ready to run the module
-     */
-    private boolean valid() {
-        return this.mc.player != null
-            && this.mc.world != null
-            && this.mc.getNetworkHandler() != null;
     }
 
     //endregion

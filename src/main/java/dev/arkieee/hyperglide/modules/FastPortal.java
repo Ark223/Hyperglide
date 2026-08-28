@@ -1,21 +1,18 @@
 package dev.arkieee.hyperglide.modules;
 
 import dev.arkieee.hyperglide.Hyperglide;
+import dev.arkieee.hyperglide.utilities.Client;
+import dev.arkieee.hyperglide.utilities.Render;
+import dev.arkieee.hyperglide.utilities.Hotbar;
+import dev.arkieee.hyperglide.utilities.Placement;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
-import meteordevelopment.meteorclient.renderer.ShapeMode;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
-import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.Blocks;
-import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
-import net.minecraft.sound.BlockSoundGroup;
-import net.minecraft.sound.SoundCategory;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
@@ -37,35 +34,14 @@ public class FastPortal extends Module {
         .build()
     );
 
-    private final Setting<Boolean> render = this.visuals.add(new BoolSetting.Builder()
-        .name("render")
-        .description("Renders the remaining portal frame.")
-        .defaultValue(true)
-        .build()
-    );
-
-    private final Setting<ShapeMode> shape = this.visuals.add(new EnumSetting.Builder<ShapeMode>()
-        .name("shape")
-        .description("How the portal frame is rendered.")
-        .defaultValue(ShapeMode.Both)
-        .visible(this.render::get)
-        .build()
-    );
-
-    private final Setting<SettingColor> side = this.visuals.add(new ColorSetting.Builder()
-        .name("side-color")
-        .description("The portal frame fill color.")
-        .defaultValue(new SettingColor(64, 0, 128, 32))
-        .visible(this.render::get)
-        .build()
-    );
-
-    private final Setting<SettingColor> line = this.visuals.add(new ColorSetting.Builder()
-        .name("line-color")
-        .description("The portal frame outline color.")
-        .defaultValue(new SettingColor(64, 0, 128, 255))
-        .visible(this.render::get)
-        .build()
+    private final Render box = new Render(
+        this.visuals,
+        "Renders the remaining portal frame.",
+        "How the portal frame is rendered.",
+        "The portal frame fill color.",
+        "The portal frame outline color.",
+        new SettingColor(64, 0, 128, 32),
+        new SettingColor(64, 0, 128, 255)
     );
 
     private final List<BlockPos> portal = new ArrayList<>();
@@ -84,7 +60,7 @@ public class FastPortal extends Module {
      */
     @Override
     public void onActivate() {
-        if (this.mc.player == null || this.mc.world == null) {
+        if (!Client.loaded()) {
             this.toggle();
             return;
         }
@@ -115,7 +91,7 @@ public class FastPortal extends Module {
             return;
         }
 
-        if (this.count() < need) {
+        if (Hotbar.count(Items.OBSIDIAN) < need) {
             this.error("Not enough obsidian in hotbar (need " + need + ").");
             this.toggle();
         }
@@ -140,9 +116,7 @@ public class FastPortal extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (this.mc.player == null || this.mc.world == null) {
-            return;
-        }
+        if (!Client.loaded()) return;
 
         this.skip();
 
@@ -160,7 +134,7 @@ public class FastPortal extends Module {
             return;
         }
 
-        int slot = this.slot();
+        int slot = Hotbar.find(Items.OBSIDIAN);
         if (slot == -1) {
             this.error("No obsidian found in the hotbar.");
             this.toggle();
@@ -185,15 +159,13 @@ public class FastPortal extends Module {
      */
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (!this.render.get()) return;
+        if (!this.box.enabled()) return;
 
         for (int idx = this.index; idx < this.portal.size(); idx++) {
             BlockPos pos = this.portal.get(idx);
             if (this.obsidian(pos)) continue;
 
-            event.renderer.box(pos, this.side.get(),
-                this.line.get(), this.shape.get(), 0
-            );
+            this.box.box(event, pos);
         }
     }
 
@@ -261,35 +233,16 @@ public class FastPortal extends Module {
      * @return true when the placement packets were sent
      */
     private boolean place(BlockPos pos, int slot) {
-        if (!InvUtils.swap(slot, true)) return false;
-
-        PlayerActionC2SPacket swap = new PlayerActionC2SPacket(
-            PlayerActionC2SPacket.Action.SWAP_ITEM_WITH_OFFHAND,
-            BlockPos.ORIGIN, Direction.DOWN
-        );
-
-        BlockHitResult hit = new BlockHitResult(
-            Vec3d.ofCenter(pos), Direction.UP, pos, false
-        );
+        if (!Hotbar.swap(slot)) return false;
 
         try {
-            this.mc.player.networkHandler.sendPacket(swap);
-            try {
-                this.mc.player.networkHandler.sendPacket(
-                    new PlayerInteractBlockC2SPacket(Hand.OFF_HAND, hit,
-                        this.mc.player.currentScreenHandler.getRevision() + 2
-                    )
-                );
-            } finally {
-                this.mc.player.networkHandler.sendPacket(swap);
-            }
-
+            Placement.place(pos);
             this.mc.player.swingHand(Hand.MAIN_HAND);
-            this.sound(pos);
 
+            Placement.sound(Blocks.OBSIDIAN, pos);
             return true;
         } finally {
-            InvUtils.swapBack();
+            Hotbar.restore();
         }
     }
 
@@ -299,7 +252,7 @@ public class FastPortal extends Module {
      * @return true when the ignition interaction was sent
      */
     private boolean ignite() {
-        int slot = this.steel();
+        int slot = Hotbar.find(Items.FLINT_AND_STEEL);
         if (slot == -1 || this.mc.interactionManager == null) {
             return false;
         }
@@ -310,83 +263,18 @@ public class FastPortal extends Module {
             Direction.UP, pos, false
         );
 
-        if (!InvUtils.swap(slot, true)) return false;
+        if (!Hotbar.swap(slot)) return false;
 
         try {
             this.mc.interactionManager.interactBlock(
                 this.mc.player, Hand.MAIN_HAND, hit
             );
+
             this.mc.player.swingHand(Hand.MAIN_HAND);
             return true;
         } finally {
-            InvUtils.swapBack();
+            Hotbar.restore();
         }
-    }
-
-    //endregion
-
-    //region Hotbar search
-
-    /**
-     * Finds an obsidian stack in the hotbar.
-     *
-     * @return matching hotbar slot, or -1 when none exists
-     */
-    private int slot() {
-        for (int idx = 0; idx < 9; idx++) {
-            if (this.mc.player.getInventory().getStack(idx).isOf(Items.OBSIDIAN)) {
-                return idx;
-            }
-        }
-        return -1;
-    }
-
-    /**
-     * Finds flint and steel in the hotbar.
-     *
-     * @return matching hotbar slot, or -1 when none exists
-     */
-    private int steel() {
-        for (int idx = 0; idx < 9; idx++) {
-            if (this.mc.player.getInventory().getStack(idx).isOf(Items.FLINT_AND_STEEL)) {
-                return idx;
-            }
-        }
-        return -1;
-    }
-
-    /**
-     * Counts all obsidian in the hotbar.
-     *
-     * @return total obsidian count
-     */
-    private int count() {
-        int count = 0;
-
-        for (int idx = 0; idx < 9; idx++) {
-            ItemStack stack = this.mc.player.getInventory().getStack(idx);
-            if (stack.isOf(Items.OBSIDIAN)) count += stack.getCount();
-        }
-
-        return count;
-    }
-
-    //endregion
-
-    //region Effects and completion
-
-    /**
-     * Plays the local obsidian placement sound.
-     *
-     * @param pos placement position
-     */
-    private void sound(BlockPos pos) {
-        BlockSoundGroup sound = Blocks.OBSIDIAN.getDefaultState().getSoundGroup();
-
-        this.mc.world.playSound(pos.getX() + 0.5, pos.getY() + 0.5,
-            pos.getZ() + 0.5, sound.getPlaceSound(), SoundCategory.BLOCKS,
-            (sound.getVolume() + 1.0F) / 2.0F, sound.getPitch() * 0.8F, false
-        );
     }
 
     /**

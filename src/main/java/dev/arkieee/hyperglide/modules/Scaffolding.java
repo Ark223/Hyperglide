@@ -1,25 +1,21 @@
 package dev.arkieee.hyperglide.modules;
 
 import dev.arkieee.hyperglide.Hyperglide;
+import dev.arkieee.hyperglide.utilities.BlockFilter;
+import dev.arkieee.hyperglide.utilities.Client;
+import dev.arkieee.hyperglide.utilities.Render;
+import dev.arkieee.hyperglide.utilities.Hotbar;
+import dev.arkieee.hyperglide.utilities.Placement;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
-import meteordevelopment.meteorclient.renderer.ShapeMode;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
-import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.FallingBlock;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
-import net.minecraft.sound.BlockSoundGroup;
-import net.minecraft.sound.SoundCategory;
 import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import java.util.*;
 
@@ -33,17 +29,8 @@ public class Scaffolding extends Module {
     private final SettingGroup general = this.settings.getDefaultGroup();
     private final SettingGroup visuals = this.settings.createGroup("Visuals");
 
-    private final Setting<List<Block>> blocks = this.general.add(new BlockListSetting.Builder()
-        .name("blocks")
-        .description("Blocks used by Scaffolding.")
-        .build()
-    );
-
-    private final Setting<Mode> mode = this.general.add(new EnumSetting.Builder<Mode>()
-        .name("list-mode")
-        .description("How the block list is used.")
-        .defaultValue(Mode.Whitelist)
-        .build()
+    private final BlockFilter filter = new BlockFilter(
+        this.general, "Blocks used by Scaffolding."
     );
 
     private final Setting<Integer> delay = this.general.add(new IntSetting.Builder()
@@ -62,35 +49,14 @@ public class Scaffolding extends Module {
         .build()
     );
 
-    private final Setting<Boolean> render = this.visuals.add(new BoolSetting.Builder()
-        .name("render")
-        .description("Renders queued placements.")
-        .defaultValue(true)
-        .build()
-    );
-
-    private final Setting<ShapeMode> shape = this.visuals.add(new EnumSetting.Builder<ShapeMode>()
-        .name("shape")
-        .description("How queued placements are rendered.")
-        .defaultValue(ShapeMode.Both)
-        .visible(this.render::get)
-        .build()
-    );
-
-    private final Setting<SettingColor> side = this.visuals.add(new ColorSetting.Builder()
-        .name("side-color")
-        .description("The fill color of queued placements.")
-        .defaultValue(new SettingColor(255, 255, 255, 32))
-        .visible(this.render::get)
-        .build()
-    );
-
-    private final Setting<SettingColor> line = this.visuals.add(new ColorSetting.Builder()
-        .name("line-color")
-        .description("The outline color of queued placements.")
-        .defaultValue(new SettingColor(255, 255, 255, 255))
-        .visible(this.render::get)
-        .build()
+    private final Render box = new Render(
+        this.visuals,
+        "Renders queued placements.",
+        "How queued placements are rendered.",
+        "The fill color of queued placements.",
+        "The outline color of queued placements.",
+        new SettingColor(255, 255, 255, 32),
+        new SettingColor(255, 255, 255, 255)
     );
 
     private final LinkedHashSet<BlockPos> queue = new LinkedHashSet<>();
@@ -100,14 +66,6 @@ public class Scaffolding extends Module {
     private int timer;
     private int tick;
     private int level;
-
-    /**
-     * Controls how the block list is applied.
-     */
-    public enum Mode {
-        Whitelist,
-        Blacklist
-    }
 
     public Scaffolding() {
         super(Hyperglide.CATEGORY, "scaffolding",
@@ -142,10 +100,10 @@ public class Scaffolding extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (this.mc.player == null || this.mc.world == null
-            || this.mc.interactionManager == null) return;
+        if (!Client.interaction()) return;
 
         this.tick++;
+
         this.update();
         this.clean();
         this.collect();
@@ -155,7 +113,7 @@ public class Scaffolding extends Module {
         BlockPos pos = this.next();
         if (pos == null) return;
 
-        int slot = this.slot(pos);
+        int slot = Hotbar.block(this.filter, pos);
         if (slot == -1) {
             this.add(pos, true);
             return;
@@ -174,22 +132,22 @@ public class Scaffolding extends Module {
      */
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (!this.render.get() || this.mc.world == null) {
+        if (!this.box.enabled() || this.mc.world == null) {
             return;
         }
 
         for (BlockPos pos : this.queue) {
-            this.box(event, pos);
+            this.box.box(event, pos);
         }
 
         for (BlockPos pos : this.marks.keySet()) {
-            if (!this.queue.contains(pos)) this.box(event, pos);
+            if (!this.queue.contains(pos)) this.box.box(event, pos);
         }
     }
 
     //endregion
 
-    //region State management
+    //region Scaffold control
 
     /**
      * Clears queued positions, placement marks and timers.
@@ -212,10 +170,6 @@ public class Scaffolding extends Module {
         this.level = level;
         this.queue.clear();
     }
-
-    //endregion
-
-    //region Scaffold structure
 
     /**
      * Collects scaffold positions under and ahead of the player.
@@ -252,10 +206,6 @@ public class Scaffolding extends Module {
         else this.queue.addLast(pos);
     }
 
-    //endregion
-
-    //region Queue management
-
     /**
      * Removes and returns the next valid position from the queue.
      *
@@ -284,7 +234,7 @@ public class Scaffolding extends Module {
 
     //endregion
 
-    //region Block placement
+    //region Placement control
 
     /**
      * Selects the requested hotbar slot and sends a block interaction.
@@ -294,90 +244,23 @@ public class Scaffolding extends Module {
      * @return true when the placement interaction was sent
      */
     private boolean place(BlockPos pos, int slot) {
-        ItemStack stack = this.mc.player.getInventory().getStack(slot);
+        ItemStack stack = Hotbar.stack(slot);
 
-        if (!(stack.getItem() instanceof BlockItem item)) return false;
-        if (!InvUtils.swap(slot, true)) return false;
+        if (!(stack.getItem() instanceof BlockItem item)) {
+            return false;
+        }
+
+        if (!Hotbar.swap(slot)) return false;
 
         try {
-            this.mc.interactionManager.interactBlock(
-                this.mc.player, Hand.MAIN_HAND, this.hit(pos)
-            );
-
+            Placement.place(pos);
             this.mc.player.swingHand(Hand.MAIN_HAND);
-            this.sound(item, pos);
 
+            Placement.sound(item, pos);
             return true;
         } finally {
-            InvUtils.swapBack();
+            Hotbar.restore();
         }
-    }
-
-    /**
-     * Finds a block face that can support normal placement.
-     *
-     * @param pos destination block position
-     * @return block hit result used for interaction
-     */
-    private BlockHitResult hit(BlockPos pos) {
-        for (Direction side : Direction.values()) {
-
-            BlockPos near = pos.offset(side);
-            BlockState state = this.mc.world.getBlockState(near);
-
-            if (state.isReplaceable()) continue;
-            if (!state.getFluidState().isEmpty()) continue;
-
-            Direction face = side.getOpposite();
-            Vec3d hit = Vec3d.ofCenter(near).add(
-                face.getOffsetX() * 0.5,
-                face.getOffsetY() * 0.5,
-                face.getOffsetZ() * 0.5
-            );
-
-            return new BlockHitResult(hit, face, near, false);
-        }
-
-        return new BlockHitResult(
-            Vec3d.ofCenter(pos), Direction.UP, pos, false
-        );
-    }
-
-    /**
-     * Finds a hotbar slot containing an allowed full cube block.
-     *
-     * @param pos destination used to evaluate the block collision shape
-     * @return matching hotbar slot, or -1 when none is available
-     */
-    private int slot(BlockPos pos) {
-        for (int idx = 0; idx < 9; idx++) {
-            ItemStack stack = this.mc.player.getInventory().getStack(idx);
-            if (!(stack.getItem() instanceof BlockItem item)) continue;
-
-            Block block = item.getBlock();
-            if (!this.allowed(block) || block instanceof FallingBlock) continue;
-
-            if (Block.isShapeFullCube(
-                block.getDefaultState().getCollisionShape(this.mc.world, pos)
-            )) return idx;
-        }
-        return -1;
-    }
-
-    //endregion
-
-    //region Validation and utilities
-
-    /**
-     * Checks whether a block passes the configured whitelist or blacklist.
-     *
-     * @param block block to check
-     * @return true when the block is allowed
-     */
-    private boolean allowed(Block block) {
-        return this.mode.get() == Mode.Blacklist
-            ? !this.blocks.get().contains(block)
-            : this.blocks.get().contains(block);
     }
 
     /**
@@ -402,7 +285,9 @@ public class Scaffolding extends Module {
             for (int oz = -1; oz <= 1; oz++) {
                 this.scan.set(px + ox, this.level, pz + oz);
 
-                if (!this.mc.world.getBlockState(this.scan).isAir()) continue;
+                if (!this.mc.world.getBlockState(this.scan).isAir()) {
+                    continue;
+                }
 
                 double dx = this.scan.getX() + 0.5 - this.mc.player.getX();
                 double dz = this.scan.getZ() + 0.5 - this.mc.player.getZ();
@@ -413,6 +298,10 @@ public class Scaffolding extends Module {
 
         return false;
     }
+
+    //endregion
+
+    //region Player positioning
 
     /**
      * Calculates the normalized movement direction from pressed keys.
@@ -461,8 +350,8 @@ public class Scaffolding extends Module {
      * @return true when the position is open on the active layer
      */
     private boolean open(BlockPos pos) {
-        return pos.getY() == this.level &&
-            this.mc.world.getBlockState(pos).isReplaceable();
+        return pos.getY() == this.level
+            && this.mc.world.getBlockState(pos).isReplaceable();
     }
 
     /**
@@ -485,37 +374,6 @@ public class Scaffolding extends Module {
         double px = pos.getX() + 0.5 - this.mc.player.getX();
         double pz = pos.getZ() + 0.5 - this.mc.player.getZ();
         return px * px + pz * pz > reach * reach;
-    }
-
-    //endregion
-
-    //region Visual and sound effects
-
-    /**
-     * Renders a configured box around a block position.
-     *
-     * @param event active 3D render event
-     * @param pos block position to render
-     */
-    private void box(Render3DEvent event, BlockPos pos) {
-        event.renderer.box(pos, this.side.get(),
-            this.line.get(), this.shape.get(), 0
-        );
-    }
-
-    /**
-     * Plays the local placement sound for a selected block.
-     *
-     * @param item placed block item
-     * @param pos placement position
-     */
-    private void sound(BlockItem item, BlockPos pos) {
-        BlockSoundGroup sound = item.getBlock().getDefaultState().getSoundGroup();
-
-        this.mc.world.playSound(pos.getX() + 0.5, pos.getY() + 0.5,
-            pos.getZ() + 0.5, sound.getPlaceSound(), SoundCategory.BLOCKS,
-            (sound.getVolume() + 1.0F) / 2.0F, sound.getPitch() * 0.8F, false
-        );
     }
 
     //endregion

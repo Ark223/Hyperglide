@@ -1,9 +1,9 @@
 package dev.arkieee.hyperglide.modules;
 
-import baritone.api.BaritoneAPI;
-import baritone.api.IBaritone;
-import baritone.api.pathing.goals.GoalBlock;
 import dev.arkieee.hyperglide.Hyperglide;
+import dev.arkieee.hyperglide.utilities.Baritone;
+import dev.arkieee.hyperglide.utilities.Client;
+import dev.arkieee.hyperglide.utilities.Elytra;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
@@ -13,9 +13,6 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.input.Input;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
 import net.minecraft.util.PlayerInput;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -97,7 +94,7 @@ public class BounceFly extends Module {
      */
     @Override
     public void onActivate() {
-        if (!this.valid()) return;
+        if (!Client.ready()) return;
 
         this.level = this.mc.player.getBlockY();
         this.face();
@@ -126,7 +123,7 @@ public class BounceFly extends Module {
         }
 
         if (this.pass) {
-            this.baritone().getPathingBehavior().cancelEverything();
+            Baritone.cancel();
         }
 
         this.slow = 0;
@@ -146,14 +143,10 @@ public class BounceFly extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (!this.valid()) return;
-
-        IBaritone baritone = null;
+        if (!Client.ready()) return;
 
         if (this.obstacle.get()) {
-            baritone = this.baritone();
-
-            if (this.pass && this.pathing(baritone)) {
+            if (this.pass && Baritone.moving()) {
                 this.mc.options.forwardKey.setPressed(false);
                 this.mc.options.jumpKey.setPressed(false);
                 this.mc.player.setSprinting(false);
@@ -173,7 +166,7 @@ public class BounceFly extends Module {
                 this.pass = false;
             }
         } else if (this.pass) {
-            this.baritone().getPathingBehavior().cancelEverything();
+            Baritone.cancel();
 
             this.slow = 0;
             this.warm = 0;
@@ -181,7 +174,7 @@ public class BounceFly extends Module {
             this.pass = false;
         }
 
-        if (!this.elytra()) {
+        if (!Elytra.equipped()) {
             this.mc.options.forwardKey.setPressed(false);
             this.mc.options.jumpKey.setPressed(false);
             this.mc.player.setSprinting(false);
@@ -204,7 +197,7 @@ public class BounceFly extends Module {
             Vec3d hit = this.collision();
 
             if (hit != null) {
-                this.path(baritone, hit);
+                this.path(hit);
                 return;
             }
         }
@@ -212,14 +205,14 @@ public class BounceFly extends Module {
         this.warm++;
 
         if (this.obstacle.get() && this.warm >= warmup) {
-            Vec3d vel = this.mc.player.getVelocity();
-            double speed = Math.hypot(vel.x, vel.z);
+            Vec3d velocity = this.mc.player.getVelocity();
+            double speed = velocity.horizontalLength();
 
             if (speed < stop) this.slow++;
             else this.slow = 0;
 
             if (this.slow > wait) {
-                this.path(baritone);
+                this.path();
                 return;
             }
         } else {
@@ -238,7 +231,7 @@ public class BounceFly extends Module {
      */
     public void input(Input input) {
         if (!this.isActive() || this.mc.player == null
-            || this.pass || !this.elytra()) return;
+            || this.pass || !Elytra.equipped()) return;
 
         PlayerInput state = input.playerInput;
 
@@ -300,11 +293,7 @@ public class BounceFly extends Module {
      */
     private void glide() {
         this.mc.player.startGliding();
-
-        this.mc.player.networkHandler.sendPacket(
-            new ClientCommandC2SPacket(this.mc.player,
-                ClientCommandC2SPacket.Mode.START_FALL_FLYING)
-        );
+        Elytra.start();
     }
 
     //endregion
@@ -321,7 +310,7 @@ public class BounceFly extends Module {
         Vec3d side = new Vec3d(-front.z, 0, front.x);
         Vec3d vel = this.mc.player.getVelocity();
 
-        double scan = Math.hypot(vel.x, vel.z) * this.ticks.get();
+        double scan = vel.horizontalLength() * this.ticks.get();
         double width = this.mc.player.getWidth() / 2.0;
 
         Vec3d closest = null;
@@ -329,14 +318,18 @@ public class BounceFly extends Module {
 
         for (int idx = -1; idx <= 1; idx += 2) {
             for (double y = 0.5; y <= 1.5; y++) {
-                Vec3d start = new Vec3d(this.mc.player.getX(),
-                    this.level + y, this.mc.player.getZ());
+                Vec3d start = new Vec3d(
+                    this.mc.player.getX(), this.level + y,
+                    this.mc.player.getZ()
+                );
 
                 start = start.add(side.multiply(width * idx));
                 Vec3d end = start.add(front.multiply(scan));
-                BlockHitResult hit = this.ray(start, end);
 
-                if (hit.getType() != HitResult.Type.BLOCK) continue;
+                BlockHitResult hit = this.ray(start, end);
+                if (hit.getType() != HitResult.Type.BLOCK) {
+                    continue;
+                }
 
                 double current = start.squaredDistanceTo(hit.getPos());
 
@@ -369,20 +362,17 @@ public class BounceFly extends Module {
 
     /**
      * Starts Baritone pathing from the player's current position.
-     *
-     * @param baritone Baritone instance used for pathing
      */
-    private void path(IBaritone baritone) {
-        this.path(baritone, this.mc.player.getPos());
+    private void path() {
+        this.path(this.mc.player.getPos());
     }
 
     /**
      * Starts Baritone pathing toward a point beyond the obstacle.
      *
-     * @param baritone Baritone instance used for pathing
      * @param point obstacle or starting reference point
      */
-    private void path(IBaritone baritone, Vec3d point) {
+    private void path(Vec3d point) {
         this.mc.options.forwardKey.setPressed(false);
         this.mc.options.jumpKey.setPressed(false);
 
@@ -395,8 +385,7 @@ public class BounceFly extends Module {
 
         this.mc.player.setSprinting(false);
 
-        GoalBlock goal = new GoalBlock(this.goal(point));
-        baritone.getCustomGoalProcess().setGoalAndPath(goal);
+        Baritone.walk(this.goal(point));
     }
 
     /**
@@ -415,29 +404,10 @@ public class BounceFly extends Module {
         double px = this.px + dir.x * (along + reach);
         double pz = this.pz + dir.z * (along + reach);
 
-        return new BlockPos((int) Math.round(px),
-            this.level, (int) Math.round(pz)
+        return new BlockPos(
+            (int) Math.round(px), this.level,
+            (int) Math.round(pz)
         );
-    }
-
-    /**
-     * Checks whether Baritone is processing or following a path.
-     *
-     * @param baritone Baritone instance to check
-     * @return true when Baritone pathing is active
-     */
-    private boolean pathing(IBaritone baritone) {
-        return baritone.getCustomGoalProcess().isActive()
-            || baritone.getPathingBehavior().isPathing();
-    }
-
-    /**
-     * Returns the primary Baritone instance.
-     *
-     * @return primary Baritone instance
-     */
-    private IBaritone baritone() {
-        return BaritoneAPI.getProvider().getPrimaryBaritone();
     }
 
     //endregion
@@ -469,8 +439,8 @@ public class BounceFly extends Module {
             this.px = 0;
             this.pz = this.snap(pz);
         } else {
-            Boolean eq = this.dx == this.dz;
-            this.px = this.snap(eq ? px - pz : px + pz);
+            boolean equal = this.dx == this.dz;
+            this.px = this.snap(equal ? px - pz : px + pz);
             this.pz = 0;
         }
     }
@@ -496,32 +466,6 @@ public class BounceFly extends Module {
      */
     private int snap(double value) {
         return (int) Math.round(value / grid) * grid;
-    }
-
-    //endregion
-
-    //region Validation
-
-    /**
-     * Checks whether the player has an elytra equipped.
-     *
-     * @return true when an elytra is equipped in the chest slot
-     */
-    private boolean elytra() {
-        return this.mc.player.getEquippedStack(
-            EquipmentSlot.CHEST
-        ).isOf(Items.ELYTRA);
-    }
-
-    /**
-     * Checks whether the required client state is available.
-     *
-     * @return true when ready to run the module
-     */
-    private boolean valid() {
-        return this.mc.player != null
-            && this.mc.world != null
-            && this.mc.getNetworkHandler() != null;
     }
 
     //endregion

@@ -1,13 +1,15 @@
 package dev.arkieee.hyperglide.modules;
 
 import dev.arkieee.hyperglide.Hyperglide;
+import dev.arkieee.hyperglide.utilities.Client;
+import dev.arkieee.hyperglide.utilities.Hotbar;
+import dev.arkieee.hyperglide.utilities.Placement;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.BlockListSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
-import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
@@ -15,7 +17,6 @@ import net.minecraft.block.Blocks;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
@@ -25,7 +26,8 @@ import java.util.List;
 public class BlockFarm extends Module {
     private final SettingGroup general = this.settings.getDefaultGroup();
 
-    private final Setting<List<Block>> blocks = this.general.add(new BlockListSetting.Builder()
+    private final Setting<List<Block>> blocks =
+        this.general.add(new BlockListSetting.Builder()
         .name("blocks")
         .description("Blocks placed and mined by Block Farm.")
         .defaultValue(Blocks.ENDER_CHEST)
@@ -85,7 +87,7 @@ public class BlockFarm extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (!this.valid() || this.mc.interactionManager == null ||
+        if (!Client.ready() || !Client.interaction() ||
             !this.prepare() || !this.mc.player.isOnGround()) {
             return;
         }
@@ -117,7 +119,9 @@ public class BlockFarm extends Module {
             return;
         }
 
-        if (this.started && !this.mining.armed(this.pos)) return;
+        if (this.started && !this.mining.armed(this.pos)) {
+            return;
+        }
 
         int slot = this.slot();
         if (slot < 0) return;
@@ -207,8 +211,8 @@ public class BlockFarm extends Module {
     private boolean adjacent(BlockPos pos) {
         BlockPos base = this.mc.player.getBlockPos();
 
-        return pos.getY() == base.getY() &&
-            base.getManhattanDistance(pos) == 1;
+        return pos.getY() == base.getY()
+            && base.getManhattanDistance(pos) == 1;
     }
 
     //endregion
@@ -222,32 +226,15 @@ public class BlockFarm extends Module {
      * @return true when the placement interaction was sent
      */
     private boolean place(int slot) {
-        if (!InvUtils.swap(slot, true)) return false;
+        if (!Hotbar.swap(slot)) return false;
 
         try {
-            this.mc.interactionManager.interactBlock(
-                this.mc.player, Hand.MAIN_HAND, this.hit()
-            );
-
+            Placement.place(this.pos);
             this.mc.player.swingHand(Hand.MAIN_HAND);
             return true;
         } finally {
-            InvUtils.swapBack();
+            Hotbar.restore();
         }
-    }
-
-    /**
-     * Creates a placement hit against the ground below the farm position.
-     *
-     * @return block hit result used for placement
-     */
-    private BlockHitResult hit() {
-        BlockPos ground = this.pos.down();
-
-        return new BlockHitResult(
-            Vec3d.ofCenter(ground).add(0.0, 0.5, 0.0),
-            Direction.UP, ground, false
-        );
     }
 
     /**
@@ -256,14 +243,10 @@ public class BlockFarm extends Module {
      * @return matching hotbar slot, or -1 when unavailable
      */
     private int slot() {
-        int selected = this.mc.player.getInventory().selectedSlot;
-        if (this.allowed(selected)) return selected;
-
-        for (int idx = 0; idx < 9; idx++) {
-            if (idx != selected && this.allowed(idx)) return idx;
-        }
-
-        return -1;
+        return Hotbar.first(stack ->
+            stack.getItem() instanceof BlockItem item &&
+            this.allowed(item.getBlock())
+        );
     }
 
     /**
@@ -273,23 +256,9 @@ public class BlockFarm extends Module {
      * @return default state of the contained block
      */
     private BlockState state(int slot) {
-        ItemStack stack = this.mc.player.getInventory().getStack(slot);
+        ItemStack stack = Hotbar.stack(slot);
         BlockItem item = (BlockItem) stack.getItem();
-
         return item.getBlock().getDefaultState();
-    }
-
-    /**
-     * Checks whether a hotbar slot contains a selected block.
-     *
-     * @param slot hotbar slot to inspect
-     * @return true when the stack is an allowed block item
-     */
-    private boolean allowed(int slot) {
-        ItemStack stack = this.mc.player.getInventory().getStack(slot);
-
-        return stack.getItem() instanceof BlockItem item
-            && this.allowed(item.getBlock());
     }
 
     //endregion
@@ -341,7 +310,7 @@ public class BlockFarm extends Module {
 
     //endregion
 
-    //region Validation and utilities
+    //region Farm validation
 
     /**
      * Checks whether a block is selected for farming.
@@ -362,17 +331,6 @@ public class BlockFarm extends Module {
     private boolean support(BlockPos pos) {
         BlockState state = this.mc.world.getBlockState(pos.down());
         return !state.isReplaceable() && state.getFluidState().isEmpty();
-    }
-
-    /**
-     * Checks whether the required client state is available.
-     *
-     * @return true when ready to run the module
-     */
-    private boolean valid() {
-        return this.mc.player != null
-            && this.mc.world != null
-            && this.mc.getNetworkHandler() != null;
     }
 
     //endregion

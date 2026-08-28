@@ -38,16 +38,16 @@ Make sure to downgrade to 1.20.3-1.20.4 in ViaFabricPlus settings before joining
 
 - **Air Place** - Allows blocks to be placed in the air without requiring the adjacent surface
 - **Auto Pilot** - Automatically navigates through the nether using calculated travel route
-- **Auto Web** - Places cobwebs around listed entities with optional movement prediction
-- **Block Farm** - Repeatedly places and mines selected blocks for extremely fast farming
+- **Auto Web** - Places cobwebs around selected entities with optional movement prediction
+- **Block Farm** - Automates placing and breaking blocks for extremely fast repeated farming
 - **Bounce Fly** - Uses elytra bouncing for fast highway travel with optional obstacle passing
-- **Control Fly** - Provides controlled elytra flight using predictive movement stabilization
+- **Control Fly** - Provides controlled elytra flight with automatic stabilization and boosting
 - **Critical Hits** - Triggers critical hits while keeping the player grounded during combat
 - **Deep Trace** - Highlights unusual dropped items found below the configurable Y level
 - **Easy Access** - Opens hidden containers and supported interactive entities within range
 - **Elytra Tweaks** - Adds automatic elytra swap, takeoff, recovery and collision protection
-- **Fast Portal** - Builds and lights nether portals near the player using minimal obsidian
-- **FD3 Crafter** - Strictly crafts FD3 firework rockets from available inventory ingredients
+- **Fast Portal** - Builds nearby nether portals in the direction you're facing and lights them
+- **FD3 Crafter** - Strictly crafts all FD3 firework rockets from available inventory ingredients
 - **Mining Tweaks** - Enables packet mining, including fast remine and double-break support
 - **Navigation** - Provides a map of the nether highway network with interactive route planning
 - **No Sprint FOV** - Removes vanilla sprinting zoom effects for a more consistent field of view

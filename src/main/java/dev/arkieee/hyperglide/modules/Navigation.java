@@ -895,7 +895,7 @@ public class Navigation extends Module {
 
     //endregion
 
-    //region Validation and utilities
+    //region Player and world
 
     /**
      * Returns the current player X/Z position.
@@ -943,6 +943,10 @@ public class Navigation extends Module {
         String name = this.mc.currentScreen.getClass().getName();
         return name.startsWith("net.minecraft.client.gui.screen.");
     }
+
+    //endregion
+
+    //region Map interaction
 
     /**
      * Returns the map left position.
@@ -1009,6 +1013,10 @@ public class Navigation extends Module {
             (float) (this.mc.mouse.getY() * sheight / height)
         );
     }
+
+    //endregion
+
+    //region Destination control
 
     /**
      * Applies a destination change and restarts Auto Pilot when active.

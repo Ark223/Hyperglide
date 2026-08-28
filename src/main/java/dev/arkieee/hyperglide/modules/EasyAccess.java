@@ -1,6 +1,7 @@
 package dev.arkieee.hyperglide.modules;
 
 import dev.arkieee.hyperglide.Hyperglide;
+import dev.arkieee.hyperglide.utilities.Client;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
@@ -15,6 +16,7 @@ import net.minecraft.entity.passive.AbstractDonkeyEntity;
 import net.minecraft.entity.passive.MerchantEntity;
 import net.minecraft.entity.vehicle.VehicleInventory;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
+import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket.Mode;
 import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
@@ -28,7 +30,7 @@ import net.minecraft.world.RaycastContext;
 import java.util.Optional;
 
 public class EasyAccess extends Module {
-    private static final double edge = 0.001;
+    private static final double edge = 1.0E-3;
 
     private final SettingGroup general = this.settings.getDefaultGroup();
 
@@ -80,10 +82,7 @@ public class EasyAccess extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (this.mc.player == null || this.mc.world == null ||
-            this.mc.interactionManager == null) {
-            return;
-        }
+        if (!Client.interaction()) return;
 
         if (!this.mc.options.useKey.isPressed()) {
             this.lock = false;
@@ -142,8 +141,8 @@ public class EasyAccess extends Module {
      * @return true when the player is directly targeting a container
      */
     private boolean visible() {
-        if (this.mc.crosshairTarget instanceof BlockHitResult hit
-            && hit.getType() == HitResult.Type.BLOCK) {
+        if (this.mc.crosshairTarget instanceof BlockHitResult hit &&
+            hit.getType() == HitResult.Type.BLOCK) {
             return this.container(hit.getBlockPos());
         }
 
@@ -314,8 +313,8 @@ public class EasyAccess extends Module {
 
         if (!sneak) {
             this.mc.player.networkHandler.sendPacket(
-                new ClientCommandC2SPacket(this.mc.player,
-                    ClientCommandC2SPacket.Mode.PRESS_SHIFT_KEY
+                new ClientCommandC2SPacket(
+                    this.mc.player, Mode.PRESS_SHIFT_KEY
                 )
             );
         }
@@ -326,8 +325,8 @@ public class EasyAccess extends Module {
 
         if (!sneak) {
             this.mc.player.networkHandler.sendPacket(
-                new ClientCommandC2SPacket(this.mc.player,
-                    ClientCommandC2SPacket.Mode.RELEASE_SHIFT_KEY
+                new ClientCommandC2SPacket(
+                    this.mc.player, Mode.RELEASE_SHIFT_KEY
                 )
             );
         }
@@ -342,8 +341,8 @@ public class EasyAccess extends Module {
     private boolean container(BlockPos pos) {
         BlockState state = this.mc.world.getBlockState(pos);
 
-        return state.isOf(Blocks.ENDER_CHEST) ||
-            state.createScreenHandlerFactory(this.mc.world, pos) != null;
+        return state.isOf(Blocks.ENDER_CHEST)
+            || state.createScreenHandlerFactory(this.mc.world, pos) != null;
     }
 
     /**
