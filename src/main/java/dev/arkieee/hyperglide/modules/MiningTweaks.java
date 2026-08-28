@@ -1,7 +1,10 @@
 package dev.arkieee.hyperglide.modules;
 
 import dev.arkieee.hyperglide.Hyperglide;
-import dev.arkieee.hyperglide.mixin.InteractionAccessor;
+import dev.arkieee.hyperglide.utilities.Client;
+import dev.arkieee.hyperglide.utilities.Hotbar;
+import dev.arkieee.hyperglide.utilities.Packets;
+import dev.arkieee.hyperglide.utilities.Render;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
@@ -10,10 +13,9 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.BlockState;
-import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.block.FluidBlock;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
+import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket.Action;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -33,7 +35,7 @@ public class MiningTweaks extends Module {
     private static final long restart = 300;
     private static final long pause = 275;
     private static final int bursts = 22;
-    private static final int height = 2048;
+    private static final int height = 1024;
 
     private final SettingGroup general = this.settings.getDefaultGroup();
     private final SettingGroup visuals = this.settings.createGroup("Visuals");
@@ -164,7 +166,6 @@ public class MiningTweaks extends Module {
     private long ready;
     private long stopped;
     private boolean fast;
-    private boolean paired;
 
     public MiningTweaks() {
         super(Hyperglide.CATEGORY, "mining-tweaks",
@@ -185,18 +186,15 @@ public class MiningTweaks extends Module {
      */
     @Override
     public void onDeactivate() {
-        if (this.primary != null && !this.primary.finished) {
-            this.action(this.primary,
-                PlayerActionC2SPacket.Action.ABORT_DESTROY_BLOCK,
-                this.primary.pos
-            );
+        Target primary = this.primary;
+        Target secondary = this.secondary;
+
+        if (primary != null && !primary.finished) {
+            this.action(primary, Action.ABORT_DESTROY_BLOCK, primary.pos);
         }
 
-        if (this.secondary != null && !this.secondary.finished) {
-            this.action(this.secondary,
-                PlayerActionC2SPacket.Action.ABORT_DESTROY_BLOCK,
-                this.secondary.pos
-            );
+        if (secondary != null && !secondary.finished) {
+            this.action(secondary, Action.ABORT_DESTROY_BLOCK, secondary.pos);
         }
 
         this.reset();
@@ -211,7 +209,7 @@ public class MiningTweaks extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (!this.valid() || this.mc.interactionManager == null) {
+        if (!Client.ready() || !Client.interaction()) {
             return;
         }
 
@@ -220,12 +218,11 @@ public class MiningTweaks extends Module {
         this.promote();
         this.clean();
 
-        if (this.remine()) return;
-
-        this.fill();
-
         this.update(this.secondary);
         this.update(this.primary);
+
+        this.fill();
+        this.remine();
     }
 
     /**
@@ -238,29 +235,23 @@ public class MiningTweaks extends Module {
         if (!this.render.get()) return;
 
         for (Request request : this.queue) {
-            event.renderer.box(
-                request.pos, this.qside.get(),
-                this.qline.get(), this.shape.get(), 0
+            Render.box(event, request.pos,
+                this.qside.get(), this.qline.get(), this.shape.get()
             );
         }
 
         for (Retry retry : this.waiting) {
-            event.renderer.box(
-                retry.request.pos, this.qside.get(),
-                this.qline.get(), this.shape.get(), 0
+            Render.box(event, retry.request.pos,
+                this.qside.get(), this.qline.get(), this.shape.get()
             );
         }
 
         if (this.secondary != null) {
-            this.box(event, this.secondary,
-                this.sside.get(), this.sline.get()
-            );
+            this.box(event, this.secondary, this.sside.get(), this.sline.get());
         }
 
         if (this.primary != null) {
-            this.box(event, this.primary,
-                this.pside.get(), this.pline.get()
-            );
+            this.box(event, this.primary, this.pside.get(), this.pline.get());
         }
     }
 
@@ -284,7 +275,6 @@ public class MiningTweaks extends Module {
         this.stopped = 0;
 
         this.fast = false;
-        this.paired = false;
     }
 
     //endregion
@@ -330,17 +320,15 @@ public class MiningTweaks extends Module {
      * @return true when the rebreak packet was sent
      */
     public boolean rebreak(BlockPos pos, BlockState state, Direction side) {
-        if (!this.remine.get() || !this.valid() ||
-            this.mc.interactionManager == null ||
+        if (!this.remine.get() ||
+            !Client.ready() || !Client.interaction() ||
             pos == null || state == null || side == null ||
             !this.breakable(pos, state)) return false;
 
         int slot = this.best(state, pos);
 
         this.select(slot);
-        this.packet(PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK,
-            pos, side
-        );
+        this.packet(Action.STOP_DESTROY_BLOCK, pos, side);
 
         this.stopped = System.currentTimeMillis();
         return true;
@@ -353,7 +341,7 @@ public class MiningTweaks extends Module {
      * @return true when vanilla mining should handle the block
      */
     public boolean bypass(BlockPos pos) {
-        if (!this.valid() || pos == null ||
+        if (!Client.ready() || pos == null ||
             this.vanilla.get() <= 0 || this.tracked(pos)) {
             return false;
         }
@@ -376,8 +364,8 @@ public class MiningTweaks extends Module {
      * @return true when the block is tracked or queued
      */
     public boolean mine(BlockPos pos, Direction side) {
-        if (!this.valid() || pos == null || side == null ||
-            this.mc.interactionManager == null) {
+        if (!Client.ready() || !Client.interaction() ||
+            pos == null || side == null) {
             return false;
         }
 
@@ -436,14 +424,6 @@ public class MiningTweaks extends Module {
      * Starts available primary and secondary mining targets.
      */
     private void fill() {
-        if (this.paired) {
-            if (this.primary != null || this.secondary != null) {
-                return;
-            }
-
-            this.paired = false;
-        }
-
         if (this.queue.isEmpty()) return;
 
         if (this.primary == null) {
@@ -506,15 +486,12 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Stops and converts the primary target into a parked secondary target.
+     * Stops the primary target and creates a parked secondary target.
      */
     private void park() {
         Target target = this.primary;
 
-        this.action(target,
-            PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK,
-            target.pos
-        );
+        this.action(target, Action.STOP_DESTROY_BLOCK, target.pos);
 
         Target parked = new Target(
             new Request(target.pos, target.side, target.retry),
@@ -535,7 +512,6 @@ public class MiningTweaks extends Module {
 
         this.secondary = parked;
         this.primary = null;
-        this.paired = true;
     }
 
     //endregion
@@ -571,7 +547,7 @@ public class MiningTweaks extends Module {
 
         this.primary = target;
 
-        int selected = this.mc.player.getInventory().selectedSlot;
+        int selected = Hotbar.selected();
 
         this.select(target.slot);
 
@@ -598,15 +574,14 @@ public class MiningTweaks extends Module {
 
         target.delta = this.delta(target);
         target.work = Math.max(0.0, target.delta);
-
         target.instant = target.delta >= 1.0F;
 
-        this.packet(PlayerActionC2SPacket.Action.START_DESTROY_BLOCK,
+        this.packet(Action.START_DESTROY_BLOCK,
             target.pos, target.side
         );
 
         if (!target.instant) {
-            this.packet(PlayerActionC2SPacket.Action.START_DESTROY_BLOCK,
+            this.packet(Action.START_DESTROY_BLOCK,
                 this.fake(target.pos), target.side
             );
         }
@@ -637,7 +612,7 @@ public class MiningTweaks extends Module {
 
         if (target.arming) {
             int slot = this.best(target.state, target.pos);
-            int selected = this.mc.player.getInventory().selectedSlot;
+            int selected = Hotbar.selected();
 
             if (slot != target.slot || selected != slot) {
                 target.slot = slot;
@@ -713,7 +688,7 @@ public class MiningTweaks extends Module {
         BlockPos pos = this.fake(target.pos);
 
         for (int idx = 0; idx < bursts; idx++) {
-            this.packet(PlayerActionC2SPacket.Action.START_DESTROY_BLOCK,
+            this.packet(Action.START_DESTROY_BLOCK,
                 pos, target.side
             );
         }
@@ -726,7 +701,7 @@ public class MiningTweaks extends Module {
     //region Target lifecycle
 
     /**
-     * Marks a target finished and sends its final stop action.
+     * Marks a target finished and sends its stop action when required.
      *
      * @param target target to finish
      */
@@ -741,10 +716,7 @@ public class MiningTweaks extends Module {
         this.fast = target.burst;
 
         if (target == this.primary && !target.instant) {
-            this.action(target,
-                PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK,
-                target.pos
-            );
+            this.action(target, Action.STOP_DESTROY_BLOCK, target.pos);
         }
 
         this.stopped = System.currentTimeMillis();
@@ -772,19 +744,19 @@ public class MiningTweaks extends Module {
      * @param target failed target
      */
     private void fail(Target target) {
+        BlockState state = this.mc.world.getBlockState(target.pos);
+
         boolean reachable = this.reachable(target.pos);
+        boolean identical = state.equals(target.state);
 
         Direction side = this.face(target.pos, target.side);
         target.side = side;
 
-        this.action(target,
-            PlayerActionC2SPacket.Action.ABORT_DESTROY_BLOCK,
-            target.pos
-        );
-
+        this.action(target, Action.ABORT_DESTROY_BLOCK, target.pos);
         this.remove(target, false);
 
-        if (!reachable || target.retry >= this.retries.get()) {
+        if (!reachable || !identical ||
+            target.retry >= this.retries.get()) {
             return;
         }
 
@@ -872,24 +844,69 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Calculates block breaking delta using the target's selected tool.
+     * Calculates block breaking delta using the selected tool.
      *
      * @param target target to evaluate
      * @return block breaking delta per tick
      */
     private float delta(Target target) {
-        PlayerInventory inventory = this.mc.player.getInventory();
-        int selected = inventory.selectedSlot;
-
-        inventory.setSelectedSlot(target.slot);
+        int selected = Hotbar.selected();
+        Hotbar.set(target.slot);
 
         try {
             return target.state.calcBlockBreakingDelta(
                 this.mc.player, this.mc.world, target.pos
             );
         } finally {
-            inventory.setSelectedSlot(selected);
+            Hotbar.set(selected);
         }
+    }
+
+    /**
+     * Renders mining progress as a shrinking box.
+     *
+     * @param event active 3D render event
+     * @param target target being rendered
+     * @param side fill color
+     * @param line outline color
+     */
+    private void box(Render3DEvent event, Target target,
+        SettingColor side, SettingColor line) {
+
+        double offset = (1.0 - this.visual(target)) / 2.0;
+
+        Box box = new Box(
+            target.pos.getX() + offset,
+            target.pos.getY() + offset,
+            target.pos.getZ() + offset,
+            target.pos.getX() + 1.0 - offset,
+            target.pos.getY() + 1.0 - offset,
+            target.pos.getZ() + 1.0 - offset
+        );
+
+        Render.box(event, box, side, line, this.shape.get());
+    }
+
+    /**
+     * Calculates smooth mining progress between client ticks.
+     *
+     * @param target target being rendered
+     * @return interpolated progress between zero and one
+     */
+    private double visual(Target target) {
+        if (target.finished) return 1.0;
+
+        double limit = this.limit(target);
+        if (limit <= 0.0) return 1.0;
+
+        double work = target.work;
+
+        if (!target.arming && target.updated > 0 && target.delta > 0.0F) {
+            long elapsed = System.currentTimeMillis() - target.updated;
+            work += target.delta * Math.max(0, elapsed) / 50.0;
+        }
+
+        return Math.min(1.0, work / limit);
     }
 
     //endregion
@@ -904,9 +921,7 @@ public class MiningTweaks extends Module {
      * @return best hotbar slot
      */
     private int best(BlockState state, BlockPos pos) {
-        PlayerInventory inventory = this.mc.player.getInventory();
-
-        int selected = inventory.selectedSlot;
+        int selected = Hotbar.selected();
         int best = selected;
         float speed = -1.0F;
 
@@ -915,10 +930,10 @@ public class MiningTweaks extends Module {
 
         try {
             for (int idx = 0; idx < 9; idx++) {
-                ItemStack stack = inventory.getStack(idx);
+                ItemStack stack = Hotbar.stack(idx);
                 boolean good = stack.isSuitableFor(state);
 
-                inventory.setSelectedSlot(idx);
+                Hotbar.set(idx);
 
                 float value = state.calcBlockBreakingDelta(
                     this.mc.player, this.mc.world, pos
@@ -939,7 +954,7 @@ public class MiningTweaks extends Module {
                 suitable = good;
             }
         } finally {
-            inventory.setSelectedSlot(selected);
+            Hotbar.set(selected);
         }
 
         return best;
@@ -952,7 +967,7 @@ public class MiningTweaks extends Module {
      * @param action mining action to send
      * @param pos packet block position
      */
-    private void action(Target target, PlayerActionC2SPacket.Action action, BlockPos pos) {
+    private void action(Target target, Action action, BlockPos pos) {
         target.side = this.face(target.pos, target.side);
         target.slot = this.best(target.state, target.pos);
 
@@ -966,14 +981,8 @@ public class MiningTweaks extends Module {
      * @param slot hotbar slot to select
      */
     private void select(int slot) {
-        PlayerInventory inventory = this.mc.player.getInventory();
-        if (inventory.selectedSlot == slot) return;
-
-        inventory.setSelectedSlot(slot);
-
-        this.mc.player.networkHandler.sendPacket(
-            new UpdateSelectedSlotC2SPacket(slot)
-        );
+        if (Hotbar.selected() == slot) return;
+        Hotbar.select(slot);
     }
 
     /**
@@ -983,20 +992,27 @@ public class MiningTweaks extends Module {
      * @param pos packet block position
      * @param side block face used by the packet
      */
-    private void packet(PlayerActionC2SPacket.Action action, BlockPos pos, Direction side) {
-        if (!this.valid() || this.mc.interactionManager == null) {
+    private void packet(Action action, BlockPos pos, Direction side) {
+        if (!Client.ready() || !Client.interaction()) {
             return;
         }
 
-        ((InteractionAccessor) this.mc.interactionManager)
-            .hyperglide$sendSequencedPacket(this.mc.world, sequence ->
-                new PlayerActionC2SPacket(action, pos, side, sequence)
-        );
+        Packets.action(action, pos, side);
+    }
+
+    /**
+     * Creates the fake position used by burst packets.
+     *
+     * @param pos source block position
+     * @return fake position with the configured height
+     */
+    private BlockPos fake(BlockPos pos) {
+        return new BlockPos(pos.getX(), height, pos.getZ());
     }
 
     //endregion
 
-    //region Targeting utilities
+    //region Block targeting
 
     /**
      * Finds the nearest visible face of a block.
@@ -1066,19 +1082,9 @@ public class MiningTweaks extends Module {
         );
     }
 
-    /**
-     * Creates the fake position used by burst packets.
-     *
-     * @param pos source block position
-     * @return fake position with the configured height
-     */
-    private BlockPos fake(BlockPos pos) {
-        return new BlockPos(pos.getX(), height, pos.getZ());
-    }
-
     //endregion
 
-    //region Validation and utilities
+    //region Target validation
 
     /**
      * Checks whether a block state can be mined.
@@ -1089,6 +1095,7 @@ public class MiningTweaks extends Module {
      */
     private boolean breakable(BlockPos pos, BlockState state) {
         return this.reachable(pos) && !state.isAir()
+            && !(state.getBlock() instanceof FluidBlock)
             && state.getHardness(this.mc.world, pos) >= 0.0F;
     }
 
@@ -1140,46 +1147,6 @@ public class MiningTweaks extends Module {
         }
 
         return false;
-    }
-
-    /**
-     * Checks whether the required client state is available.
-     *
-     * @return true when ready to run the module
-     */
-    private boolean valid() {
-        return this.mc.player != null
-            && this.mc.world != null
-            && this.mc.getNetworkHandler() != null;
-    }
-
-    //endregion
-
-    //region Visual effects
-
-    /**
-     * Renders mining progress as a shrinking box.
-     *
-     * @param event active 3D render event
-     * @param target target being rendered
-     * @param side fill color
-     * @param line outline color
-     */
-    private void box(Render3DEvent event, Target target,
-        SettingColor side, SettingColor line) {
-
-        double offset = (1.0 - this.progress(target)) / 2.0;
-
-        Box box = new Box(
-            target.pos.getX() + offset,
-            target.pos.getY() + offset,
-            target.pos.getZ() + offset,
-            target.pos.getX() + 1.0 - offset,
-            target.pos.getY() + 1.0 - offset,
-            target.pos.getZ() + 1.0 - offset
-        );
-
-        event.renderer.box(box, side, line, this.shape.get(), 0);
     }
 
     //endregion
