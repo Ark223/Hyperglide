@@ -46,6 +46,7 @@ Make sure to downgrade to 1.20.3-1.20.4 in ViaFabricPlus settings before joining
 - **Deep Trace** - Highlights unusual dropped items found below the configurable Y level
 - **Easy Access** - Opens hidden containers and supported interactive entities within range
 - **Elytra Tweaks** - Adds automatic elytra swap, takeoff, recovery and collision protection
+- **Fast Frame** - Automatically fills nearby empty item frames using items from your hotbar
 - **Fast Portal** - Builds nearby nether portals in the direction you're facing and lights them
 - **FD3 Crafter** - Strictly crafts all FD3 firework rockets from available inventory ingredients
 - **Mining Tweaks** - Enables packet mining, including fast remine and double-break support
