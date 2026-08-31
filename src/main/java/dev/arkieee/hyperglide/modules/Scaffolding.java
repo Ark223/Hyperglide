@@ -12,6 +12,7 @@ import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
+import net.minecraft.block.BlockState;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.Hand;
@@ -24,6 +25,7 @@ public class Scaffolding extends Module {
     private static final double extend = 1.0;
     private static final double step = 0.25;
     private static final double reach = 2.0;
+
     private static final int life = 10;
 
     private final SettingGroup general = this.settings.getDefaultGroup();
@@ -285,13 +287,11 @@ public class Scaffolding extends Module {
             for (int oz = -1; oz <= 1; oz++) {
                 this.scan.set(px + ox, this.level, pz + oz);
 
-                if (!this.mc.world.getBlockState(this.scan).isAir()) {
-                    continue;
-                }
+                BlockState state = this.mc.world.getBlockState(this.scan);
+                if (!state.isAir()) continue;
 
                 double dx = this.scan.getX() + 0.5 - this.mc.player.getX();
                 double dz = this.scan.getZ() + 0.5 - this.mc.player.getZ();
-
                 if (dx * dx + dz * dz < edge * edge) return true;
             }
         }

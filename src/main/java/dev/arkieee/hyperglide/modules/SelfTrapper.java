@@ -156,6 +156,7 @@ public class SelfTrapper extends Module {
 
         if (!this.centered) {
             if (!this.center()) return;
+
             this.timer = this.delay.get();
             return;
         }
@@ -649,6 +650,7 @@ public class SelfTrapper extends Module {
      */
     private boolean place(BlockPos pos, int slot) {
         ItemStack stack = Hotbar.stack(slot);
+
         if (!(stack.getItem() instanceof BlockItem item)) {
             return false;
         }

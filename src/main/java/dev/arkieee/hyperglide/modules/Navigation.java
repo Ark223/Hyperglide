@@ -927,8 +927,9 @@ public class Navigation extends Module {
      * @return true when the player is in the nether
      */
     private boolean nether() {
-        return this.mc.world != null &&
-            World.NETHER.equals(this.mc.world.getRegistryKey());
+        return this.mc.world != null && World.NETHER.equals(
+            this.mc.world.getRegistryKey()
+        );
     }
 
     /**
