@@ -24,8 +24,12 @@ import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+import java.util.HashMap;
+import java.util.Map;
 
 public class AirPlace extends Module {
+    private static final int retry = 10;
+
     private final SettingGroup general = this.settings.getDefaultGroup();
     private final SettingGroup visuals = this.settings.createGroup("Visuals");
 
@@ -47,6 +51,8 @@ public class AirPlace extends Module {
         new SettingColor(255, 255, 255, 32),
         new SettingColor(255, 255, 255, 255)
     );
+
+    private final Map<BlockPos, Long> pending = new HashMap<>();
 
     private BlockHitResult hit;
     private boolean lock;
@@ -168,7 +174,7 @@ public class AirPlace extends Module {
      * @return true when the placement packet was sent
      */
     public boolean place(BlockPos pos, int slot) {
-        if (!Client.ready() || slot < 0 || slot > 8 ||
+        if (!Client.ready() || this.waiting(pos) ||
             !this.mc.world.getBlockState(pos).isReplaceable()) {
             return false;
         }
@@ -187,6 +193,9 @@ public class AirPlace extends Module {
             );
 
             this.place(hit, stack);
+            this.pending.put(pos.toImmutable(),
+                this.mc.world.getTime() + retry
+            );
         } finally {
             if (selected != slot) Hotbar.select(selected);
         }
@@ -207,6 +216,22 @@ public class AirPlace extends Module {
         if (stack.getItem() instanceof BlockItem block) {
             Placement.sound(block, hit.getBlockPos());
         }
+    }
+
+    /**
+     * Checks whether placement is waiting for a block update.
+     *
+     * @param pos target block position
+     * @return true while another placement should not be sent
+     */
+    private boolean waiting(BlockPos pos) {
+        long tick = this.mc.world.getTime();
+
+        this.pending.entrySet().removeIf(entry -> entry.getValue() <= tick ||
+            !this.mc.world.getBlockState(entry.getKey()).isReplaceable()
+        );
+
+        return this.pending.containsKey(pos);
     }
 
     /**

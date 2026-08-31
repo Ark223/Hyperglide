@@ -19,9 +19,13 @@ import net.minecraft.fluid.Fluids;
 import net.minecraft.item.Items;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec2f;
 import net.minecraft.world.World;
+import java.util.ArrayList;
+import java.util.List;
 
 public class AutoPilot extends Module {
     private static final double approach = 128.0;
@@ -45,7 +49,8 @@ public class AutoPilot extends Module {
     private BlockPos target;
     private BlockPos goal;
     private BlockPos point;
-    private BlockPos block;
+
+    private List<BlockPos> blocks;
 
     private int leg = -1;
     private int timer;
@@ -184,7 +189,7 @@ public class AutoPilot extends Module {
         this.target = null;
         this.goal = null;
         this.point = null;
-        this.block = null;
+        this.blocks = null;
 
         this.leg = -1;
         this.timer = 0;
@@ -372,7 +377,7 @@ public class AutoPilot extends Module {
             if (this.join && this.landing()) {
                 this.cancel();
 
-                this.block = null;
+                this.blocks = null;
                 this.timer = this.rocket() ? 3 : 0;
                 this.mc.player.setPitch(-90.0F);
 
@@ -489,18 +494,16 @@ public class AutoPilot extends Module {
             return;
         }
 
-        this.block = this.mc.player.getBlockPos().down(2);
-
-        if (this.mc.world.getBlockState(this.block).isReplaceable() &&
-            !this.place(this.block)) {
-            return;
+        if (this.blocks == null) {
+            this.blocks = this.platform();
         }
 
+        if (!this.support()) return;
         if (!this.mc.player.isOnGround()) return;
 
         this.mc.player.stopGliding();
 
-        this.block = null;
+        this.blocks = null;
         this.state = State.Entry;
     }
 
@@ -585,7 +588,7 @@ public class AutoPilot extends Module {
 
         if (this.state != State.Highway) {
             this.point = null;
-            this.block = null;
+            this.blocks = null;
             this.ready = false;
             this.mining = false;
         }
@@ -669,7 +672,7 @@ public class AutoPilot extends Module {
         this.timer = 0;
 
         this.goal = null;
-        this.block = null;
+        this.blocks = null;
 
         this.seen = false;
         this.join = false;
@@ -841,7 +844,7 @@ public class AutoPilot extends Module {
         if (this.mc.player.isGliding()) {
             this.timer = 0;
             this.point = null;
-            this.block = null;
+            this.blocks = null;
             this.goal = destination.toImmutable();
 
             this.seen = false;
@@ -876,7 +879,9 @@ public class AutoPilot extends Module {
                 if (!this.seen) return;
 
                 this.ready = true;
-                this.block = this.mc.player.getBlockPos().down();
+                this.blocks = List.of(
+                    this.mc.player.getBlockPos().down().toImmutable()
+                );
 
                 this.abort();
                 return;
@@ -891,13 +896,15 @@ public class AutoPilot extends Module {
             return;
         }
 
-        if (this.block != null) this.toward(this.block);
+        if (this.blocks != null && !this.blocks.isEmpty()) {
+            this.toward(this.blocks.getFirst());
+        }
 
         if (!this.mine() || this.mc.player.isOnGround()) {
             return;
         }
 
-        this.block = null;
+        this.blocks = null;
         this.release();
 
         if (Baritone.elytra()) return;
@@ -945,6 +952,52 @@ public class AutoPilot extends Module {
     }
 
     /**
+     * Captures the blocks directly underneath the player.
+     *
+     * @return one to four fixed platform blocks
+     */
+    private List<BlockPos> platform() {
+        Box box = this.mc.player.getBoundingBox();
+
+        int minx = MathHelper.floor(box.minX);
+        int maxx = MathHelper.floor(Math.nextDown(box.maxX));
+        int minz = MathHelper.floor(box.minZ);
+        int maxz = MathHelper.floor(Math.nextDown(box.maxZ));
+
+        int py = this.mc.player.getBlockPos().down().getY();
+        List<BlockPos> blocks = new ArrayList<>(4);
+
+        for (int px = minx; px <= maxx; px++) {
+            for (int pz = minz; pz <= maxz; pz++) {
+                blocks.add(new BlockPos(px, py, pz));
+            }
+        }
+
+        return blocks;
+    }
+
+    /**
+     * Places the saved landing platform.
+     *
+     * @return true when every required block is present
+     */
+    private boolean support() {
+        if (this.blocks == null || this.blocks.isEmpty()) {
+            return false;
+        }
+
+        for (BlockPos pos : this.blocks) {
+            if (!this.mc.world.getBlockState(pos).isReplaceable()) {
+                continue;
+            }
+
+            if (!this.place(pos)) return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Places netherrack at a specific position.
      *
      * @param pos target block position
@@ -952,6 +1005,7 @@ public class AutoPilot extends Module {
      */
     private boolean place(BlockPos pos) {
         int slot = this.netherrack();
+
         AirPlace air = Modules.get().get(AirPlace.class);
         return air != null && slot >= 0 && air.place(pos, slot);
     }
@@ -962,9 +1016,13 @@ public class AutoPilot extends Module {
      * @return true when the block no longer needs breaking
      */
     private boolean mine() {
-        if (this.block == null) return true;
+        if (this.blocks == null || this.blocks.isEmpty()) {
+            return true;
+        }
 
-        if (this.mc.world.getBlockState(this.block).isReplaceable()) {
+        BlockPos block = this.blocks.getFirst();
+
+        if (this.mc.world.getBlockState(block).isReplaceable()) {
             if (this.mc.interactionManager != null) {
                 this.mc.interactionManager.cancelBlockBreaking();
             }
@@ -976,11 +1034,11 @@ public class AutoPilot extends Module {
         if (this.mc.interactionManager == null) return false;
 
         if (!this.mining) {
-            this.mc.interactionManager.attackBlock(this.block, Direction.UP);
+            this.mc.interactionManager.attackBlock(block, Direction.UP);
             this.mining = true;
         } else {
             this.mc.interactionManager.updateBlockBreakingProgress(
-                this.block, Direction.UP
+                block, Direction.UP
             );
         }
 
