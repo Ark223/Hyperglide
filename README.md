@@ -43,7 +43,7 @@ Make sure to downgrade to 1.20.3-1.20.4 in ViaFabricPlus settings before joining
 - **Bounce Fly** - Uses elytra bouncing for fast highway travel with optional obstacle passing
 - **Control Fly** - Provides controlled elytra flight with automatic stabilization and boosting
 - **Critical Hits** - Triggers critical hits while keeping the player grounded during combat
-- **Deep Trace** - Highlights unusual dropped items found below the configurable Y level
+- **Deep Trace** - Highlights unusual dropped items and dungeon mobs below the surface
 - **Easy Access** - Opens hidden containers and supported interactive entities within range
 - **Elytra Tweaks** - Adds automatic elytra swap, takeoff, recovery and collision protection
 - **Fast Frame** - Automatically fills nearby empty item frames using items from your hotbar
