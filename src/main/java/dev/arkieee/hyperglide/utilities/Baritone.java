@@ -2,6 +2,7 @@ package dev.arkieee.hyperglide.utilities;
 
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
+import baritone.api.Settings;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalXZ;
@@ -60,9 +61,15 @@ public final class Baritone {
      * @param predict whether terrain prediction is enabled
      */
     public static void settings(double speed, double avoid, boolean predict) {
-        BaritoneAPI.getSettings().elytraFireworkSpeed.value = speed;
-        BaritoneAPI.getSettings().elytraMinimumAvoidance.value = avoid;
-        BaritoneAPI.getSettings().elytraPredictTerrain.value = predict;
+        Settings config = BaritoneAPI.getSettings();
+
+        config.allowPlace.value = true;
+        config.allowInventory.value = true;
+        config.elytraTermsAccepted.value = true;
+
+        config.elytraFireworkSpeed.value = speed;
+        config.elytraMinimumAvoidance.value = avoid;
+        config.elytraPredictTerrain.value = predict;
     }
 
     /**
