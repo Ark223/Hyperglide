@@ -67,8 +67,9 @@ Hyperglide/
 ├── src/
 │   └── main/
 │       ├── java/dev/arkieee/hyperglide/
+│       │   ├── hud/                # HUD modules
 │       │   ├── mixin/              # Mixin classes
-│       │   ├── modules/            # Meteor modules
+│       │   ├── modules/            # Client modules
 │       │   ├── navigation/         # Route planning
 │       │   ├── utilities/          # Utility classes
 │       │   └── Hyperglide.java     # Main entry point
