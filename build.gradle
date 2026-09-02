@@ -1,11 +1,45 @@
 plugins {
-    id "fabric-loom" version "1.8-SNAPSHOT"
+    id "fabric-loom" version "1.14-SNAPSHOT"
 }
 
+def targets = [
+    "1.21.4": [
+        version: "1.21.4",
+        yarn: "1.21.4+build.7",
+        loader: "0.16.9",
+        baritone: "1.13.1"
+    ],
+    "1.21.11": [
+        version: "1.21.11",
+        yarn: "1.21.11+build.3",
+        loader: "0.18.2",
+        baritone: "1.17.0"
+    ]
+]
+
+def client = findProperty("mc") ?: "1.21.4"
+def target = targets[client]
+
+group = project.maven_group
+version = project.mod_version
+
 base {
-    archivesBaseName = project.archives_base_name
-    version = project.mod_version
-    group = project.maven_group
+    archivesName = project.archives_base_name
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ["src/main/java", "src/${client}/java"]
+            exclude "dev/**"
+        }
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
 }
 
 repositories {
@@ -16,6 +50,7 @@ repositories {
                 url = "https://api.modrinth.com/maven"
             }
         }
+
         filter {
             includeGroup "maven.modrinth"
         }
@@ -34,24 +69,24 @@ repositories {
 
 dependencies {
     // Fabric
-    minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    minecraft "com.mojang:minecraft:${target.version}"
+    mappings "net.fabricmc:yarn:${target.yarn}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${target.loader}"
 
     // Meteor
-    modImplementation "meteordevelopment:meteor-client:${project.minecraft_version}-SNAPSHOT"
+    modImplementation "meteordevelopment:meteor-client:${target.version}-SNAPSHOT"
 
     // Baritone
-    modCompileOnly "meteordevelopment:baritone:${project.minecraft_version}-SNAPSHOT"
+    modCompileOnly files("libs/baritone-api-fabric-${target.baritone}.jar")
 
     // XaeroPlus
-    modImplementation "maven.modrinth:xaeroplus:${project.xaeroplus_version}"
+    modImplementation "maven.modrinth:xaeroplus:2.30.6+fabric-${target.version}"
 
-    // Xaero World Map
-    modImplementation "maven.modrinth:xaeros-world-map:${project.xaeros_worldmap_version}"
+    // Xaero's World Map
+    modImplementation "maven.modrinth:xaeros-world-map:fabric-${target.version}-1.40.10"
 
-    // Xaero Minimap
-    modImplementation "maven.modrinth:xaeros-minimap:${project.xaeros_minimap_version}"
+    // Xaero's Minimap
+    modImplementation "maven.modrinth:xaeros-minimap:fabric-${target.version}-25.3.9"
 
     // Lambda Events
     modImplementation "net.lenni0451:LambdaEvents:2.4.2"
@@ -59,29 +94,36 @@ dependencies {
 
 tasks {
     processResources {
-        def propertyMap = [
-            "version"   : project.version,
-            "mc_version": project.minecraft_version,
+        def properties = [
+            "version": project.version,
+            "mc_version": target.version
         ]
 
+        inputs.properties(properties)
+        filteringCharset = "UTF-8"
+
         filesMatching("fabric.mod.json") {
-            expand(propertyMap)
+            expand(properties)
         }
     }
 
     jar {
+        inputs.property("archivesName", project.archives_base_name)
+
         from("LICENSE") {
-            rename { "${it}_${project.base.archivesBaseName}" }
+            rename { "${it}_${project.archives_base_name}" }
         }
     }
 
-    java {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+    remapJar {
+        archiveFileName =
+            "${project.archives_base_name}-${project.mod_version}+${target.version}.jar"
     }
+}
 
-    tasks.withType(JavaCompile).configureEach {
-        it.options.encoding = "UTF-8"
-        it.options.release = 21
-    }
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+    options.release = 21
+    options.compilerArgs.add("-Xlint:deprecation")
+    options.compilerArgs.add("-Xlint:unchecked")
 }

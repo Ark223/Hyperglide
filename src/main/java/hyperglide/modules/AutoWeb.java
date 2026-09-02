@@ -1,0 +1,305 @@
+package hyperglide.modules;
+
+import hyperglide.Hyperglide;
+import hyperglide.utilities.Client;
+import hyperglide.utilities.Hotbar;
+import hyperglide.utilities.Placement;
+import meteordevelopment.meteorclient.events.world.TickEvent;
+import meteordevelopment.meteorclient.settings.*;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.orbit.EventHandler;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityType;
+import net.minecraft.item.BlockItem;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.util.Hand;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
+import java.util.*;
+
+public class AutoWeb extends Module {
+    private static final double edge = 1.0E-4;
+    private static final int life = 5;
+
+    private final SettingGroup general = this.settings.getDefaultGroup();
+
+    private final Setting<Set<EntityType<?>>> entities =
+        this.general.add(new EntityTypeListSetting.Builder()
+        .name("entities")
+        .description("Entities targeted by Auto Web.")
+        .defaultValue(EntityType.PLAYER)
+        .build()
+    );
+
+    private final Setting<Double> range = this.general.add(new DoubleSetting.Builder()
+        .name("max-range")
+        .description("Maximum placement range.")
+        .defaultValue(4.5)
+        .min(0.0)
+        .sliderMax(6.0)
+        .build()
+    );
+
+    private final Setting<Integer> delay = this.general.add(new IntSetting.Builder()
+        .name("place-delay")
+        .description("Delay in ticks between placements.")
+        .defaultValue(2)
+        .min(0)
+        .sliderMax(4)
+        .build()
+    );
+
+    private final Setting<Integer> extrapolation = this.general.add(new IntSetting.Builder()
+        .name("extrapolation")
+        .description("Ticks used to predict entity movement.")
+        .defaultValue(2)
+        .min(0)
+        .sliderMax(5)
+        .build()
+    );
+
+    private final LinkedHashSet<BlockPos> queue = new LinkedHashSet<>();
+    private final Map<BlockPos, Integer> marks = new HashMap<>();
+
+    private int timer;
+    private int tick;
+
+    public AutoWeb() {
+        super(Hyperglide.CATEGORY, "auto-web",
+            "Places cobwebs around selected entities."
+        );
+    }
+
+    /**
+     * Clears runtime state and prepares the placement timer.
+     */
+    @Override
+    public void onActivate() {
+        this.reset();
+        this.timer = this.delay.get();
+    }
+
+    /**
+     * Clears all queued and marked placement state.
+     */
+    @Override
+    public void onDeactivate() {
+        this.reset();
+    }
+
+    //region Event handlers
+
+    /**
+     * Collects target positions and places the next cobweb.
+     *
+     * @param event pre-tick event
+     */
+    @EventHandler
+    private void onTick(TickEvent.Pre event) {
+        if (!Client.interaction()) return;
+
+        this.tick++;
+        this.clean();
+        this.collect();
+
+        if (++this.timer < this.delay.get()) {
+            return;
+        }
+
+        BlockPos pos = this.next();
+        if (pos == null) return;
+
+        int slot = Hotbar.find(Items.COBWEB);
+        if (slot == -1 || !this.place(pos, slot)) {
+            return;
+        }
+
+        this.timer = 0;
+        this.marks.put(pos, this.tick);
+    }
+
+    /**
+     * Clears queued positions, placement marks and timers.
+     */
+    private void reset() {
+        this.queue.clear();
+        this.marks.clear();
+
+        this.timer = 0;
+        this.tick = 0;
+    }
+
+    //endregion
+
+    //region Target collection
+
+    /**
+     * Finds valid entities and queues their current and predicted positions.
+     */
+    private void collect() {
+        this.queue.clear();
+
+        List<Entity> targets = new ArrayList<>();
+        double range = this.range.get() * this.range.get();
+
+        for (Entity entity : this.mc.world.getEntities()) {
+            if (entity == this.mc.player || !entity.isAlive() ||
+                !this.entities.get().contains(entity.getType()) ||
+                this.mc.player.squaredDistanceTo(entity) > range) {
+                continue;
+            }
+
+            targets.add(entity);
+        }
+
+        targets.sort(Comparator.comparingDouble(entity ->
+            this.mc.player.squaredDistanceTo(entity))
+        );
+
+        for (Entity entity : targets) {
+            Box box = entity.getBoundingBox();
+            this.add(box);
+
+            Vec3d move = this.move(entity);
+            if (move.lengthSquared() > 0) {
+                this.add(box.offset(move));
+            }
+        }
+    }
+
+    /**
+     * Adds every block position intersecting an entity hitbox.
+     *
+     * @param box entity hitbox
+     */
+    private void add(Box box) {
+        int minx = MathHelper.floor(box.minX + edge);
+        int miny = MathHelper.floor(box.minY + edge);
+        int minz = MathHelper.floor(box.minZ + edge);
+
+        int maxx = MathHelper.floor(box.maxX - edge);
+        int maxy = MathHelper.floor(box.maxY - edge);
+        int maxz = MathHelper.floor(box.maxZ - edge);
+
+        for (int px = minx; px <= maxx; px++) {
+            for (int py = miny; py <= maxy; py++) {
+                for (int pz = minz; pz <= maxz; pz++) {
+                    this.add(new BlockPos(px, py, pz));
+                }
+            }
+        }
+    }
+
+    /**
+     * Adds a valid untracked position to the queue.
+     *
+     * @param pos candidate block position
+     */
+    private void add(BlockPos pos) {
+        pos = pos.toImmutable();
+
+        if (!this.valid(pos) ||
+            this.queue.contains(pos) ||
+            this.marks.containsKey(pos)) {
+            return;
+        }
+
+        this.queue.addLast(pos);
+    }
+
+    /**
+     * Predicts entity movement from its current velocity.
+     *
+     * @param entity entity to extrapolate
+     * @return predicted movement offset
+     */
+    private Vec3d move(Entity entity) {
+        if (this.extrapolation.get() == 0) return Vec3d.ZERO;
+
+        Vec3d vel = entity.getVelocity();
+        if (vel.lengthSquared() < edge) return Vec3d.ZERO;
+
+        return vel.multiply(this.extrapolation.get());
+    }
+
+    //endregion
+
+    //region Queue management
+
+    /**
+     * Removes and returns the next valid position from the queue.
+     *
+     * @return next valid position, or null when none is available
+     */
+    private BlockPos next() {
+        while (!this.queue.isEmpty()) {
+            BlockPos pos = this.queue.removeFirst();
+            if (this.valid(pos)) return pos;
+        }
+        return null;
+    }
+
+    /**
+     * Removes expired or no longer replaceable placement marks.
+     */
+    private void clean() {
+        this.marks.entrySet().removeIf(entry -> {
+            BlockPos pos = entry.getKey();
+            return this.tick - entry.getValue() > life
+                || !this.mc.world.getBlockState(pos).isReplaceable();
+        });
+    }
+
+    //endregion
+
+    //region Block placement
+
+    /**
+     * Places a cobweb at a position.
+     *
+     * @param pos destination block position
+     * @param slot hotbar slot containing cobwebs
+     * @return true when the placement packets were sent
+     */
+    private boolean place(BlockPos pos, int slot) {
+        ItemStack stack = Hotbar.stack(slot);
+
+        if (!(stack.getItem() instanceof BlockItem item) ||
+            !stack.isOf(Items.COBWEB) || !Hotbar.swap(slot)) {
+            return false;
+        }
+
+        try {
+            Placement.place(pos);
+            this.mc.player.swingHand(Hand.MAIN_HAND);
+
+            Placement.sound(item, pos);
+            return true;
+        } finally {
+            Hotbar.restore();
+        }
+    }
+
+    /**
+     * Checks whether a cobweb can be placed at a position.
+     *
+     * @param pos block position to check
+     * @return true when placement is possible
+     */
+    private boolean valid(BlockPos pos) {
+        if (!this.mc.world.getBlockState(pos).isReplaceable()) {
+            return false;
+        }
+
+        Vec3d center = Vec3d.ofCenter(pos);
+        Vec3d eye = this.mc.player.getEyePos();
+
+        double range = this.range.get() * this.range.get();
+        return center.squaredDistanceTo(eye) <= range;
+    }
+
+    //endregion
+}

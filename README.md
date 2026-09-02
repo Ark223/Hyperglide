@@ -26,13 +26,18 @@ A [Meteor Client][meteor] add-on for the 2b2t anarchy server, providing practica
 
 ## 📦 Requirements
 
-- **[Minecraft 1.21.4][minecraft]**
+- **[Minecraft 1.21][minecraft]**
 - **[Fabric Loader][fabric]**
 - **[Meteor Client][meteor]**
 - **[ViaFabricPlus][viaplus]**
 - **[Baritone][baritone]**
 
-Make sure to downgrade to 1.20.3-1.20.4 in ViaFabricPlus settings before joining the server.
+It is recommended to download Baritone from its official GitHub repository using the link above.<br>
+Find the release matching your version and download `baritone-api-fabric-<version>.jar`.
+
+Alternatively, use the corresponding Baritone library included in the `/libs` folder.
+
+**Make sure to downgrade to 1.20.3-1.20.4 in ViaFabricPlus settings before joining the server.**
 
 ## 🧩 Modules
 
@@ -62,22 +67,33 @@ Make sure to downgrade to 1.20.3-1.20.4 in ViaFabricPlus settings before joining
 
 ```text
 Hyperglide/
-├── gradle/                         # Gradle wrapper files
-├── libs/                           # Local dependencies
+├── gradle/                              # Gradle wrapper files
+├── libs/                                # Local dependencies
+│   ├── baritone-api-fabric-1.13.1.jar
+│   └── baritone-api-fabric-1.17.0.jar
 ├── src/
-│   └── main/
-│       ├── java/dev/arkieee/hyperglide/
-│       │   ├── hud/                # HUD modules
-│       │   ├── mixin/              # Mixin classes
-│       │   ├── modules/            # Client modules
-│       │   ├── navigation/         # Route planning
-│       │   ├── utilities/          # Utility classes
-│       │   └── Hyperglide.java     # Main entry point
-│       └── resources/
-│           ├── assets/hyperglide/
-│           │   └── icon.png
-│           ├── fabric.mod.json
-│           └── mixins.json
+│   ├── main/
+│   │   ├── java/hyperglide/
+│   │   │   ├── hud/                     # HUD modules
+│   │   │   ├── mixin/                   # Mixin classes
+│   │   │   ├── modules/                 # Client modules
+│   │   │   ├── navigation/              # Route planning
+│   │   │   ├── utilities/               # Utility classes
+│   │   │   └── Hyperglide.java          # Main entry point
+│   │   └── resources/
+│   │       ├── assets/hyperglide/
+│   │       │   └── icon.png
+│   │       ├── fabric.mod.json
+│   │       └── mixins.json
+│   ├── 1.21.4/
+│   │   └── java/hyperglide/
+│   │       ├── mixin/                   # Target mixins
+│   │       └── utilities/               # Target helpers
+│   └── 1.21.11/
+│       └── java/hyperglide/
+│           ├── mixin/                   # Target mixins
+│           └── utilities/               # Target helpers
+├── build-all.bat
 ├── build.gradle
 ├── gradle.properties
 ├── settings.gradle
@@ -97,21 +113,43 @@ Hyperglide/
 
 ### Windows
 
+Clone the repository:
+
 ```powershell
 git clone https://github.com/Ark223/Hyperglide.git
 cd Hyperglide
-.\gradlew.bat clean build
+```
+
+Build both supported versions:
+
+```powershell
+.\build-all.bat
+```
+
+Or build a specific version, such as 1.21.4:
+
+```powershell
+.\gradlew.bat clean build -Pmc=1.21.4
 ```
 
 ### Linux and macOS
 
+Clone the repository:
+
 ```bash
 git clone https://github.com/Ark223/Hyperglide.git
 cd Hyperglide
-./gradlew clean build
 ```
 
-The compiled add-on JAR will be located in:
+Build a specific version, such as 1.21.4:
+
+```bash
+./gradlew clean build -Pmc=1.21.4
+```
+
+### Output
+
+The compiled add-on JARs will be located in:
 
 ```text
 build/libs/
@@ -136,7 +174,7 @@ This add-on is licensed under the [GNU General Public License v3.0][repo-license
 [fabric]: https://fabricmc.net/use/installer/
 [meteor]: https://meteorclient.com/
 [viaplus]: https://modrinth.com/mod/viafabricplus
-[baritone]: https://maven.meteordev.org/#/snapshots/meteordevelopment/baritone
+[baritone]: https://github.com/cabaletta/baritone/releases
 
 [shield-repo-license]: https://img.shields.io/github/license/Ark223/Hyperglide?style=flat&labelColor=30363d&color=2ea44f
 [repo-license]: https://github.com/Ark223/Hyperglide/blob/main/LICENSE

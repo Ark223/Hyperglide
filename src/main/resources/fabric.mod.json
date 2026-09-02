@@ -11,7 +11,7 @@
   "environment": "client",
   "entrypoints": {
     "meteor": [
-      "dev.arkieee.hyperglide.Hyperglide"
+      "hyperglide.Hyperglide"
     ]
   },
   "mixins": [

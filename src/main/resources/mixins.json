@@ -1,14 +1,16 @@
 {
   "required": true,
-  "package": "dev.arkieee.hyperglide.mixin",
+  "package": "hyperglide.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
     "AttackAccessor",
     "CameraMixin",
+    "EntityAccessor",
     "EntityMixin",
     "FireworkMixin",
     "FovMixin",
     "InGameHudMixin",
+    "InputAccessor",
     "InteractionAccessor",
     "ItemOverlayMixin",
     "KeyboardInputMixin",

@@ -1,0 +1,39 @@
+package hyperglide.mixin;
+
+import hyperglide.modules.BounceFly;
+import hyperglide.modules.CriticalHits;
+import meteordevelopment.meteorclient.gui.WidgetScreen;
+import meteordevelopment.meteorclient.systems.modules.Modules;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.ingame.HandledScreen;
+import net.minecraft.client.input.Input;
+import net.minecraft.client.input.KeyboardInput;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(KeyboardInput.class)
+public class KeyboardInputMixin {
+    /**
+     * Forwards player input to movement modules.
+     *
+     * @param info injection callback
+     */
+    @Inject(method = "tick", at = @At("TAIL"))
+    private void onTick(CallbackInfo info) {
+        Input input = (Input) (Object) this;
+
+        CriticalHits crit = Modules.get().get(CriticalHits.class);
+        if (crit != null) crit.input(input);
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (!(client.currentScreen instanceof HandledScreen<?>) &&
+            !(client.currentScreen instanceof WidgetScreen)) {
+            return;
+        }
+
+        BounceFly bounce = Modules.get().get(BounceFly.class);
+        if (bounce != null) bounce.input(input);
+    }
+}
