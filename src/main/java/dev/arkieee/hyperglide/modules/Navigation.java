@@ -30,7 +30,9 @@ import org.lwjgl.glfw.GLFW;
 import java.util.Locale;
 
 public class Navigation extends Module {
-    private static final int border = 3750000;
+    private static final double border = 3750000.0;
+    private static final double limit = 5000000.0;
+
     private static final double margin = 8.0;
     private static final double span = 100000.0;
 
@@ -262,7 +264,7 @@ public class Navigation extends Module {
         double scale = this.scale();
 
         this.zoom *= event.value > 0.0 ? 1.2 : 1.0 / 1.2;
-        this.zoom = Math.max(0.01, Math.min(16.0, this.zoom));
+        this.zoom = Math.max(0.01, Math.min(64.0, this.zoom));
 
         if (this.mode.get() == Mode.Free) {
             float size = this.size.get();
@@ -271,9 +273,9 @@ public class Navigation extends Module {
             float py = (float) (this.top() + size * 0.5F);
 
             Vec2f shift = mouse.add(new Vec2f(-px, -py));
-            this.offset = this.offset.add(
+            this.offset = this.bound(this.offset.add(
                 shift.multiply((float) (scale - this.scale()))
-            );
+            ));
         }
 
         event.cancel();
@@ -508,9 +510,9 @@ public class Navigation extends Module {
             this.yoffset.set(this.yoffset.get() + Math.round(dy));
         } else {
             double scale = this.scale();
-            this.offset = this.offset.add(new Vec2f(
+            this.offset = this.bound(this.offset.add(new Vec2f(
                 (float) (-dx * scale), (float) (-dy * scale)
-            ));
+            )));
         }
 
         this.mx = mouse.x;
@@ -528,12 +530,32 @@ public class Navigation extends Module {
      * @return map view
      */
     private View view(Vec2f current) {
+        if (this.mode.get() == Mode.Free) {
+            this.offset = this.bound(this.offset);
+        }
+
         Vec2f center = switch (this.mode.get()) {
             case Free -> this.offset;
             case Origin -> Vec2f.ZERO;
             case Player -> current;
         };
         return new View(center, this.scale());
+    }
+
+    /**
+     * Keeps the visible area inside the navigation limit.
+     *
+     * @param point requested map center
+     * @return bounded map center
+     */
+    private Vec2f bound(Vec2f point) {
+        double half = this.size.get() * this.scale() * 0.5;
+        float max = (float) Math.max(0.0, limit - half);
+
+        return new Vec2f(
+            Math.max(-max, Math.min(max, point.x)),
+            Math.max(-max, Math.min(max, point.y))
+        );
     }
 
     /**
@@ -915,10 +937,7 @@ public class Navigation extends Module {
      * @return configured destination
      */
     private Vec2f target() {
-        return new Vec2f(
-            this.point.getX(),
-            this.point.getZ()
-        );
+        return new Vec2f(this.point.getX(), this.point.getZ());
     }
 
     /**
