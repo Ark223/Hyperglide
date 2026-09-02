@@ -10,18 +10,20 @@ public final class Highways {
     private static final float grid = 50000.0F;
 
     private static final float[] squares = {
-        200.0F, 500.0F, 1000.0F, 1500.0F, 2000.0F, 2500.0F, 3131.0F,
-        5000.0F, 7500.0F, 10000.0F, 15000.0F, 20000.0F, 21000.0F,
-        22000.0F, 23000.0F, 24000.0F, 25000.0F, 30000.0F, 50000.0F,
-        55000.0F, 62500.0F, 75000.0F, 100000.0F, 125000.0F,
-        250000.0F, 325000.0F, 500000.0F, 750000.0F, 1000000.0F,
-        1250000.0F, 1568852.0F, 1875000.0F, 2500000.0F, 3750000.0F
+        200.0F, 500.0F, 750.0F, 1000.0F, 1500.0F, 2000.0F,
+        2500.0F, 3131.0F, 3500.0F, 5000.0F, 6250.0F, 7500.0F,
+        10000.0F, 12500.0F, 15000.0F, 20000.0F, 21000.0F,
+        22000.0F, 23000.0F, 24000.0F, 25000.0F, 30000.0F,
+        50000.0F, 55000.0F, 62500.0F, 75000.0F, 100000.0F,
+        125000.0F, 250000.0F, 325000.0F, 500000.0F,
+        750000.0F, 1000000.0F, 1250000.0F, 1568852.0F,
+        1875000.0F, 2500000.0F, 3750000.0F
     };
 
     private static final float[] diamonds = {
-        1000.0F, 2000.0F, 2500.0F, 5000.0F, 10000.0F, 15000.0F,
-        25000.0F, 50000.0F, 125000.0F, 250000.0F, 500000.0F,
-        3750000.0F
+        1000.0F, 2000.0F, 2500.0F, 5000.0F, 10000.0F,
+        15000.0F, 25000.0F, 50000.0F, 125000.0F,
+        250000.0F, 500000.0F, 3750000.0F
     };
 
     private static final List<Road> roads = create();
@@ -63,6 +65,7 @@ public final class Highways {
         square(roads);
         diamond(roads);
         grid(roads);
+        special(roads);
         return List.copyOf(roads);
     }
 
@@ -192,6 +195,36 @@ public final class Highways {
         if (!sz.isEmpty()) {
             roads.add(new Road("50k Grid Z=" + (int) offset, Kind.Grid, sz));
         }
+    }
+
+    /**
+     * Adds the 50k highway extensions out to the 125k ring road.
+     *
+     * @param roads destination road list
+     */
+    private static void special(List<Road> roads) {
+        float inner = 50000.0F;
+        float outer = 125000.0F;
+
+        roads.add(new Road("50k Extension X=50000", Kind.Special, List.of(
+            new Segment(new Vec2f(inner, -outer), new Vec2f(inner, -inner)),
+            new Segment(new Vec2f(inner, inner), new Vec2f(inner, outer))
+        )));
+
+        roads.add(new Road("50k Extension X=-50000", Kind.Special, List.of(
+            new Segment(new Vec2f(-inner, -outer), new Vec2f(-inner, -inner)),
+            new Segment(new Vec2f(-inner, inner), new Vec2f(-inner, outer))
+        )));
+
+        roads.add(new Road("50k Extension Z=50000", Kind.Special, List.of(
+            new Segment(new Vec2f(-outer, inner), new Vec2f(-inner, inner)),
+            new Segment(new Vec2f(inner, inner), new Vec2f(outer, inner))
+        )));
+
+        roads.add(new Road("50k Extension Z=-50000", Kind.Special, List.of(
+            new Segment(new Vec2f(-outer, -inner), new Vec2f(-inner, -inner)),
+            new Segment(new Vec2f(inner, -inner), new Vec2f(outer, -inner))
+        )));
     }
 
     /**
