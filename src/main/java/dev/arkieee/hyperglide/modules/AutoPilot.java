@@ -35,9 +35,9 @@ public class AutoPilot extends Module {
     private static final int lava = 3;
     private static final int level = 120;
 
-    private static final int width = 12;
+    private static final int width = 24;
     private static final int height = 8;
-    private static final int depth = 12;
+    private static final int depth = 24;
 
     private static final int floor = 32;
     private static final int search = 32;
