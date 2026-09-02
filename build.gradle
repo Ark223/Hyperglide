@@ -9,10 +9,23 @@ base {
 }
 
 repositories {
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Modrinth"
+                url = "https://api.modrinth.com/maven"
+            }
+        }
+        filter {
+            includeGroup "maven.modrinth"
+        }
+    }
+
     maven {
         name = "Meteor Dev Releases"
         url = "https://maven.meteordev.org/releases"
     }
+
     maven {
         name = "Meteor Dev Snapshots"
         url = "https://maven.meteordev.org/snapshots"
@@ -30,6 +43,18 @@ dependencies {
 
     // Baritone
     modCompileOnly "meteordevelopment:baritone:${project.minecraft_version}-SNAPSHOT"
+
+    // XaeroPlus
+    modImplementation "maven.modrinth:xaeroplus:${project.xaeroplus_version}"
+
+    // Xaero World Map
+    modImplementation "maven.modrinth:xaeros-world-map:${project.xaeros_worldmap_version}"
+
+    // Xaero Minimap
+    modImplementation "maven.modrinth:xaeros-minimap:${project.xaeros_minimap_version}"
+
+    // Lambda Events
+    modImplementation "net.lenni0451:LambdaEvents:2.4.2"
 }
 
 tasks {
