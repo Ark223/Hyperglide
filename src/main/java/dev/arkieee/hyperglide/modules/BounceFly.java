@@ -37,7 +37,7 @@ public class BounceFly extends Module {
 
     private final Setting<Double> pitch = this.general.add(new DoubleSetting.Builder()
         .name("pitch")
-        .description("The pitch used while bouncing.")
+        .description("The camera pitch used while bouncing.")
         .defaultValue(72.4)
         .min(-90.0)
         .sliderMax(90.0)
@@ -186,6 +186,7 @@ public class BounceFly extends Module {
             return;
         }
 
+        if (!Baritone.moving()) this.rotate();
         this.mc.player.setPitch(this.pitch.get().floatValue());
 
         this.mc.options.forwardKey.setPressed(true);
@@ -312,11 +313,12 @@ public class BounceFly extends Module {
 
         double scan = vel.horizontalLength() * this.ticks.get();
         double width = this.mc.player.getWidth() / 2.0;
+        width *= Math.abs(side.x) + Math.abs(side.z);
 
         Vec3d closest = null;
         double distance = Double.MAX_VALUE;
 
-        for (int idx = -1; idx <= 1; idx += 2) {
+        for (int idx = -1; idx <= 1; idx++) {
             for (double y = 0.5; y <= 1.5; y++) {
                 Vec3d start = new Vec3d(
                     this.mc.player.getX(), this.level + y,
@@ -332,13 +334,13 @@ public class BounceFly extends Module {
                 }
 
                 double current = start.squaredDistanceTo(hit.getPos());
-
                 if (current < distance) {
                     distance = current;
                     closest = hit.getPos();
                 }
             }
         }
+
         return closest;
     }
 
@@ -352,8 +354,8 @@ public class BounceFly extends Module {
     private BlockHitResult ray(Vec3d start, Vec3d end) {
         return this.mc.world.raycast(new RaycastContext(
             start, end, RaycastContext.ShapeType.COLLIDER,
-            RaycastContext.FluidHandling.NONE, this.mc.player)
-        );
+            RaycastContext.FluidHandling.NONE, this.mc.player
+        ));
     }
 
     //endregion
@@ -384,7 +386,6 @@ public class BounceFly extends Module {
         this.started = false;
 
         this.mc.player.setSprinting(false);
-
         Baritone.walk(this.goal(point));
     }
 
@@ -395,10 +396,12 @@ public class BounceFly extends Module {
      * @return block position used as the Baritone goal
      */
     private BlockPos goal(Vec3d point) {
-        Vec3d dir = new Vec3d(this.dx, 0, this.dz).normalize();
+        Vec3d dir = new Vec3d(this.dx, 0, this.dz);
+        dir = dir.normalize();
 
         double ox = point.x - this.px;
         double oz = point.z - this.pz;
+
         double along = ox * dir.x + oz * dir.z;
 
         double px = this.px + dir.x * (along + reach);
@@ -419,7 +422,9 @@ public class BounceFly extends Module {
      */
     private void face() {
         float yaw = this.mc.player.getYaw();
-        int face = MathHelper.floor((yaw + 22.5F) / 45.0F) & 7;
+
+        float sector = (yaw + 22.5F) / 45.0F;
+        int face = MathHelper.floor(sector) & 7;
 
         this.dx = this.dxs[face];
         this.dz = this.dzs[face];
