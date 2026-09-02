@@ -12,7 +12,8 @@
     "InteractionAccessor",
     "ItemOverlayMixin",
     "KeyboardInputMixin",
-    "MiningTweaksMixin"
+    "MiningTweaksMixin",
+    "PlayerListAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

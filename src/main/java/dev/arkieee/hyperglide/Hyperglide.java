@@ -1,6 +1,7 @@
 package dev.arkieee.hyperglide;
 
 import com.mojang.logging.LogUtils;
+import dev.arkieee.hyperglide.hud.TruePing;
 import dev.arkieee.hyperglide.modules.AirPlace;
 import dev.arkieee.hyperglide.modules.AutoPilot;
 import dev.arkieee.hyperglide.modules.AutoWeb;
@@ -23,6 +24,7 @@ import dev.arkieee.hyperglide.modules.Scaffolding;
 import dev.arkieee.hyperglide.modules.SelfTrapper;
 import dev.arkieee.hyperglide.modules.TriggerBot;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
+import meteordevelopment.meteorclient.systems.hud.Hud;
 import meteordevelopment.meteorclient.systems.hud.HudGroup;
 import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Modules;
@@ -57,6 +59,8 @@ public class Hyperglide extends MeteorAddon {
         Modules.get().add(new Scaffolding());
         Modules.get().add(new SelfTrapper());
         Modules.get().add(new TriggerBot());
+
+        Hud.get().register(TruePing.info);
     }
 
     @Override
