@@ -5,6 +5,7 @@ import hyperglide.utilities.API;
 import hyperglide.utilities.Baritone;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Elytra;
+import hyperglide.utilities.Player;
 import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -103,12 +104,14 @@ public class RocketBoost extends Module {
 
         if (!Client.ready()) return;
 
-        if (!this.mc.player.isGliding()) {
+        if (!this.gliding()) {
             this.idle();
             return;
         }
 
-        if (!this.active() || this.controlled()) return;
+        if (!this.active() || this.controlled()) {
+            return;
+        }
 
         Vec3d aim = this.mc.player.getRotationVec(1.0F);
         double[] bounds = this.bounds(this.velocity, aim);
@@ -129,8 +132,9 @@ public class RocketBoost extends Module {
     private void move(PlayerMoveEvent event) {
         if (!Client.ready() || this.target == null ||
             event.type != MovementType.SELF ||
-            !this.mc.player.isGliding() ||
-            this.controlled()) return;
+            !this.gliding() || this.controlled()) {
+            return;
+        }
 
         Vec3d target = this.target;
         this.target = null;
@@ -143,7 +147,7 @@ public class RocketBoost extends Module {
     }
 
     /**
-     * Tracks used rockets and movement state sent to the server.
+     * Tracks rocket use and movement sent to the server.
      *
      * @param event outgoing packet event
      */
@@ -229,22 +233,23 @@ public class RocketBoost extends Module {
      */
     public void track(FireworkRocketEntity rocket) {
         if (!this.isActive() || !Client.ready() ||
-            !this.mc.player.isGliding() ||
-            this.controlled()) return;
+            !this.gliding() || this.controlled()) {
+            return;
+        }
 
         this.rocket = rocket;
         this.seen = true;
     }
 
     /**
-     * Checks whether vanilla firework acceleration should be suppressed.
+     * Checks whether vanilla acceleration should be suppressed.
      *
-     * @return true when rocket boosting should replace vanilla acceleration
+     * @return true when boosting should replace vanilla acceleration
      */
     public boolean boost() {
         return this.isActive() && Client.ready()
-            && this.mc.player.isGliding()
-            && !this.controlled() && this.replace;
+            && this.gliding() && !this.controlled()
+            && this.replace;
     }
 
     /**
@@ -279,21 +284,6 @@ public class RocketBoost extends Module {
 
         if (square <= maximum * maximum) return velocity;
         return velocity.multiply(maximum / Math.sqrt(square));
-    }
-
-    /**
-     * Checks whether another module owns player movement.
-     *
-     * @return true while another module controls movement
-     */
-    private boolean controlled() {
-        ControlFly module = Modules.get().get(ControlFly.class);
-        if (module != null && module.isActive()) return true;
-
-        ElytraTweaks tweaks = Modules.get().get(ElytraTweaks.class);
-        if (tweaks != null && tweaks.halted()) return true;
-
-        return Baritone.elytra();
     }
 
     //endregion
@@ -344,7 +334,7 @@ public class RocketBoost extends Module {
     }
 
     /**
-     * Finds the farthest point inside a velocity box toward the aim direction.
+     * Finds the furthest velocity box point along the aim direction.
      *
      * @param bounds minimum and maximum velocity bounds
      * @param aim desired rocket direction
@@ -375,6 +365,34 @@ public class RocketBoost extends Module {
         }
 
         return center.add(aim.multiply(far));
+    }
+
+    //endregion
+
+    //region Utilities and validation
+
+    /**
+     * Checks whether the player is gliding outside liquid.
+     *
+     * @return true while custom rocket movement can be applied
+     */
+    private boolean gliding() {
+        return this.mc.player.isGliding() && !Player.liquid();
+    }
+
+    /**
+     * Checks whether another module owns player movement.
+     *
+     * @return true while another module controls movement
+     */
+    private boolean controlled() {
+        ControlFly module = Modules.get().get(ControlFly.class);
+        if (module != null && module.isActive()) return true;
+
+        ElytraTweaks tweaks = Modules.get().get(ElytraTweaks.class);
+        if (tweaks != null && tweaks.halted()) return true;
+
+        return Baritone.elytra();
     }
 
     //endregion
