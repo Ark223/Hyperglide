@@ -5,6 +5,7 @@ import hyperglide.utilities.Client;
 import hyperglide.utilities.Elytra;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Packets;
+import hyperglide.utilities.Takeoff;
 import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -108,6 +109,7 @@ public class ControlFly extends Module {
     );
 
     private final Boost boost = new Boost();
+    private final Takeoff input = new Takeoff();
     private final Flight flight = new Flight();
     private final Turn turn = new Turn();
     private final View view = new View();
@@ -121,7 +123,7 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Resets runtime state and captures the view and flight orientation.
+     * Resets flight state and captures the current view orientation.
      */
     @Override
     public void onActivate() {
@@ -148,7 +150,7 @@ public class ControlFly extends Module {
     //region Event handlers
 
     /**
-     * Updates boost state, takeoff automation and active flight control.
+     * Updates boost, takeoff and active flight control.
      *
      * @param event pre-tick event
      */
@@ -157,6 +159,7 @@ public class ControlFly extends Module {
         if (!Client.ready()) return;
 
         this.update();
+        this.input.pulse();
 
         if (!this.mc.player.isGliding()) {
             this.restore();
@@ -164,6 +167,9 @@ public class ControlFly extends Module {
             this.takeoff();
             return;
         }
+
+        this.jump = 0;
+        this.input.reset();
 
         if (this.halted()) return;
 
@@ -205,8 +211,8 @@ public class ControlFly extends Module {
      */
     @EventHandler
     private void packet(PacketEvent.Send event) {
-        if (!Client.ready() || this.boost.automatic || !this.mc.player.isGliding()
-            || !(event.packet instanceof PlayerInteractItemC2SPacket packet)) {
+        if (!Client.ready() || this.boost.automatic || !this.mc.player.isGliding() ||
+            !(event.packet instanceof PlayerInteractItemC2SPacket packet)) {
             return;
         }
 
@@ -222,11 +228,31 @@ public class ControlFly extends Module {
     //region State management
 
     /**
+     * Checks whether automatic takeoff is active.
+     *
+     * @return true while takeoff input is active
+     */
+    public boolean deploying() {
+        return this.isActive() && this.input.active();
+    }
+
+    /**
+     * Returns the current takeoff jump input.
+     *
+     * @return forced jump state
+     */
+    public boolean jumping() {
+        return this.input.pressed();
+    }
+
+    /**
      * Resets all runtime flight, camera, boost and rotation state.
      */
     private void reset() {
         this.clear();
+
         this.jump = 0;
+        this.input.reset();
 
         this.flight.yaw = 0.0F;
         this.flight.pitch = 0.0F;
@@ -279,7 +305,7 @@ public class ControlFly extends Module {
     //region Flight control
 
     /**
-     * Processes movement input, steering, pitch control and rocket launching.
+     * Processes movement, steering, pitch control and rocket use.
      */
     private void control() {
         Vec3d input = this.direction();
@@ -320,7 +346,7 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Keeps normal player look and renews an expiring boost while stopped.
+     * Keeps the view normal and renews boost while stopped.
      */
     private void rest() {
         this.idle();
@@ -331,7 +357,7 @@ public class ControlFly extends Module {
         if (!this.renew()) return;
 
         this.await();
-        this.rotate(true);
+        this.rocket(this.flight.yaw, this.flight.pitch);
     }
 
     /**
@@ -391,19 +417,30 @@ public class ControlFly extends Module {
         return Vec3d.fromPolar(0.0F, this.flight.yaw).multiply(amount);
     }
 
-    /**
-     * Checks whether Elytra Tweaks currently stops movement.
-     *
-     * @return true while collision avoidance is stopping movement
-     */
-    private boolean halted() {
-        ElytraTweaks tweaks = Modules.get().get(ElytraTweaks.class);
-        return tweaks != null && tweaks.halted();
-    }
-
     //endregion
 
-    //region Boost state
+    //region Boost management
+
+    /**
+     * Tracks the firework currently boosting the player.
+     *
+     * @param rocket player-owned firework rocket
+     */
+    public void track(FireworkRocketEntity rocket) {
+        if (!Client.ready() || this.boost.rocket == rocket) {
+            return;
+        }
+
+        if (this.boost.rocket != null &&
+            this.boost.rocket.isAlive() &&
+            rocket.age >= this.boost.rocket.age) {
+            return;
+        }
+
+        this.boost.rocket = rocket;
+        this.boost.pending = false;
+        this.boost.launching = false;
+    }
 
     /**
      * Expires pending launches and removes inactive tracked rockets.
@@ -420,7 +457,7 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Marks a rocket as pending until its entity is detected or times out.
+     * Tracks a pending rocket until it appears or times out.
      */
     private void await() {
         this.boost.pending = true;
@@ -458,12 +495,12 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Checks whether a stopped flight should renew its active boost.
+     * Checks whether a stopped flight should renew its boost.
      *
-     * @return true one tick before the tracked boost window ends
+     * @return true when the current boost is about to expire
      */
     private boolean renew() {
-        return this.active() && this.boost.end > 0
+        return this.boost.end > 0
             && this.mc.player.age >= this.boost.end - 1
             && !this.boost.pending && !this.boost.launching
             && this.stocked();
@@ -474,32 +511,29 @@ public class ControlFly extends Module {
     //region Takeoff and steering
 
     /**
-     * Starts elytra flight after jump is held for the configured duration.
+     * Starts automatic takeoff after jump is held long enough.
      */
     private void takeoff() {
-        if (!this.starter.get()) {
+        if (!this.starter.get() || !Elytra.equipped()) {
+            this.jump = 0;
+            this.input.reset();
+            return;
+        }
+
+        if (this.input.active()) return;
+
+        if (!this.mc.options.jumpKey.isPressed() ||
+            this.mc.player.isOnGround()) {
             this.jump = 0;
             return;
         }
 
-        if (!this.mc.options.jumpKey.isPressed()) {
-            this.jump = 0;
-            return;
-        }
-
-        this.jump++;
-
-        if (this.jump < this.timer.get() ||
-            this.mc.player.isOnGround() ||
-            !Elytra.equipped()) return;
-
-        this.jump = 0;
-
-        Elytra.start();
+        if (++this.jump < this.timer.get()) return;
+        this.input.start();
     }
 
     /**
-     * Calculates movement input relative to the active camera direction.
+     * Calculates movement input relative to the camera direction.
      *
      * @return combined movement direction
      */
@@ -653,7 +687,7 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Searches a range of pitch values for the lowest prediction score.
+     * Searches pitch values for the best leveling result.
      *
      * @param velocity current player velocity
      * @param boosted whether rocket acceleration should be predicted
@@ -678,7 +712,7 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Scores a pitch by predicted vertical speed, minimum speed and stability.
+     * Scores a leveling pitch from predicted flight behavior.
      *
      * @param velocity current player velocity
      * @param pitch candidate pitch
@@ -733,11 +767,9 @@ public class ControlFly extends Module {
     private boolean changed() {
         return !this.turn.active ||
             Math.abs(MathHelper.wrapDegrees(
-                this.flight.yaw - this.turn.yaw
-            )) > 0.05F ||
+                this.flight.yaw - this.turn.yaw)) > 0.05F ||
             Math.abs(
-                this.flight.pitch - this.turn.pitch
-            ) > 0.05F;
+                this.flight.pitch - this.turn.pitch) > 0.05F;
     }
 
     /**
@@ -852,15 +884,6 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Checks whether a firework rocket is available in the hotbar or offhand.
-     *
-     * @return true when a rocket is available
-     */
-    private boolean stocked() {
-        return InvUtils.findInHotbar(Items.FIREWORK_ROCKET).found();
-    }
-
-    /**
      * Selects and uses a firework rocket at the controlled rotation.
      *
      * @param yaw controlled flight yaw
@@ -905,42 +928,9 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Returns the item stack represented by an inventory search result.
-     *
-     * @param result inventory search result
-     * @return matching item stack
-     */
-    private ItemStack stack(FindItemResult result) {
-        return result.isOffhand()
-            ? this.mc.player.getOffHandStack()
-            : Hotbar.stack(result.slot());
-    }
-
-    /**
      * Cancels the current pending rocket launch.
      */
     private void cancel() {
-        this.boost.pending = false;
-        this.boost.launching = false;
-    }
-
-    /**
-     * Tracks the firework currently boosting the player.
-     *
-     * @param rocket player-owned firework rocket
-     */
-    public void track(FireworkRocketEntity rocket) {
-        if (!Client.ready() || this.boost.rocket == rocket) {
-            return;
-        }
-
-        if (this.boost.rocket != null &&
-            this.boost.rocket.isAlive() &&
-            rocket.age >= this.boost.rocket.age) {
-            return;
-        }
-
-        this.boost.rocket = rocket;
         this.boost.pending = false;
         this.boost.launching = false;
     }
@@ -1026,6 +1016,41 @@ public class ControlFly extends Module {
         }
 
         this.view.active = false;
+    }
+
+    //endregion
+
+    //region Utilities and validation
+
+    /**
+     * Checks whether Elytra Tweaks currently stops movement.
+     *
+     * @return true while collision avoidance is stopping movement
+     */
+    private boolean halted() {
+        ElytraTweaks tweaks = Modules.get().get(ElytraTweaks.class);
+        return tweaks != null && tweaks.halted();
+    }
+
+    /**
+     * Checks whether a firework rocket is available in the hotbar.
+     *
+     * @return true when a rocket is available
+     */
+    private boolean stocked() {
+        return InvUtils.findInHotbar(Items.FIREWORK_ROCKET).found();
+    }
+
+    /**
+     * Returns the item stack represented by an inventory search result.
+     *
+     * @param result inventory search result
+     * @return matching item stack
+     */
+    private ItemStack stack(FindItemResult result) {
+        return result.isOffhand()
+            ? this.mc.player.getOffHandStack()
+            : Hotbar.stack(result.slot());
     }
 
     //endregion
