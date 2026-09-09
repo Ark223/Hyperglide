@@ -1,9 +1,10 @@
 package hyperglide.utilities;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.world.World;
 
 /**
- * Checks whether the client is ready for common module actions.
+ * Provides common checks for the current client state.
  */
 public final class Client {
     private static final MinecraftClient client = MinecraftClient.getInstance();
@@ -35,5 +36,27 @@ public final class Client {
      */
     public static boolean interaction() {
         return loaded() && client.interactionManager != null;
+    }
+
+    /**
+     * Checks whether the current world is the overworld.
+     *
+     * @return true when the overworld is loaded
+     */
+    public static boolean overworld() {
+        return client.world != null && World.OVERWORLD.equals(
+            client.world.getRegistryKey()
+        );
+    }
+
+    /**
+     * Checks whether the current world is the nether.
+     *
+     * @return true when the nether is loaded
+     */
+    public static boolean nether() {
+        return client.world != null && World.NETHER.equals(
+            client.world.getRegistryKey()
+        );
     }
 }

@@ -227,7 +227,7 @@ public final class Highways {
     }
 
     /**
-     * Builds a grid road without sections already owned by a square.
+     * Builds grid roads excluding sections covered by any ring road.
      *
      * @param offset grid coordinate offset
      * @param cx true for a constant X road, false for constant Z
@@ -256,9 +256,9 @@ public final class Highways {
     }
 
     /**
-     * Formats a ring-road radius.
+     * Formats a ring road radius.
      *
-     * @param radius ring-road radius
+     * @param radius ring road radius
      * @return formatted radius label
      */
     private static String label(float radius) {

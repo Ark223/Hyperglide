@@ -10,10 +10,7 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
@@ -121,23 +118,12 @@ public class AutoWeb extends Module {
         this.marks.put(pos, this.tick);
     }
 
-    /**
-     * Clears queued positions, placement marks and timers.
-     */
-    private void reset() {
-        this.queue.clear();
-        this.marks.clear();
-
-        this.timer = 0;
-        this.tick = 0;
-    }
-
     //endregion
 
     //region Target collection
 
     /**
-     * Finds valid entities and queues their current and predicted positions.
+     * Finds valid entities and queues current and predicted positions.
      */
     private void collect() {
         this.queue.clear();
@@ -230,6 +216,17 @@ public class AutoWeb extends Module {
     //region Queue management
 
     /**
+     * Clears queued positions, placement marks and timers.
+     */
+    private void reset() {
+        this.queue.clear();
+        this.marks.clear();
+
+        this.timer = 0;
+        this.tick = 0;
+    }
+
+    /**
      * Removes and returns the next valid position from the queue.
      *
      * @return next valid position, or null when none is available
@@ -262,25 +259,11 @@ public class AutoWeb extends Module {
      *
      * @param pos destination block position
      * @param slot hotbar slot containing cobwebs
-     * @return true when the placement packets were sent
+     * @return true when the placement interaction was sent
      */
     private boolean place(BlockPos pos, int slot) {
-        ItemStack stack = Hotbar.stack(slot);
-
-        if (!(stack.getItem() instanceof BlockItem item) ||
-            !stack.isOf(Items.COBWEB) || !Hotbar.swap(slot)) {
-            return false;
-        }
-
-        try {
-            Placement.place(pos);
-            this.mc.player.swingHand(Hand.MAIN_HAND);
-
-            Placement.sound(item, pos);
-            return true;
-        } finally {
-            Hotbar.restore();
-        }
+        return Hotbar.stack(slot).isOf(Items.COBWEB)
+            && Placement.place(pos, slot);
     }
 
     /**

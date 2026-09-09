@@ -16,7 +16,6 @@ import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
@@ -24,6 +23,11 @@ import net.minecraft.util.math.Vec3d;
 import java.util.List;
 
 public class BlockFarm extends Module {
+    private static final Direction[] sides = {
+        Direction.NORTH, Direction.EAST,
+        Direction.SOUTH, Direction.WEST
+    };
+
     private final SettingGroup general = this.settings.getDefaultGroup();
 
     private final Setting<List<Block>> blocks =
@@ -33,11 +37,6 @@ public class BlockFarm extends Module {
         .defaultValue(Blocks.ENDER_CHEST)
         .build()
     );
-
-    private final Direction[] sides = {
-        Direction.NORTH, Direction.EAST,
-        Direction.SOUTH, Direction.WEST
-    };
 
     private MiningTweaks mining;
     private BlockPos pos;
@@ -92,10 +91,7 @@ public class BlockFarm extends Module {
             return;
         }
 
-        if (this.pos == null ||
-            !this.adjacent(this.pos) ||
-            this.occupied(this.pos)) {
-
+        if (this.pos == null || !this.nearby(this.pos)) {
             this.clear();
             this.pos = this.target();
         }
@@ -127,7 +123,7 @@ public class BlockFarm extends Module {
         if (slot < 0) return;
 
         BlockState placed = this.state(slot);
-        if (!this.place(slot)) return;
+        if (!Placement.place(this.pos, slot)) return;
 
         if (this.started) {
             this.mining.rebreak(this.pos, placed, Direction.UP);
@@ -173,11 +169,10 @@ public class BlockFarm extends Module {
         BlockPos best = null;
         double score = -Double.MAX_VALUE;
 
-        for (Direction side : this.sides) {
+        for (Direction side : sides) {
             BlockPos pos = base.offset(side);
-
             if (!this.mc.world.getBlockState(pos).isReplaceable() ||
-                !this.support(pos) || this.occupied(pos)) {
+                !this.support(pos) || !this.nearby(pos)) {
                 continue;
             }
 
@@ -185,57 +180,31 @@ public class BlockFarm extends Module {
             value += look.z * side.getOffsetZ();
             if (value <= score) continue;
 
-            score = value;
             best = pos.toImmutable();
+            score = value;
         }
 
         return best;
     }
 
     /**
-     * Checks whether the player intersects a farm position.
+     * Checks whether a farm position is beside and clear of the player.
      *
      * @param pos farm position to check
-     * @return true when the player occupies the block space
+     * @return true when the position is adjacent and not occupied
      */
-    private boolean occupied(BlockPos pos) {
-        return new Box(pos).intersects(this.mc.player.getBoundingBox());
-    }
-
-    /**
-     * Checks whether a farm position is still beside the player.
-     *
-     * @param pos farm position to check
-     * @return true when the position is one horizontal block away
-     */
-    private boolean adjacent(BlockPos pos) {
+    private boolean nearby(BlockPos pos) {
         BlockPos base = this.mc.player.getBlockPos();
+        Box box = this.mc.player.getBoundingBox();
 
         return pos.getY() == base.getY()
-            && base.getManhattanDistance(pos) == 1;
+            && base.getManhattanDistance(pos) == 1
+            && !new Box(pos).intersects(box);
     }
 
     //endregion
 
-    //region Block placement
-
-    /**
-     * Places the selected hotbar block into the farm position.
-     *
-     * @param slot hotbar slot containing the selected block
-     * @return true when the placement interaction was sent
-     */
-    private boolean place(int slot) {
-        if (!Hotbar.swap(slot)) return false;
-
-        try {
-            Placement.place(this.pos);
-            this.mc.player.swingHand(Hand.MAIN_HAND);
-            return true;
-        } finally {
-            Hotbar.restore();
-        }
-    }
+    //region Block selection
 
     /**
      * Finds a hotbar slot containing a selected block.
@@ -300,7 +269,6 @@ public class BlockFarm extends Module {
      */
     private void restore() {
         if (this.mining == null) return;
-
         this.mining.instant(this.instant);
 
         if (!this.enabled && this.mining.isActive()) {
@@ -310,7 +278,7 @@ public class BlockFarm extends Module {
 
     //endregion
 
-    //region Farm validation
+    //region Utilities and validation
 
     /**
      * Checks whether a block is selected for farming.

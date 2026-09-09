@@ -2,6 +2,7 @@ package hyperglide.modules;
 
 import hyperglide.Hyperglide;
 import hyperglide.utilities.Client;
+import hyperglide.utilities.Player;
 import hyperglide.utilities.Render;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -12,7 +13,6 @@ import meteordevelopment.orbit.EventHandler;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.projectile.ProjectileUtil;
-import net.minecraft.item.consume.UseAction;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -86,7 +86,7 @@ public class TriggerBot extends Module {
     //region Event handlers
 
     /**
-     * Updates the current target and attacks when cooldown is ready.
+     * Updates the current target and attacks when ready.
      *
      * @param event post-tick event
      */
@@ -98,13 +98,12 @@ public class TriggerBot extends Module {
             return;
         }
 
-        if (this.consuming()) {
+        if (Player.consuming()) {
             this.target = null;
             return;
         }
 
         this.target = this.target();
-
         if (this.target == null ||
             this.mc.player.getAttackCooldownProgress(0.5F) < 1.0F) {
             return;
@@ -124,7 +123,10 @@ public class TriggerBot extends Module {
      */
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (!this.box.enabled() || !this.valid(this.target)) return;
+        if (!this.box.enabled() || !this.valid(this.target)) {
+            return;
+        }
+
         this.box.box(event, this.target.getBoundingBox());
     }
 
@@ -168,19 +170,6 @@ public class TriggerBot extends Module {
 
         return hit.getEntity();
     }
-
-    /**
-     * Checks whether the player is eating or drinking.
-     *
-     * @return true while consuming an item
-     */
-    private boolean consuming() {
-        if (!this.mc.player.isUsingItem()) return false;
-
-        UseAction action = this.mc.player.getActiveItem().getUseAction();
-        return action == UseAction.DRINK || action == UseAction.EAT;
-    }
-
     /**
      * Checks whether an entity can be targeted by Trigger Bot.
      *

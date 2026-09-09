@@ -279,6 +279,10 @@ public class FastFrame extends Module {
         return new EntityHitResult(frame, point);
     }
 
+    //endregion
+
+    //region Utilities and validation
+
     /**
      * Finds the first usable item inside the configured hotbar range.
      *

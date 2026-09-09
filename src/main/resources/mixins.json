@@ -4,7 +4,9 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "AttackAccessor",
+    "BossBarAccessor",
     "CameraMixin",
+    "ClientPlayerMixin",
     "EntityAccessor",
     "EntityMixin",
     "FireworkMixin",
@@ -13,7 +15,9 @@
     "InputAccessor",
     "InteractionAccessor",
     "ItemOverlayMixin",
+    "KeyBindingMixin",
     "KeyboardInputMixin",
+    "LivingEntityMixin",
     "MiningTweaksMixin",
     "PlayerListAccessor"
   ],

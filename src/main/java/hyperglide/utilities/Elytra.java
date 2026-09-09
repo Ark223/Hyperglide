@@ -9,7 +9,7 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
 /**
- * Handles common elytra checks, takeoff and flight calculations.
+ * Provides common elytra checks, takeoff and flight calculations.
  */
 public final class Elytra {
     private static final MinecraftClient client = MinecraftClient.getInstance();
@@ -22,7 +22,9 @@ public final class Elytra {
      * @return true when an elytra is equipped in the chest slot
      */
     public static boolean equipped() {
-        return client.player.getEquippedStack(EquipmentSlot.CHEST).isOf(Items.ELYTRA);
+        return client.player.getEquippedStack(
+            EquipmentSlot.CHEST
+        ).isOf(Items.ELYTRA);
     }
 
     /**
@@ -37,7 +39,7 @@ public final class Elytra {
     }
 
     /**
-     * Starts elytra flight.
+     * Sends a direct request to start elytra flight.
      */
     public static void start() {
         client.getNetworkHandler().sendPacket(

@@ -77,7 +77,7 @@ public class Overview extends Module {
     }
 
     /**
-     * Renders the most common contained item over a shulker box or bundle.
+     * Renders the most common item over a shulker box or bundle.
      *
      * @param context draw context
      * @param stack container item stack
@@ -128,6 +128,7 @@ public class Overview extends Module {
             item.getBlock() instanceof ShulkerBoxBlock) {
             return stack.get(DataComponentTypes.CONTAINER);
         }
+
         return stack.get(DataComponentTypes.BUNDLE_CONTENTS);
     }
 

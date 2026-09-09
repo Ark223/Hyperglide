@@ -1,10 +1,10 @@
 package hyperglide.modules;
 
 import hyperglide.Hyperglide;
-import hyperglide.utilities.Render;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Placement;
+import hyperglide.utilities.Render;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -119,7 +119,7 @@ public class AirPlace extends Module {
         );
 
         if (ray instanceof BlockHitResult block &&
-            this.mc.world.getBlockState(block.getBlockPos()).isReplaceable()) {
+            this.open(block.getBlockPos())) {
             this.hit = block;
         } else {
             this.hit = null;
@@ -153,9 +153,10 @@ public class AirPlace extends Module {
      */
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (!this.box.enabled() || this.hit == null || !Client.ready() ||
+        if (!this.box.enabled() ||
+            this.hit == null || !Client.ready() ||
             !this.valid(this.mc.player.getMainHandStack()) ||
-            !this.mc.world.getBlockState(this.hit.getBlockPos()).isReplaceable()) {
+            !this.open(this.hit.getBlockPos())) {
             return;
         }
 
@@ -167,15 +168,14 @@ public class AirPlace extends Module {
     //region Block placement
 
     /**
-     * Places a block from hotbar at a specific position.
+     * Places a block from the hotbar at a specific position.
      *
      * @param pos target block position
      * @param slot hotbar slot containing the block
      * @return true when the placement packet was sent
      */
     public boolean place(BlockPos pos, int slot) {
-        if (!Client.ready() || this.waiting(pos) ||
-            !this.mc.world.getBlockState(pos).isReplaceable()) {
+        if (!Client.ready() || this.waiting(pos) || !this.open(pos)) {
             return false;
         }
 
@@ -227,11 +227,26 @@ public class AirPlace extends Module {
     private boolean waiting(BlockPos pos) {
         long tick = this.mc.world.getTime();
 
-        this.pending.entrySet().removeIf(entry -> entry.getValue() <= tick ||
-            !this.mc.world.getBlockState(entry.getKey()).isReplaceable()
+        this.pending.entrySet().removeIf(
+            entry -> entry.getValue() <= tick ||
+            !this.open(entry.getKey())
         );
 
         return this.pending.containsKey(pos);
+    }
+
+    //endregion
+
+    //region Utilities and validation
+
+    /**
+     * Checks whether a block position can be replaced.
+     *
+     * @param pos block position to check
+     * @return true when the block can be placed
+     */
+    private boolean open(BlockPos pos) {
+        return this.mc.world.getBlockState(pos).isReplaceable();
     }
 
     /**

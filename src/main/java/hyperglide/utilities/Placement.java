@@ -3,6 +3,7 @@ package hyperglide.utilities;
 import net.minecraft.block.Block;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.item.BlockItem;
+import net.minecraft.item.ItemStack;
 import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
 import net.minecraft.util.Hand;
@@ -30,10 +31,36 @@ public final class Placement {
     }
 
     /**
+     * Places a block from the requested hotbar slot.
+     *
+     * @param pos destination block position
+     * @param slot hotbar slot containing the block
+     * @return true when the placement interaction was sent
+     */
+    public static boolean place(BlockPos pos, int slot) {
+        ItemStack stack = Hotbar.stack(slot);
+        if (!(stack.getItem() instanceof BlockItem item)) {
+            return false;
+        }
+
+        if (!Hotbar.swap(slot)) return false;
+
+        try {
+            place(pos);
+            client.player.swingHand(Hand.MAIN_HAND);
+
+            sound(item, pos);
+            return true;
+        } finally {
+            Hotbar.restore();
+        }
+    }
+
+    /**
      * Places a block and reports when its interaction packet is sent.
      *
      * @param pos destination block position
-     * @param guard receives true only while the interaction packet is sent
+     * @param guard receives true only while the interaction is sent
      */
     public static void place(BlockPos pos, Consumer<Boolean> guard) {
         place(air(pos), guard);
@@ -52,7 +79,7 @@ public final class Placement {
      * Places a block and reports when its interaction packet is sent.
      *
      * @param hit target block hit result
-     * @param guard receives true only while the interaction packet is sent
+     * @param guard receives true only while the interaction is sent
      */
     public static void place(BlockHitResult hit, Consumer<Boolean> guard) {
         PlayerActionC2SPacket swap = new PlayerActionC2SPacket(
@@ -76,7 +103,7 @@ public final class Placement {
     }
 
     /**
-     * Creates the hit result used for AirPlace placement.
+     * Creates a hit result for placing a block in the air.
      *
      * @param pos destination block position
      * @return direct block hit result for the destination

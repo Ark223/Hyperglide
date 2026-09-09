@@ -6,6 +6,7 @@ import hyperglide.utilities.Client;
 import hyperglide.utilities.Elytra;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Inventory;
+import hyperglide.utilities.Player;
 import hyperglide.navigation.Route;
 import hyperglide.navigation.Segment;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
@@ -23,7 +24,6 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec2f;
-import net.minecraft.world.World;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -217,6 +217,10 @@ public class AutoPilot extends Module {
         }
     }
 
+    //endregion
+
+    //region Route management
+
     /**
      * Captures the current route and destination from Navigation.
      */
@@ -258,27 +262,6 @@ public class AutoPilot extends Module {
     }
 
     /**
-     * Selects the closest route leg and resumes travel.
-     */
-    private void idle() {
-        if (this.mc.player.isOnGround() &&
-            this.close(this.target, approach)) {
-            this.finish();
-            return;
-        }
-
-        int progress = this.progress();
-        if (progress < 0) return;
-
-        this.leg = progress;
-        this.flight();
-    }
-
-    //endregion
-
-    //region Route management
-
-    /**
      * Finds the closest remaining route leg.
      *
      * @return route leg index, or -1 when unavailable
@@ -290,7 +273,7 @@ public class AutoPilot extends Module {
         int start = Math.max(0, this.leg);
         if (start >= size) return -1;
 
-        Vec2f position = this.position();
+        Vec2f position = Player.position();
         float distance = Float.MAX_VALUE;
         int best = -1;
 
@@ -327,7 +310,7 @@ public class AutoPilot extends Module {
      * @return closest point shifted forward along the leg
      */
     private Vec2f entry(Route.Leg leg) {
-        Vec2f position = this.position();
+        Vec2f position = Player.position();
         Segment segment = new Segment(leg.start(), leg.end());
 
         Vec2f point = segment.point(segment.projection(position));
@@ -358,7 +341,7 @@ public class AutoPilot extends Module {
             return false;
         }
 
-        Vec2f position = this.position();
+        Vec2f position = Player.position();
         Vec2f point = this.project(leg, position);
 
         float distance = position.distanceSquared(point);
@@ -368,6 +351,23 @@ public class AutoPilot extends Module {
     //endregion
 
     //region Standard travel
+
+    /**
+     * Selects the closest route leg and resumes travel.
+     */
+    private void idle() {
+        if (this.mc.player.isOnGround() &&
+            this.close(this.target, approach)) {
+            this.finish();
+            return;
+        }
+
+        int progress = this.progress();
+        if (progress < 0) return;
+
+        this.leg = progress;
+        this.flight();
+    }
 
     /**
      * Follows standard route legs with Baritone Elytra.
@@ -455,7 +455,6 @@ public class AutoPilot extends Module {
         this.seen = false;
 
         if (this.done()) return;
-
         this.walk(this.target, false);
     }
 
@@ -513,7 +512,9 @@ public class AutoPilot extends Module {
      * @return true when the firework use was sent
      */
     private boolean rocket() {
-        if (this.mc.interactionManager == null) return false;
+        if (this.mc.interactionManager == null) {
+            return false;
+        }
 
         int selected = Hotbar.selected();
 
@@ -526,7 +527,10 @@ public class AutoPilot extends Module {
             Inventory.swap(Inventory.slot(slot), selected);
         }
 
-        this.mc.interactionManager.interactItem(this.mc.player, Hand.MAIN_HAND);
+        this.mc.interactionManager.interactItem(
+            this.mc.player, Hand.MAIN_HAND
+        );
+
         return true;
     }
 
@@ -645,7 +649,6 @@ public class AutoPilot extends Module {
         }
 
         this.stop();
-
         if (--this.timer > 0) return;
 
         this.cross();
@@ -663,7 +666,8 @@ public class AutoPilot extends Module {
 
         Route.Leg following = this.route.legs().get(next);
         if (following.type() == Route.Type.Highway) {
-            this.walk(this.waypoint(this.entry(following)), true);
+            Vec2f entry = this.entry(following);
+            this.walk(this.waypoint(entry), true);
             this.state = State.Entry;
             return;
         }
@@ -862,7 +866,7 @@ public class AutoPilot extends Module {
     }
 
     /**
-     * Reaches the clear-space point and starts the next elytra flight.
+     * Reaches the clear-space point and starts the next flight.
      *
      * @param destination next standard route point
      */
@@ -871,12 +875,14 @@ public class AutoPilot extends Module {
             if (this.reach(this.point, lava)) this.fill();
 
             if (this.goal != null && this.goal.equals(this.point)) {
-                if (Baritone.moving()) {
+                if (Baritone.pathing()) {
                     this.seen = true;
                     return;
                 }
 
-                if (!this.seen) return;
+                if (!this.seen || !this.mc.player.isOnGround()) {
+                    return;
+                }
 
                 this.ready = true;
                 this.blocks = List.of(
@@ -900,16 +906,14 @@ public class AutoPilot extends Module {
             this.toward(this.blocks.getFirst());
         }
 
-        if (!this.mine() || this.mc.player.isOnGround()) {
-            return;
-        }
+        if (!this.mine()) return;
 
         this.blocks = null;
         this.release();
 
         if (Baritone.elytra()) return;
 
-        if (Baritone.moving()) {
+        if (Baritone.pathing()) {
             this.abort();
             return;
         }
@@ -952,7 +956,7 @@ public class AutoPilot extends Module {
     }
 
     /**
-     * Captures the blocks directly underneath the player.
+     * Collects the blocks directly below the player.
      *
      * @return one to four fixed platform blocks
      */
@@ -964,7 +968,7 @@ public class AutoPilot extends Module {
         int minz = MathHelper.floor(box.minZ);
         int maxz = MathHelper.floor(Math.nextDown(box.maxZ));
 
-        int py = this.mc.player.getBlockPos().down().getY();
+        int py = this.mc.player.getBlockPos().down(2).getY();
         List<BlockPos> blocks = new ArrayList<>(4);
 
         for (int px = minx; px <= maxx; px++) {
@@ -1011,7 +1015,7 @@ public class AutoPilot extends Module {
     }
 
     /**
-     * Breaks the saved block underneath the player.
+     * Breaks the saved block below the player.
      *
      * @return true when the block no longer needs breaking
      */
@@ -1021,8 +1025,9 @@ public class AutoPilot extends Module {
         }
 
         BlockPos block = this.blocks.getFirst();
+        if (this.mc.world.getBlockState(block).isAir()) {
+            if (!this.mining) return false;
 
-        if (this.mc.world.getBlockState(block).isReplaceable()) {
             if (this.mc.interactionManager != null) {
                 this.mc.interactionManager.cancelBlockBreaking();
             }
@@ -1044,15 +1049,6 @@ public class AutoPilot extends Module {
 
         this.mc.player.swingHand(Hand.MAIN_HAND);
         return false;
-    }
-
-    /**
-     * Finds netherrack in the hotbar.
-     *
-     * @return netherrack hotbar slot, or -1 when unavailable
-     */
-    private int netherrack() {
-        return this.mc.player == null ? -1 : Hotbar.find(Items.NETHERRACK);
     }
 
     //endregion
@@ -1135,7 +1131,8 @@ public class AutoPilot extends Module {
      */
     private boolean landing() {
         BlockPos current = Baritone.destination();
-        return current != null && this.goal != null && !current.equals(this.goal);
+        return current != null && this.goal != null
+            && !current.equals(this.goal);
     }
 
     /**
@@ -1157,7 +1154,7 @@ public class AutoPilot extends Module {
      * @return true while any owned path is active
      */
     private boolean pathing() {
-        return Baritone.elytra() || Baritone.moving();
+        return Baritone.elytra() || Baritone.pathing();
     }
 
     //endregion
@@ -1170,11 +1167,12 @@ public class AutoPilot extends Module {
      * @param pos block position to move toward
      */
     private void toward(BlockPos pos) {
+        Vec2f target = new Vec2f(
+            pos.getX() + 0.5F, pos.getZ() + 0.5F
+        );
+
         this.release();
-        this.rotate(new Vec2f(
-            pos.getX() + 0.5F,
-            pos.getZ() + 0.5F
-        ));
+        this.rotate(target);
 
         this.mc.options.forwardKey.setPressed(true);
     }
@@ -1188,7 +1186,13 @@ public class AutoPilot extends Module {
         this.mc.player.stopGliding();
         this.mc.player.setVelocity(0.0, 0.0, 0.0);
         this.mc.player.setSprinting(false);
-        this.mc.player.setPitch(90.0F);
+
+        float yaw = MathHelper.wrapDegrees(
+            this.mc.player.getYaw() + 180.0F
+        );
+
+        this.mc.player.setYaw(yaw);
+        this.mc.player.setPitch(0.0F);
     }
 
     /**
@@ -1239,7 +1243,7 @@ public class AutoPilot extends Module {
 
     //endregion
 
-    //region Navigation and position
+    //region Utilities and validation
 
     /**
      * Returns the Navigation module.
@@ -1251,15 +1255,13 @@ public class AutoPilot extends Module {
     }
 
     /**
-     * Returns the current player X/Z position.
+     * Finds netherrack in the hotbar.
      *
-     * @return player X/Z position
+     * @return hotbar slot, or -1 when unavailable
      */
-    private Vec2f position() {
-        return new Vec2f(
-            (float) this.mc.player.getX(),
-            (float) this.mc.player.getZ()
-        );
+    private int netherrack() {
+        return this.mc.player == null ? -1
+            : Hotbar.find(Items.NETHERRACK);
     }
 
     /**
@@ -1308,9 +1310,7 @@ public class AutoPilot extends Module {
      * @return true when ready to run the module
      */
     private boolean valid() {
-        return Client.ready() && World.NETHER.equals(
-            this.mc.world.getRegistryKey()
-        );
+        return Client.ready() && Client.nether();
     }
 
     //endregion

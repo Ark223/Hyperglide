@@ -4,18 +4,16 @@ import hyperglide.Hyperglide;
 import hyperglide.utilities.Baritone;
 import hyperglide.utilities.BlockFilter;
 import hyperglide.utilities.Client;
-import hyperglide.utilities.Render;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Placement;
+import hyperglide.utilities.Render;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.Hand;
+import net.minecraft.block.BlockState;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction.Axis;
@@ -123,7 +121,7 @@ public class SelfTrapper extends Module {
     }
 
     /**
-     * Resets runtime state and prepares centering or immediate trapping.
+     * Prepares centering or immediate trapping state.
      */
     @Override
     public void onActivate() {
@@ -186,7 +184,7 @@ public class SelfTrapper extends Module {
 
             attempts++;
 
-            if (!this.place(pos, slot)) {
+            if (!Placement.place(pos, slot)) {
                 this.retry(pos);
                 continue;
             }
@@ -238,9 +236,9 @@ public class SelfTrapper extends Module {
     }
 
     /**
-     * Moves the player toward the selected block center using Baritone inputs.
+     * Moves the player toward the selected block center.
      *
-     * @return true when the player's hitbox fits inside the target block
+     * @return true when the player fits inside the target block
      */
     private boolean center() {
         if (this.target == null) {
@@ -283,9 +281,9 @@ public class SelfTrapper extends Module {
     }
 
     /**
-     * Finds the closest collision-free block center touched by the player.
+     * Finds the closest collision-free block center for the player.
      *
-     * @return the closest valid center, or null when no valid center exists
+     * @return the closest valid center, or null if not exists
      */
     private Vec3d nearest() {
         Box box = this.mc.player.getBoundingBox();
@@ -319,23 +317,23 @@ public class SelfTrapper extends Module {
     }
 
     /**
-     * Checks whether a candidate column supports the player at the current level.
+     * Checks whether a candidate column supports the player.
      *
      * @param box player's current bounding box
      * @param x candidate block X coordinate
      * @param z candidate block Z coordinate
-     * @return true when the candidate surface matches the player's feet height
+     * @return true when the candidate matches the player's height
      */
-    private boolean supported(Box box, int x, int z) {
-        int y = MathHelper.floor(box.minY - edge);
-        BlockPos pos = new BlockPos(x, y, z);
+    private boolean supported(Box box, int px, int pz) {
+        int py = MathHelper.floor(box.minY - edge);
+        BlockPos pos = new BlockPos(px, py, pz);
 
-        VoxelShape shape = this.mc.world.getBlockState(pos)
-            .getCollisionShape(this.mc.world, pos);
+        BlockState state = this.mc.world.getBlockState(pos);
+        VoxelShape shape = state.getCollisionShape(this.mc.world, pos);
 
         if (shape.isEmpty()) return false;
 
-        double top = y + shape.getMax(Axis.Y);
+        double top = py + shape.getMax(Axis.Y);
         return Math.abs(top - box.minY) <= 0.01;
     }
 
@@ -359,7 +357,7 @@ public class SelfTrapper extends Module {
     }
 
     /**
-     * Checks whether the player can occupy a candidate without collisions.
+     * Checks whether the player can occupy a position without collisions.
      *
      * @param box player's current bounding box
      * @param x candidate center X coordinate
@@ -403,7 +401,7 @@ public class SelfTrapper extends Module {
     //region Trap structure
 
     /**
-     * Calculates the side walls and roof required around the player's hitbox.
+     * Builds the side walls and roof around the player's hitbox.
      */
     private void collect() {
         this.wanted.clear();
@@ -455,7 +453,7 @@ public class SelfTrapper extends Module {
     }
 
     /**
-     * Adds a trap position when it does not intersect the player's hitbox.
+     * Adds a trap position that does not intersect the player.
      *
      * @param set set receiving valid trap positions
      * @param pos candidate block position
@@ -467,10 +465,10 @@ public class SelfTrapper extends Module {
     }
 
     /**
-     * Calculates squared distance from the player's bounding box center.
+     * Calculates distance from the player to a trap position.
      *
      * @param pos block position
-     * @return the squared distance to the position
+     * @return squared distance to the position
      */
     private double distance(BlockPos pos) {
         Vec3d center = this.mc.player.getBoundingBox().getCenter();
@@ -506,7 +504,7 @@ public class SelfTrapper extends Module {
     }
 
     /**
-     * Verifies pending placements and schedules failed attempts for retry.
+     * Verifies pending placements and retries failed positions.
      */
     private void verify() {
         Iterator<Map.Entry<BlockPos, Integer>> iterator =
@@ -573,7 +571,7 @@ public class SelfTrapper extends Module {
     //region Placement control
 
     /**
-     * Counts how many queued blocks can be handled during the next cycle.
+     * Counts queued blocks available for the next placement cycle.
      *
      * @return the number of blocks available for the next cycle
      */
@@ -642,37 +640,10 @@ public class SelfTrapper extends Module {
     }
 
     /**
-     * Selects the requested hotbar slot and sends a block interaction.
-     *
-     * @param pos destination block position
-     * @param slot hotbar slot containing the block
-     * @return true when the placement interaction was sent
-     */
-    private boolean place(BlockPos pos, int slot) {
-        ItemStack stack = Hotbar.stack(slot);
-
-        if (!(stack.getItem() instanceof BlockItem item)) {
-            return false;
-        }
-
-        if (!Hotbar.swap(slot)) return false;
-
-        try {
-            Placement.place(pos);
-            this.mc.player.swingHand(Hand.MAIN_HAND);
-
-            Placement.sound(item, pos);
-            return true;
-        } finally {
-            Hotbar.restore();
-        }
-    }
-
-    /**
      * Checks whether a block position can be replaced.
      *
-     * @param pos position to check
-     * @return true when a block can be placed there
+     * @param pos block position to check
+     * @return true when the block can be placed
      */
     private boolean open(BlockPos pos) {
         return this.mc.world.getBlockState(pos).isReplaceable();

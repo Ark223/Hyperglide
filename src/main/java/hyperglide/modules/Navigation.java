@@ -6,6 +6,9 @@ import hyperglide.navigation.Route;
 import hyperglide.navigation.Search;
 import hyperglide.navigation.Segment;
 import hyperglide.utilities.API;
+import hyperglide.utilities.Client;
+import hyperglide.utilities.Gui;
+import hyperglide.utilities.Player;
 import meteordevelopment.meteorclient.events.meteor.MouseScrollEvent;
 import meteordevelopment.meteorclient.events.render.Render2DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -19,10 +22,8 @@ import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec2f;
-import net.minecraft.world.World;
 import org.lwjgl.glfw.GLFW;
 import java.util.Locale;
 
@@ -236,7 +237,7 @@ public class Navigation extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!this.nether() || this.mc.player == null) {
+        if (!Client.nether() || this.mc.player == null) {
             this.route = null;
             return;
         }
@@ -248,18 +249,18 @@ public class Navigation extends Module {
     }
 
     /**
-     * Zooms the map while scrolling over it in screen.
+     * Zooms the map when the mouse wheel is used over it.
      *
      * @param event mouse scroll event
      */
     @EventHandler
     private void onScroll(MouseScrollEvent event) {
-        if (!this.render.get() || !this.nether() ||
-            !this.interactive() || event.value == 0.0) {
+        if (!this.render.get() || !Client.nether() ||
+            !Gui.interactive() || event.value == 0.0) {
             return;
         }
 
-        Vec2f mouse = this.mouse();
+        Vec2f mouse = Gui.mouse();
         if (!this.hovered(mouse.x, mouse.y)) return;
 
         double scale = this.scale();
@@ -289,14 +290,14 @@ public class Navigation extends Module {
      */
     @EventHandler
     private void onRender2D(Render2DEvent event) {
-        if (!this.render.get() || !this.nether() ||
-            this.mc.player == null || this.vanilla()) return;
+        if (!this.render.get() || !Client.nether() ||
+            this.mc.player == null || Gui.vanilla()) return;
 
         int left = (int) this.left();
         int top = (int) this.top();
 
-        Vec2f mouse = this.mouse();
-        Vec2f current = this.position();
+        Vec2f mouse = Gui.mouse();
+        Vec2f current = Player.position();
         View view = this.view(current);
 
         boolean hovered = this.hovered(mouse.x, mouse.y);
@@ -313,7 +314,8 @@ public class Navigation extends Module {
         if (hovered) {
             if (this.streamer.get()) {
                 if (highway != null) {
-                    this.box(renderer, new String[] {highway.name()},
+                    this.box(renderer,
+                        new String[] {highway.name()},
                         left * gui, top * gui, true, gui
                     );
                 }
@@ -347,8 +349,9 @@ public class Navigation extends Module {
      * @param context draw context
      */
     public void render(DrawContext context) {
-        if (!this.isActive() || !this.render.get() || !this.nether()
-            || this.mc.player == null || this.vanilla()) return;
+        if (!this.isActive() || !this.render.get() ||
+            !Client.nether() || Gui.vanilla() ||
+            this.mc.player == null) return;
 
         int size = this.size.get();
         int left = (int) this.left();
@@ -357,7 +360,7 @@ public class Navigation extends Module {
         this.pan();
         this.click();
 
-        Vec2f current = this.position();
+        Vec2f current = Player.position();
         Vec2f destination = this.target();
 
         View view = this.view(current);
@@ -376,7 +379,6 @@ public class Navigation extends Module {
 
         if (this.route != null) {
             Color path = this.path.get();
-
             for (Route.Leg leg : this.route.legs()) {
                 this.draw(context, leg.start(), leg.end(), view,
                     left, top, path, this.thickness.get() + 1
@@ -422,108 +424,6 @@ public class Navigation extends Module {
 
     //endregion
 
-    //region State management
-
-    /**
-     * Recalculates the fastest route from the current position.
-     */
-    private void calculate() {
-        if (!this.nether() || this.mc.player == null) {
-            this.route = null;
-            return;
-        }
-
-        this.route = this.search.find(
-            this.position(), this.target(), highway, standard
-        );
-    }
-
-    /**
-     * Moves the window or pans the free map while a mouse button is held.
-     */
-    private void pan() {
-        if (!this.interactive()) {
-            this.drag = -1;
-            return;
-        }
-
-        int button = -1;
-
-        if (this.mode.get() == Mode.Free &&
-            this.pressed(GLFW.GLFW_MOUSE_BUTTON_LEFT)) {
-            button = GLFW.GLFW_MOUSE_BUTTON_LEFT;
-
-        } else if (!this.lock.get() &&
-            this.pressed(GLFW.GLFW_MOUSE_BUTTON_RIGHT)) {
-            button = GLFW.GLFW_MOUSE_BUTTON_RIGHT;
-        }
-
-        if (button == -1) {
-            this.drag = -1;
-            return;
-        }
-
-        Vec2f mouse = this.mouse();
-
-        if (this.drag == -1) {
-            if (!this.hovered(mouse.x, mouse.y)) {
-                return;
-            }
-
-            this.drag = button;
-            this.mx = mouse.x;
-            this.my = mouse.y;
-            return;
-        }
-
-        if (button != this.drag) return;
-
-        float dx = mouse.x - this.mx;
-        float dy = mouse.y - this.my;
-
-        if (this.drag == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
-            this.xoffset.set(this.xoffset.get() + Math.round(dx));
-            this.yoffset.set(this.yoffset.get() + Math.round(dy));
-        } else {
-            double scale = this.scale();
-            this.offset = this.bound(this.offset.add(new Vec2f(
-                (float) (-dx * scale), (float) (-dy * scale)
-            )));
-        }
-
-        this.mx = mouse.x;
-        this.my = mouse.y;
-    }
-
-    /**
-     * Sets the destination from a middle clicked map position.
-     */
-    private void click() {
-        boolean pressed = this.pressed(GLFW.GLFW_MOUSE_BUTTON_MIDDLE);
-
-        if (!pressed) {
-            this.middle = false;
-            return;
-        }
-
-        if (this.middle || !this.interactive()) return;
-        this.middle = true;
-
-        Vec2f mouse = this.mouse();
-        if (!this.hovered(mouse.x, mouse.y)) return;
-
-        int left = (int) this.left();
-        int top = (int) this.top();
-
-        BlockPos point = this.world(
-            mouse, this.view(this.position()), left, top
-        );
-
-        this.goal.set(point.getX() + " " + point.getZ());
-    }
-
-    //endregion
-
     //region Map rendering
 
     /**
@@ -542,6 +442,7 @@ public class Navigation extends Module {
             case Origin -> Vec2f.ZERO;
             case Player -> current;
         };
+
         return new View(center, this.scale());
     }
 
@@ -830,7 +731,7 @@ public class Navigation extends Module {
     }
 
     /**
-     * Returns the highway currently hovered on the map.
+     * Returns the highway currently under the mouse.
      *
      * @param mouse mouse position
      * @param view current map view
@@ -909,73 +810,90 @@ public class Navigation extends Module {
 
     //endregion
 
-    //region Player and world
-
-    /**
-     * Returns the current player X/Z position.
-     *
-     * @return player X/Z position
-     */
-    private Vec2f position() {
-        return new Vec2f(
-            (float) this.mc.player.getX(),
-            (float) this.mc.player.getZ()
-        );
-    }
-
-    /**
-     * Returns the configured destination.
-     *
-     * @return configured destination
-     */
-    private Vec2f target() {
-        return new Vec2f(this.point.getX(), this.point.getZ());
-    }
-
-    /**
-     * Checks whether the player is in the nether.
-     *
-     * @return true when the player is in the nether
-     */
-    private boolean nether() {
-        return this.mc.world != null && World.NETHER.equals(
-            this.mc.world.getRegistryKey()
-        );
-    }
-
-    /**
-     * Checks whether the map can receive mouse interaction.
-     *
-     * @return true when chat or a Meteor GUI screen is open
-     */
-    private boolean interactive() {
-        if (this.mc.currentScreen == null) return false;
-        if (this.mc.currentScreen instanceof ChatScreen) {
-            return true;
-        }
-
-        String name = this.mc.currentScreen.getClass().getName();
-        return name.startsWith("meteordevelopment.meteorclient.gui.");
-    }
-
-    /**
-     * Checks whether a vanilla screen other than chat is open.
-     *
-     * @return true when a vanilla screen other than chat is open
-     */
-    private boolean vanilla() {
-        if (this.mc.currentScreen == null ||
-            this.mc.currentScreen instanceof ChatScreen) {
-            return false;
-        }
-
-        String name = this.mc.currentScreen.getClass().getName();
-        return name.startsWith("net.minecraft.client.gui.screen.");
-    }
-
-    //endregion
-
     //region Map interaction
+
+    /**
+     * Moves the window or pans the map while dragging.
+     */
+    private void pan() {
+        if (!Gui.interactive()) {
+            this.drag = -1;
+            return;
+        }
+
+        int button = -1;
+
+        if (this.mode.get() == Mode.Free &&
+            Gui.pressed(GLFW.GLFW_MOUSE_BUTTON_LEFT)) {
+            button = GLFW.GLFW_MOUSE_BUTTON_LEFT;
+
+        } else if (!this.lock.get() &&
+            Gui.pressed(GLFW.GLFW_MOUSE_BUTTON_RIGHT)) {
+            button = GLFW.GLFW_MOUSE_BUTTON_RIGHT;
+        }
+
+        if (button == -1) {
+            this.drag = -1;
+            return;
+        }
+
+        Vec2f mouse = Gui.mouse();
+
+        if (this.drag == -1) {
+            if (!this.hovered(mouse.x, mouse.y)) {
+                return;
+            }
+
+            this.drag = button;
+            this.mx = mouse.x;
+            this.my = mouse.y;
+            return;
+        }
+
+        if (button != this.drag) return;
+
+        float dx = mouse.x - this.mx;
+        float dy = mouse.y - this.my;
+
+        if (this.drag == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+            this.xoffset.set(this.xoffset.get() + Math.round(dx));
+            this.yoffset.set(this.yoffset.get() + Math.round(dy));
+
+        } else {
+            double scale = this.scale();
+            this.offset = this.bound(this.offset.add(new Vec2f(
+                (float) (-dx * scale), (float) (-dy * scale)
+            )));
+        }
+
+        this.mx = mouse.x;
+        this.my = mouse.y;
+    }
+
+    /**
+     * Sets the destination from a map position with a middle click.
+     */
+    private void click() {
+        if (!Gui.pressed(GLFW.GLFW_MOUSE_BUTTON_MIDDLE)) {
+            this.middle = false;
+            return;
+        }
+
+        if (this.middle || !Gui.interactive()) return;
+        this.middle = true;
+
+        Vec2f mouse = Gui.mouse();
+        if (!this.hovered(mouse.x, mouse.y)) return;
+
+        int left = (int) this.left();
+        int top = (int) this.top();
+
+        BlockPos point = this.world(
+            mouse, this.view(Player.position()), left, top
+        );
+
+        this.goal.set(point.getX() + " " + point.getZ());
+    }
 
     /**
      * Returns the map left position.
@@ -1013,39 +931,32 @@ public class Navigation extends Module {
             && y >= top && y <= top + size;
     }
 
-    /**
-     * Checks whether a mouse button is held.
-     *
-     * @param button mouse button
-     * @return true when the button is held
-     */
-    private boolean pressed(int button) {
-        return GLFW.glfwGetMouseButton(
-            this.mc.getWindow().getHandle(),
-        button) == GLFW.GLFW_PRESS;
-    }
-
-    /**
-     * Returns the mouse position in scaled screen coordinates.
-     *
-     * @return scaled mouse position
-     */
-    private Vec2f mouse() {
-        int width = this.mc.getWindow().getWidth();
-        int height = this.mc.getWindow().getHeight();
-
-        int swidth = this.mc.getWindow().getScaledWidth();
-        int sheight = this.mc.getWindow().getScaledHeight();
-
-        return new Vec2f(
-            (float) (this.mc.mouse.getX() * swidth / width),
-            (float) (this.mc.mouse.getY() * sheight / height)
-        );
-    }
-
     //endregion
 
     //region Destination control
+
+    /**
+     * Recalculates the fastest route from the current position.
+     */
+    private void calculate() {
+        if (!Client.nether() || this.mc.player == null) {
+            this.route = null;
+            return;
+        }
+
+        this.route = this.search.find(
+            Player.position(), this.target(), highway, standard
+        );
+    }
+
+    /**
+     * Returns the configured destination.
+     *
+     * @return configured destination
+     */
+    private Vec2f target() {
+        return new Vec2f(this.point.getX(), this.point.getZ());
+    }
 
     /**
      * Applies a destination change and restarts Auto Pilot when active.
@@ -1080,8 +991,10 @@ public class Navigation extends Module {
         }
 
         try {
+            boolean full = parts.length == 3;
+
             int px = Integer.parseInt(parts[0]);
-            int py = parts.length == 3 ? Integer.parseInt(parts[1]) : 0;
+            int py = full ? Integer.parseInt(parts[1]) : 0;
             int pz = Integer.parseInt(parts[parts.length - 1]);
 
             if (this.convert.get()) {
@@ -1096,6 +1009,7 @@ public class Navigation extends Module {
 
             this.point = new BlockPos(px, py, pz);
             this.calculate();
+
         } catch (NumberFormatException ignored) {}
     }
 

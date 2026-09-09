@@ -2,9 +2,9 @@ package hyperglide.modules;
 
 import hyperglide.Hyperglide;
 import hyperglide.utilities.Client;
-import hyperglide.utilities.Render;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Placement;
+import hyperglide.utilities.Render;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.*;
@@ -56,7 +56,7 @@ public class FastPortal extends Module {
     }
 
     /**
-     * Calculates the portal frame and validates the required space and obsidian.
+     * Builds the portal frame and validates space and obsidian.
      */
     @Override
     public void onActivate() {
@@ -70,7 +70,6 @@ public class FastPortal extends Module {
         this.timer = this.delay.get();
 
         this.collect();
-
         int need = 0;
 
         for (BlockPos pos : this.portal) {
@@ -141,7 +140,7 @@ public class FastPortal extends Module {
             return;
         }
 
-        if (!this.place(pos, slot)) return;
+        if (!Placement.place(pos, slot)) return;
 
         this.index++;
         this.timer = 0;
@@ -202,16 +201,6 @@ public class FastPortal extends Module {
     }
 
     /**
-     * Checks whether a position contains obsidian.
-     *
-     * @param pos block position to check
-     * @return true when the position contains obsidian
-     */
-    private boolean obsidian(BlockPos pos) {
-        return this.mc.world.getBlockState(pos).isOf(Blocks.OBSIDIAN);
-    }
-
-    /**
      * Advances past frame positions that already contain obsidian.
      */
     private void skip() {
@@ -224,27 +213,6 @@ public class FastPortal extends Module {
     //endregion
 
     //region Portal interaction
-
-    /**
-     * Places obsidian at a frame position.
-     *
-     * @param pos destination block position
-     * @param slot hotbar slot containing obsidian
-     * @return true when the placement packets were sent
-     */
-    private boolean place(BlockPos pos, int slot) {
-        if (!Hotbar.swap(slot)) return false;
-
-        try {
-            Placement.place(pos);
-            this.mc.player.swingHand(Hand.MAIN_HAND);
-
-            Placement.sound(Blocks.OBSIDIAN, pos);
-            return true;
-        } finally {
-            Hotbar.restore();
-        }
-    }
 
     /**
      * Attempts to ignite the completed portal using flint and steel.
@@ -285,6 +253,20 @@ public class FastPortal extends Module {
         else this.error("Portal complete but unable to ignite.");
 
         this.toggle();
+    }
+
+    //endregion
+
+    //region Utilities and validation
+
+    /**
+     * Checks whether a position contains obsidian.
+     *
+     * @param pos block position to check
+     * @return true when the position contains obsidian
+     */
+    private boolean obsidian(BlockPos pos) {
+        return this.mc.world.getBlockState(pos).isOf(Blocks.OBSIDIAN);
     }
 
     //endregion

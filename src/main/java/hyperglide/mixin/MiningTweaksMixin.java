@@ -39,7 +39,7 @@ public abstract class MiningTweaksMixin {
     }
 
     /**
-     * Handles redirected block breaking.
+     * Forwards block breaking to Mining Tweaks.
      *
      * @param pos block position
      * @param side block side

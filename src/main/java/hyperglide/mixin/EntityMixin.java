@@ -14,19 +14,19 @@ public abstract class EntityMixin {
     /**
      * Handles player look input through Control Fly.
      *
-     * @param x horizontal look movement
-     * @param y vertical look movement
+     * @param px horizontal look movement
+     * @param py vertical look movement
      * @param info injection callback
      */
     @Inject(method = "changeLookDirection(DD)V", at = @At("HEAD"), cancellable = true)
-    private void hyperglide$changeLookDirection(double x, double y, CallbackInfo info) {
+    private void hyperglide$changeLookDirection(double px, double py, CallbackInfo info) {
         MinecraftClient client = MinecraftClient.getInstance();
         if ((Object) this != client.player) return;
 
         ControlFly module = Modules.get().get(ControlFly.class);
         if (module == null || !module.view()) return;
 
-        module.look(x, y);
+        module.look(px, py);
         info.cancel();
     }
 }

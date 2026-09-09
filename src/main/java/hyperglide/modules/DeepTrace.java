@@ -31,7 +31,6 @@ import net.minecraft.item.Items;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
 import net.minecraft.world.chunk.WorldChunk;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -121,8 +120,6 @@ public class DeepTrace extends Module {
     private int timer;
     private int count;
 
-    //region Module lifecycle
-
     public DeepTrace() {
         super(Hyperglide.CATEGORY, "deep-trace",
             "Highlights unusual entities found deep underground."
@@ -130,7 +127,7 @@ public class DeepTrace extends Module {
     }
 
     /**
-     * Clears cached dungeon positions.
+     * Clears cached dungeon and render state.
      */
     @Override
     public void onActivate() {
@@ -138,7 +135,7 @@ public class DeepTrace extends Module {
     }
 
     /**
-     * Clears cached dungeon positions.
+     * Clears cached dungeon and render state.
      */
     @Override
     public void onDeactivate() {
@@ -163,8 +160,6 @@ public class DeepTrace extends Module {
         this.timer = 0;
         this.count = 0;
     }
-
-    //endregion
 
     //region Event handlers
 
@@ -198,8 +193,8 @@ public class DeepTrace extends Module {
     @EventHandler
     private void render(Render3DEvent event) {
         this.count = 0;
-        if (!this.valid()) return;
 
+        if (!this.valid()) return;
         if (this.items.get()) this.items(event);
         if (this.spawners.get()) this.mobs(event);
     }
@@ -270,7 +265,6 @@ public class DeepTrace extends Module {
 
         for (int x = cx - range; x <= cx + range; x++) {
             for (int z = cz - range; z <= cz + range; z++) {
-
                 WorldChunk chunk = manager.getWorldChunk(x, z, false);
                 if (chunk == null) continue;
 
@@ -325,7 +319,7 @@ public class DeepTrace extends Module {
 
     //endregion
 
-    //region Validation and utilities
+    //region Utilities and validation
 
     /**
      * Returns spawned mobs matching a dungeon spawner.
@@ -370,14 +364,12 @@ public class DeepTrace extends Module {
     }
 
     /**
-     * Checks whether module can inspect the current world.
+     * Checks whether the module can inspect the current world.
      *
      * @return true when the overworld is loaded
      */
     private boolean valid() {
-        return Client.loaded() && World.OVERWORLD.equals(
-            this.mc.world.getRegistryKey()
-        );
+        return Client.loaded() && Client.overworld();
     }
 
     //endregion

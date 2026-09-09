@@ -3,9 +3,9 @@ package hyperglide.modules;
 import hyperglide.Hyperglide;
 import hyperglide.utilities.BlockFilter;
 import hyperglide.utilities.Client;
-import hyperglide.utilities.Render;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Placement;
+import hyperglide.utilities.Render;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.*;
@@ -13,9 +13,6 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.BlockState;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import java.util.*;
@@ -121,7 +118,7 @@ public class Scaffolding extends Module {
             return;
         }
 
-        if (!this.place(pos, slot)) return;
+        if (!Placement.place(pos, slot)) return;
 
         this.timer = 0;
         this.marks.put(pos, this.tick);
@@ -143,7 +140,9 @@ public class Scaffolding extends Module {
         }
 
         for (BlockPos pos : this.marks.keySet()) {
-            if (!this.queue.contains(pos)) this.box.box(event, pos);
+            if (!this.queue.contains(pos)) {
+                this.box.box(event, pos);
+            }
         }
     }
 
@@ -178,7 +177,8 @@ public class Scaffolding extends Module {
      */
     private void collect() {
         this.add(BlockPos.ofFloored(
-            this.mc.player.getX(), this.level, this.mc.player.getZ()
+            this.mc.player.getX(), this.level,
+            this.mc.player.getZ()
         ), true);
 
         Vec3d move = this.move();
@@ -239,39 +239,13 @@ public class Scaffolding extends Module {
     //region Placement control
 
     /**
-     * Selects the requested hotbar slot and sends a block interaction.
-     *
-     * @param pos destination block position
-     * @param slot hotbar slot containing the block
-     * @return true when the placement interaction was sent
-     */
-    private boolean place(BlockPos pos, int slot) {
-        ItemStack stack = Hotbar.stack(slot);
-
-        if (!(stack.getItem() instanceof BlockItem item)) {
-            return false;
-        }
-
-        if (!Hotbar.swap(slot)) return false;
-
-        try {
-            Placement.place(pos);
-            this.mc.player.swingHand(Hand.MAIN_HAND);
-
-            Placement.sound(item, pos);
-            return true;
-        } finally {
-            Hotbar.restore();
-        }
-    }
-
-    /**
      * Calculates the delay required before the next placement.
      *
      * @return required delay in ticks
      */
     private int pace() {
-        return this.dynamic.get() && this.close() ? 1 : this.delay.get();
+        return this.dynamic.get()
+            && this.close() ? 1 : this.delay.get();
     }
 
     /**
@@ -342,6 +316,10 @@ public class Scaffolding extends Module {
             this.mc.player.getZ()
         ).down().getY();
     }
+
+    //endregion
+
+    //region Utilities and validation
 
     /**
      * Checks whether a position is replaceable on the scaffold layer.

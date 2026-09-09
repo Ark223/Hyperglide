@@ -132,7 +132,7 @@ public class FD3Crafter extends Module {
     //region Event handlers
 
     /**
-     * Advances the crafting workflow after the configured action delay.
+     * Advances the crafting workflow after the configured delay.
      *
      * @param event post-tick event
      */
@@ -203,85 +203,133 @@ public class FD3Crafter extends Module {
      * Evaluates the crafting grid and schedules the next action.
      */
     private void work() {
+        if (!this.grid() || !this.supply()) return;
+
         int one = Inventory.stack(first).getCount();
         int two = Inventory.stack(second).getCount();
         int three = Inventory.stack(third).getCount();
 
-        if (!this.same(first, Items.GUNPOWDER) ||
-            !this.same(second, Items.GUNPOWDER) ||
-            !this.same(third, Items.GUNPOWDER)) {
-            this.fail("A gunpowder slot contains another item.");
-            return;
-        }
-
-        if (Inventory.stack(paper).isEmpty()) {
-            this.source = this.largest(Items.PAPER, 1);
-
-            if (this.source == -1) {
-                this.phase = Phase.Clean;
-                return;
-            }
-
-            Inventory.pick(this.source);
-            this.phase = Phase.Paper;
-            return;
-        } else if (!Inventory.stack(paper).isOf(Items.PAPER)) {
-            this.fail("The paper slot contains another item.");
-            return;
-        }
-
         if (one == two && two == three && one > 0) {
-            ItemStack stack = Inventory.stack(output);
-
-            if (stack.isEmpty()) {
-                if (++this.idle > 5) {
-                    this.fail("Fd3 rocket recipe did not appear.");
-                }
-                return;
-            }
-
-            this.idle = 0;
-
-            if (!this.rocket(stack)) {
-                this.fail("Crafting output was not Fd3 rocket.");
-                return;
-            }
-
-            this.oldpaper = Inventory.stack(paper).getCount();
-            this.oldpowder = one;
-
-            Inventory.move(output);
-            this.phase = Phase.Check;
+            this.collect(one);
             return;
         }
 
         if (this.bulk) {
-            if ((one != 0 && one != 64) ||
-                (two != 0 && two != 64) ||
-                (three != 0 && three != 64)) {
-                this.fail("A full gunpowder stack changed size.");
-                return;
-            }
-
-            this.target = Inventory.empty(first, second, third);
-
-            if (this.target == -1) {
-                this.fail("Full gunpowder stacks became uneven.");
-                return;
-            }
-
-            this.source = this.full(Items.GUNPOWDER);
-
-            if (this.source == -1) {
-                this.fail("A full gunpowder stack is missing.");
-                return;
-            }
-
-            Inventory.pick(this.source);
-            this.phase = Phase.Stack;
+            this.refill(one, two, three);
             return;
         }
 
+        this.prepare(one, two, three);
+    }
+
+    /**
+     * Checks whether the slots contain only gunpowder or are empty.
+     *
+     * @return true when the slots are valid
+     */
+    private boolean grid() {
+        if (this.same(first, Items.GUNPOWDER) &&
+            this.same(second, Items.GUNPOWDER) &&
+            this.same(third, Items.GUNPOWDER)) {
+            return true;
+        }
+
+        this.fail("A gunpowder slot contains another item.");
+        return false;
+    }
+
+    /**
+     * Ensures paper is available in the crafting grid.
+     *
+     * @return true when paper is ready for crafting
+     */
+    private boolean supply() {
+        ItemStack stack = Inventory.stack(paper);
+        if (stack.isOf(Items.PAPER)) return true;
+
+        if (!stack.isEmpty()) {
+            this.fail("The paper slot contains another item.");
+            return false;
+        }
+
+        this.source = this.largest(Items.PAPER, 1);
+        if (this.source == -1) {
+            this.phase = Phase.Clean;
+            return false;
+        }
+
+        Inventory.pick(this.source);
+        this.phase = Phase.Paper;
+        return false;
+    }
+
+    /**
+     * Collects crafted Fd3 rockets from the result slot.
+     *
+     * @param powder gunpowder count consumed by the recipe
+     */
+    private void collect(int powder) {
+        ItemStack stack = Inventory.stack(output);
+        if (stack.isEmpty()) {
+            if (++this.idle > 5) {
+                this.fail("Fd3 rocket recipe did not appear.");
+            }
+            return;
+        }
+
+        this.idle = 0;
+
+        if (!this.rocket(stack)) {
+            this.fail("Crafting output was not Fd3 rocket.");
+            return;
+        }
+
+        this.oldpaper = Inventory.stack(paper).getCount();
+        this.oldpowder = powder;
+
+        Inventory.move(output);
+        this.phase = Phase.Check;
+    }
+
+    /**
+     * Refills the empty gunpowder slot during bulk crafting.
+     *
+     * @param one first gunpowder slot count
+     * @param two second gunpowder slot count
+     * @param three third gunpowder slot count
+     */
+    private void refill(int one, int two, int three) {
+        if ((one != 0 && one != 64) ||
+            (two != 0 && two != 64) ||
+            (three != 0 && three != 64)) {
+            this.fail("A full gunpowder stack changed size.");
+            return;
+        }
+
+        this.target = Inventory.empty(first, second, third);
+        if (this.target == -1) {
+            this.fail("Full gunpowder stacks became uneven.");
+            return;
+        }
+
+        this.source = this.full(Items.GUNPOWDER);
+        if (this.source == -1) {
+            this.fail("A full gunpowder stack is missing.");
+            return;
+        }
+
+        Inventory.pick(this.source);
+        this.phase = Phase.Stack;
+    }
+
+    /**
+     * Selects the next gunpowder action for an empty crafting grid.
+     *
+     * @param one first gunpowder slot count
+     * @param two second gunpowder slot count
+     * @param three third gunpowder slot count
+     */
+    private void prepare(int one, int two, int three) {
         if (one != 0 || two != 0 || three != 0) {
             this.fail("Gunpowder slots became uneven.");
             return;
@@ -289,6 +337,7 @@ public class FD3Crafter extends Module {
 
         if (Inventory.stacks(stack -> stack.isOf(Items.GUNPOWDER) &&
             stack.getCount() == stack.getMaxCount()) >= 3) {
+
             this.bulk = true;
             this.target = first;
             this.source = this.full(Items.GUNPOWDER);
@@ -299,7 +348,6 @@ public class FD3Crafter extends Module {
         }
 
         this.source = this.largest(Items.GUNPOWDER, 3);
-
         if (this.source != -1) {
             Inventory.pick(this.source);
             this.phase = Phase.Powder;
@@ -360,7 +408,7 @@ public class FD3Crafter extends Module {
     //region Gunpowder handling
 
     /**
-     * Distributes the picked gunpowder stack across 3 crafting slots.
+     * Distributes the picked gunpowder stack across 3 slots.
      */
     private void powder() {
         if (!Inventory.cursor().isOf(Items.GUNPOWDER)) {
@@ -369,7 +417,6 @@ public class FD3Crafter extends Module {
         }
 
         Inventory.drag(first, second, third);
-
         this.phase = Phase.Return;
     }
 
@@ -387,7 +434,7 @@ public class FD3Crafter extends Module {
     }
 
     /**
-     * Merges the picked gunpowder stack into the selected inventory stack.
+     * Merges picked gunpowder into the selected inventory stack.
      */
     private void merge() {
         if (!Inventory.cursor().isOf(Items.GUNPOWDER)) {
@@ -404,7 +451,7 @@ public class FD3Crafter extends Module {
     //region Crafting completion
 
     /**
-     * Confirms that ingredients were consumed after collecting rockets.
+     * Checks whether ingredients were consumed after collecting rockets.
      */
     private void check() {
         int paper = Inventory.stack(FD3Crafter.paper).getCount();
@@ -429,7 +476,6 @@ public class FD3Crafter extends Module {
     private void clean() {
         if (!Inventory.cursor().isEmpty()) {
             int slot = Inventory.empty();
-
             if (slot == -1) {
                 this.error("Not enough space for cursor stack.");
                 this.toggle();
@@ -479,7 +525,7 @@ public class FD3Crafter extends Module {
 
     //endregion
 
-    //region Ingredient search
+    //region Utilities and validation
 
     /**
      * Checks whether a slot is empty or contains the requested item.
@@ -502,8 +548,8 @@ public class FD3Crafter extends Module {
      */
     private int largest(Item item, int min) {
         return Inventory.search(
-            stack -> stack.isOf(item) && stack.getCount() >= min,
-            ItemStack::getCount
+            stack -> stack.isOf(item) &&
+            stack.getCount() >= min, ItemStack::getCount
         );
     }
 
@@ -514,14 +560,10 @@ public class FD3Crafter extends Module {
      * @return matching slot index, or -1 when none exists
      */
     private int full(Item item) {
-        return Inventory.search(stack -> stack.isOf(item) &&
-            stack.getCount() == stack.getMaxCount()
+        return Inventory.search(stack -> stack.isOf(item)
+            && stack.getCount() == stack.getMaxCount()
         );
     }
-
-    //endregion
-
-    //region Rocket validation
 
     /**
      * Checks whether a stack contains Fd3 rockets.

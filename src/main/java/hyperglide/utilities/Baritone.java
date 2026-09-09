@@ -21,7 +21,7 @@ public final class Baritone {
      * @return true while Baritone controls elytra flight
      */
     public static boolean elytra() {
-        return instance().getElytraProcess().isActive();
+        return destination() != null;
     }
 
     /**
@@ -29,7 +29,7 @@ public final class Baritone {
      *
      * @return true while a walking goal or path is active
      */
-    public static boolean moving() {
+    public static boolean pathing() {
         IBaritone baritone = instance();
         return baritone.getCustomGoalProcess().isActive()
             || baritone.getPathingBehavior().isPathing();
