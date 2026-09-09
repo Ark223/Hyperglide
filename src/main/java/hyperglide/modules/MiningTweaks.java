@@ -4,6 +4,7 @@ import hyperglide.Hyperglide;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Packets;
+import hyperglide.utilities.Player;
 import hyperglide.utilities.Render;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -213,6 +214,11 @@ public class MiningTweaks extends Module {
             return;
         }
 
+        if (Player.consuming()) {
+            this.pause();
+            return;
+        }
+
         this.tick++;
 
         this.promote();
@@ -260,28 +266,6 @@ public class MiningTweaks extends Module {
     //region State management
 
     /**
-     * Clears queues, targets, timers and mining state.
-     */
-    private void reset() {
-        this.queue.clear();
-        this.waiting.clear();
-
-        this.primary = null;
-        this.secondary = null;
-        this.last = null;
-
-        this.tick = 0;
-        this.ready = 0;
-        this.stopped = 0;
-
-        this.fast = false;
-    }
-
-    //endregion
-
-    //region Mining requests
-
-    /**
      * Checks whether instant remine is enabled.
      *
      * @return true when instant remine is enabled
@@ -312,7 +296,29 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Instantly rebreaks a known block without waiting for a world update.
+     * Clears queues, targets, timers and mining state.
+     */
+    private void reset() {
+        this.queue.clear();
+        this.waiting.clear();
+
+        this.primary = null;
+        this.secondary = null;
+        this.last = null;
+
+        this.tick = 0;
+        this.ready = 0;
+        this.stopped = 0;
+
+        this.fast = false;
+    }
+
+    //endregion
+
+    //region Mining requests
+
+    /**
+     * Rebreaks a known block before the world update arrives.
      *
      * @param pos block position to rebreak
      * @param state expected block state
@@ -320,9 +326,9 @@ public class MiningTweaks extends Module {
      * @return true when the rebreak packet was sent
      */
     public boolean rebreak(BlockPos pos, BlockState state, Direction side) {
-        if (!this.remine.get() ||
-            !Client.ready() || !Client.interaction() ||
+        if (!this.remine.get() || !Client.ready() ||
             pos == null || state == null || side == null ||
+            !Client.interaction() || Player.consuming() ||
             !this.breakable(pos, state)) return false;
 
         int slot = this.best(state, pos);
@@ -364,8 +370,8 @@ public class MiningTweaks extends Module {
      * @return true when the block is tracked or queued
      */
     public boolean mine(BlockPos pos, Direction side) {
-        if (!Client.ready() || !Client.interaction() ||
-            pos == null || side == null) {
+        if (!Client.ready() || pos == null || side == null ||
+            !Client.interaction() || Player.consuming()) {
             return false;
         }
 
@@ -378,6 +384,31 @@ public class MiningTweaks extends Module {
 
         this.fill();
         return true;
+    }
+
+    /**
+     * Freezes mining progress while consuming an item.
+     */
+    private void pause() {
+        long now = System.currentTimeMillis();
+        this.pause(this.primary, now);
+        this.pause(this.secondary, now);
+    }
+
+    /**
+     * Excludes paused time from a mining target.
+     *
+     * @param target target to pause
+     * @param now current time in milliseconds
+     */
+    private void pause(Target target, long now) {
+        if (target == null || target.arming ||
+            target.finished || target.updated <= 0) {
+            return;
+        }
+
+        target.started += Math.max(0, now - target.updated);
+        target.updated = now;
     }
 
     //endregion
@@ -473,7 +504,7 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Checks whether the primary target can be parked as the secondary target.
+     * Checks whether the primary target can be parked as secondary.
      *
      * @return true when double-break parking is currently allowed
      */
@@ -486,31 +517,15 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Stops the primary target and creates a parked secondary target.
+     * Parks the primary target while preserving mining progress.
      */
     private void park() {
         Target target = this.primary;
 
+        this.advance(target);
         this.action(target, Action.STOP_DESTROY_BLOCK, target.pos);
 
-        Target parked = new Target(
-            new Request(target.pos, target.side, target.retry),
-            target.state, target.side
-        );
-
-        long now = System.currentTimeMillis();
-
-        parked.started = now;
-        parked.updated = now;
-
-        parked.slot = target.slot;
-        parked.delta = this.delta(parked);
-        parked.work = Math.max(0.0, parked.delta);
-
-        parked.instant = parked.delta >= 1.0F;
-        parked.burst = target.burst;
-
-        this.secondary = parked;
+        this.secondary = target;
         this.primary = null;
     }
 
@@ -519,7 +534,7 @@ public class MiningTweaks extends Module {
     //region Mining control
 
     /**
-     * Instantly rebreaks the last confirmed block when it gets replaced.
+     * Rebreaks the last confirmed block after replacement.
      *
      * @return true when an instant rebreak packet was sent
      */
@@ -537,7 +552,7 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Prepares a target, selects its best tool and starts arming when required.
+     * Prepares a target and selects its best tool.
      *
      * @param target target to begin
      */
@@ -548,7 +563,6 @@ public class MiningTweaks extends Module {
         this.primary = target;
 
         int selected = Hotbar.selected();
-
         this.select(target.slot);
 
         if (selected != target.slot) {
@@ -591,7 +605,7 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Updates a target through arming, progress, finish and validation states.
+     * Updates the current state of a mining target.
      *
      * @param target target to update
      */
@@ -631,10 +645,12 @@ public class MiningTweaks extends Module {
         }
 
         if (target.finished) {
-            int delay = target == this.primary ?
-                this.validation.get() : this.validation.get() * 2;
+            int mod = target == this.primary ? 1 : 2;
+            int delay = mod * this.validation.get();
 
-            if (this.tick - target.finish >= delay) this.verify(target);
+            if (this.tick - target.finish >= delay) {
+                this.verify(target);
+            }
             return;
         }
 
@@ -686,7 +702,6 @@ public class MiningTweaks extends Module {
         this.select(target.slot);
 
         BlockPos pos = this.fake(target.pos);
-
         for (int idx = 0; idx < bursts; idx++) {
             this.packet(Action.START_DESTROY_BLOCK,
                 pos, target.side
@@ -739,7 +754,7 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Aborts a failed target and schedules another attempt when allowed.
+     * Handles a failed target and schedules a retry when allowed.
      *
      * @param target failed target
      */
@@ -782,7 +797,7 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Removes a target from its active slot and updates secondary readiness.
+     * Removes an active target and updates secondary readiness.
      *
      * @param target target to remove
      * @param confirmed whether the target was successfully broken
