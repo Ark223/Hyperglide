@@ -29,15 +29,12 @@ A [Meteor Client][meteor] add-on for the 2b2t anarchy server, providing practica
 - **[Minecraft 1.21][minecraft]**
 - **[Fabric Loader][fabric]**
 - **[Meteor Client][meteor]**
-- **[ViaFabricPlus][viaplus]**
 - **[Baritone][baritone]**
 
-It is recommended to download Baritone from its official GitHub repository using the link above.<br>
+It is recommended to download Baritone from the official GitHub repository using link above.<br>
 Find the release matching your version and download `baritone-api-fabric-<version>.jar`.
 
 Alternatively, use the corresponding Baritone library included in the `/libs` folder.
-
-**Make sure to downgrade to 1.20.3-1.20.4 in ViaFabricPlus settings before joining the server.**
 
 ## 🧩 Modules
 
