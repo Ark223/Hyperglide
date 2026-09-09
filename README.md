@@ -55,7 +55,7 @@ Alternatively, use the corresponding Baritone library included in the `/libs` fo
 - **Navigation** - Provides a map of the nether highway network with interactive route planning
 - **No Sprint FOV** - Removes vanilla sprinting zoom effects for a more consistent field of view
 - **Overview** - Displays a content icon on shulker boxes and bundles for quick identification
-- **Raid Starter** - Drinks ominous bottles when required to continue repeated raid farming
+- **Raid Starter** - Automatically drinks ominous bottles to start the raid for repeated farming
 - **Rocket Boost** - Enhances firework rocket acceleration during elytra flight for faster travel
 - **Scaffolding** - Places selected blocks beneath and ahead of the player for safer bridging
 - **Self Trapper** - Builds a configurable block trap around the player with queued placements
