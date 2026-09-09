@@ -19,6 +19,7 @@ import hyperglide.modules.MiningTweaks;
 import hyperglide.modules.Navigation;
 import hyperglide.modules.NoSprintFov;
 import hyperglide.modules.Overview;
+import hyperglide.modules.RaidStarter;
 import hyperglide.modules.RocketBoost;
 import hyperglide.modules.Scaffolding;
 import hyperglide.modules.SelfTrapper;
@@ -57,6 +58,7 @@ public class Hyperglide extends MeteorAddon {
         Modules.get().add(new Navigation());
         Modules.get().add(new NoSprintFov());
         Modules.get().add(new Overview());
+        Modules.get().add(new RaidStarter());
         Modules.get().add(new RocketBoost());
         Modules.get().add(new Scaffolding());
         Modules.get().add(new SelfTrapper());
