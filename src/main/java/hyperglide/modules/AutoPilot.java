@@ -504,12 +504,12 @@ public class AutoPilot extends Module {
             return;
         }
 
-        if (this.mc.player.getVelocity().y > 0.01 &&
-            !this.mc.player.verticalCollision) {
-            return;
-        }
-
         if (this.blocks == null) {
+            if (!this.mc.player.verticalCollision ||
+                this.mc.player.isOnGround()) {
+                return;
+            }
+
             this.blocks = this.platform();
         }
 
