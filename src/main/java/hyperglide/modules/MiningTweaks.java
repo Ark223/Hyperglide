@@ -938,14 +938,20 @@ public class MiningTweaks extends Module {
     private int best(BlockState state, BlockPos pos) {
         int selected = Hotbar.selected();
         int best = selected;
-        float speed = -1.0F;
 
-        boolean suitable = false;
+        ItemStack stack = Hotbar.stack(selected);
+        boolean suitable = stack.isSuitableFor(state);
         boolean required = state.isToolRequired();
+
+        float speed = state.calcBlockBreakingDelta(
+            this.mc.player, this.mc.world, pos
+        );
 
         try {
             for (int idx = 0; idx < 9; idx++) {
-                ItemStack stack = Hotbar.stack(idx);
+                if (idx == selected) continue;
+
+                stack = Hotbar.stack(idx);
                 boolean good = stack.isSuitableFor(state);
 
                 Hotbar.set(idx);
@@ -956,6 +962,7 @@ public class MiningTweaks extends Module {
 
                 if (required && good != suitable) {
                     if (!good) continue;
+
                     best = idx;
                     speed = value;
                     suitable = true;
