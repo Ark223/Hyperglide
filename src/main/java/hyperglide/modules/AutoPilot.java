@@ -42,6 +42,7 @@ public class AutoPilot extends Module {
     private static final int floor = 32;
     private static final int search = 32;
     private static final int retry = 10;
+    private static final int settle = 5;
 
     private State state = State.Idle;
     private Route route;
@@ -51,14 +52,13 @@ public class AutoPilot extends Module {
     private BlockPos point;
 
     private List<BlockPos> blocks;
+    private MiningTweaks mining;
 
     private int leg = -1;
     private int timer;
 
-    private boolean seen;
     private boolean join;
-    private boolean ready;
-    private boolean mining;
+    private boolean enabled;
     private boolean emergency;
 
     /**
@@ -71,6 +71,7 @@ public class AutoPilot extends Module {
         Entry,
         Highway,
         Exit,
+        Drop,
         Final,
         Done
     }
@@ -95,6 +96,13 @@ public class AutoPilot extends Module {
         Baritone.settings(1.43, 0.4, false);
 
         this.reset();
+        this.mining = Modules.get().get(MiningTweaks.class);
+
+        if (this.mining != null) {
+            this.enabled = this.mining.isActive();
+            if (!this.enabled) this.mining.toggle();
+        }
+
         this.setup();
         this.load();
     }
@@ -112,10 +120,7 @@ public class AutoPilot extends Module {
             this.abort();
         }
 
-        if (this.mc.interactionManager != null) {
-            this.mc.interactionManager.cancelBlockBreaking();
-        }
-
+        this.restore();
         this.reset();
     }
 
@@ -153,6 +158,7 @@ public class AutoPilot extends Module {
             case Entry -> this.entry();
             case Highway -> this.highway();
             case Exit -> this.exit();
+            case Drop -> this.drop();
             case Final -> this.finish();
             case Done -> this.toggle();
         }
@@ -190,14 +196,12 @@ public class AutoPilot extends Module {
         this.goal = null;
         this.point = null;
         this.blocks = null;
+        this.mining = null;
 
         this.leg = -1;
         this.timer = 0;
-
-        this.seen = false;
         this.join = false;
-        this.ready = false;
-        this.mining = false;
+        this.enabled = false;
         this.emergency = false;
     }
 
@@ -214,6 +218,20 @@ public class AutoPilot extends Module {
         if (tweaks != null) {
             if (!tweaks.isActive()) tweaks.toggle();
             tweaks.deploy(true);
+        }
+
+        if (this.mining != null && !this.mining.isActive()) {
+            this.mining.toggle();
+        }
+    }
+
+    /**
+     * Restores Mining Tweaks to its state from before activation.
+     */
+    private void restore() {
+        if (this.mining != null && !this.enabled &&
+            this.mining.isActive()) {
+            this.mining.toggle();
         }
     }
 
@@ -385,12 +403,11 @@ public class AutoPilot extends Module {
                 return;
             }
 
-            if (this.waiting() || !this.mc.player.isOnGround()) {
+            if (this.pathing() || !this.mc.player.isOnGround()) {
                 return;
             }
 
             this.goal = null;
-            this.seen = false;
             this.join = false;
 
             if (this.close(this.target, approach)) {
@@ -447,12 +464,11 @@ public class AutoPilot extends Module {
             return;
         }
 
-        if (this.goal != null && this.waiting()) {
+        if (this.goal != null && this.pathing()) {
             return;
         }
 
         this.goal = null;
-        this.seen = false;
 
         if (this.done()) return;
         this.walk(this.target, false);
@@ -539,10 +555,8 @@ public class AutoPilot extends Module {
      */
     private void entry() {
         if (this.goal != null) {
-            if (this.waiting()) return;
-
+            if (this.pathing()) return;
             this.goal = null;
-            this.seen = false;
         }
 
         if (!this.refresh()) return;
@@ -593,8 +607,6 @@ public class AutoPilot extends Module {
         if (this.state != State.Highway) {
             this.point = null;
             this.blocks = null;
-            this.ready = false;
-            this.mining = false;
         }
 
         this.rotate(road.end());
@@ -677,11 +689,7 @@ public class AutoPilot extends Module {
 
         this.goal = null;
         this.blocks = null;
-
-        this.seen = false;
         this.join = false;
-        this.ready = false;
-        this.mining = false;
 
         this.state = State.Exit;
     }
@@ -830,9 +838,68 @@ public class AutoPilot extends Module {
     //region Highway exit
 
     /**
-     * Returns from highway travel through the selected clear space.
+     * Moves to the selected exit block before starting the drop.
      */
     private void exit() {
+        if (this.point == null || this.leg < 0 ||
+            this.leg >= this.route.legs().size()) {
+            return;
+        }
+
+        if (this.reach(this.point, lava)) this.fill();
+
+        if (this.goal == null || !this.goal.equals(this.point)) {
+            if (this.pathing()) this.abort();
+            this.walk(this.point, true);
+            return;
+        }
+
+        if (this.pathing()) return;
+
+        if (!this.mc.player.isOnGround()) {
+            this.depart();
+            return;
+        }
+
+        if (!this.close(this.point, 1.5)) {
+            this.goal = null;
+            return;
+        }
+
+        this.abort();
+        this.timer = settle;
+        this.state = State.Drop;
+    }
+
+    /**
+     * Mines the selected exit block while moving toward it until falling.
+     */
+    private void drop() {
+        if (this.point == null) return;
+
+        if (this.timer > 0) {
+            this.timer--;
+            return;
+        }
+
+        if (this.mc.player.isOnGround()) {
+            this.toward(this.point);
+
+            if (this.mining != null) {
+                BlockPos pos = this.point.down();
+                this.mining.mine(pos, Direction.UP);
+            }
+
+            return;
+        }
+
+        this.depart();
+    }
+
+    /**
+     * Stops exit controls and starts flight toward the next route point.
+     */
+    private void depart() {
         if (this.leg < 0 || this.leg >= this.route.legs().size()) {
             return;
         }
@@ -845,80 +912,17 @@ public class AutoPilot extends Module {
             Math.round(next.y)
         );
 
-        if (this.mc.player.isGliding()) {
-            this.timer = 0;
-            this.point = null;
-            this.blocks = null;
-            this.goal = destination.toImmutable();
-
-            this.seen = false;
-            this.join = false;
-            this.ready = false;
-            this.mining = false;
-
-            this.state = State.Flight;
-            return;
-        }
-
-        if (this.point == null) return;
-
-        this.deploy(destination);
-    }
-
-    /**
-     * Reaches the clear-space point and starts the next flight.
-     *
-     * @param destination next standard route point
-     */
-    private void deploy(BlockPos destination) {
-        if (!this.ready) {
-            if (this.reach(this.point, lava)) this.fill();
-
-            if (this.goal != null && this.goal.equals(this.point)) {
-                if (Baritone.pathing()) {
-                    this.seen = true;
-                    return;
-                }
-
-                if (!this.seen || !this.mc.player.isOnGround()) {
-                    return;
-                }
-
-                this.ready = true;
-                this.blocks = List.of(
-                    this.mc.player.getBlockPos().down().toImmutable()
-                );
-
-                this.abort();
-                return;
-            }
-
-            if (this.pathing()) {
-                this.abort();
-                return;
-            }
-
-            this.walk(this.point, true);
-            return;
-        }
-
-        if (this.blocks != null && !this.blocks.isEmpty()) {
-            this.toward(this.blocks.getFirst());
-        }
-
-        if (!this.mine()) return;
-
-        this.blocks = null;
         this.release();
 
-        if (Baritone.elytra()) return;
-
-        if (Baritone.pathing()) {
-            this.abort();
+        if (!this.fly(destination, false)) {
             return;
         }
 
-        this.fly(destination, false);
+        this.point = null;
+        this.blocks = null;
+        this.timer = 0;
+
+        this.state = State.Flight;
     }
 
     //endregion
@@ -968,7 +972,7 @@ public class AutoPilot extends Module {
         int minz = MathHelper.floor(box.minZ);
         int maxz = MathHelper.floor(Math.nextDown(box.maxZ));
 
-        int py = this.mc.player.getBlockPos().down(2).getY();
+        int py = this.mc.player.getBlockPos().down().getY();
         List<BlockPos> blocks = new ArrayList<>(4);
 
         for (int px = minx; px <= maxx; px++) {
@@ -1014,43 +1018,6 @@ public class AutoPilot extends Module {
         return air != null && slot >= 0 && air.place(pos, slot);
     }
 
-    /**
-     * Breaks the saved block below the player.
-     *
-     * @return true when the block no longer needs breaking
-     */
-    private boolean mine() {
-        if (this.blocks == null || this.blocks.isEmpty()) {
-            return true;
-        }
-
-        BlockPos block = this.blocks.getFirst();
-        if (this.mc.world.getBlockState(block).isAir()) {
-            if (!this.mining) return false;
-
-            if (this.mc.interactionManager != null) {
-                this.mc.interactionManager.cancelBlockBreaking();
-            }
-
-            this.mining = false;
-            return true;
-        }
-
-        if (this.mc.interactionManager == null) return false;
-
-        if (!this.mining) {
-            this.mc.interactionManager.attackBlock(block, Direction.UP);
-            this.mining = true;
-        } else {
-            this.mc.interactionManager.updateBlockBreakingProgress(
-                block, Direction.UP
-            );
-        }
-
-        this.mc.player.swingHand(Hand.MAIN_HAND);
-        return false;
-    }
-
     //endregion
 
     //region Baritone control
@@ -1076,7 +1043,6 @@ public class AutoPilot extends Module {
             Baritone.fly(pos, exact);
 
             this.goal = pos.toImmutable();
-            this.seen = false;
             this.join = exact;
 
             return true;
@@ -1092,7 +1058,8 @@ public class AutoPilot extends Module {
      * @param exact whether Y must be part of the goal
      */
     private void walk(BlockPos pos, boolean exact) {
-        if (this.goal != null && this.goal.equals(pos)) {
+        if (this.goal != null && this.goal.equals(pos) &&
+            this.pathing()) {
             return;
         }
 
@@ -1101,7 +1068,6 @@ public class AutoPilot extends Module {
         Baritone.walk(pos, exact);
 
         this.goal = pos.toImmutable();
-        this.seen = false;
         this.join = false;
     }
 
@@ -1120,7 +1086,6 @@ public class AutoPilot extends Module {
         Baritone.stop();
 
         this.goal = null;
-        this.seen = false;
         this.join = false;
     }
 
@@ -1133,19 +1098,6 @@ public class AutoPilot extends Module {
         BlockPos current = Baritone.destination();
         return current != null && this.goal != null
             && !current.equals(this.goal);
-    }
-
-    /**
-     * Checks whether the current Baritone task is still running.
-     *
-     * @return true while the task has not completed
-     */
-    private boolean waiting() {
-        if (this.pathing()) {
-            this.seen = true;
-            return true;
-        }
-        return !this.seen;
     }
 
     /**
