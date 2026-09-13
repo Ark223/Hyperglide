@@ -1,11 +1,11 @@
 package hyperglide.modules;
 
 import hyperglide.Hyperglide;
+import hyperglide.mixin.ClientAccessor;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Placement;
 import hyperglide.utilities.Render;
-import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
@@ -17,7 +17,6 @@ import meteordevelopment.orbit.EventHandler;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.SpawnEggItem;
-import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -29,6 +28,7 @@ import java.util.Map;
 
 public class AirPlace extends Module {
     private static final int retry = 10;
+    private static final int delay = 4;
 
     private final SettingGroup general = this.settings.getDefaultGroup();
     private final SettingGroup visuals = this.settings.createGroup("Visuals");
@@ -55,12 +55,11 @@ public class AirPlace extends Module {
     private final Map<BlockPos, Long> pending = new HashMap<>();
 
     private BlockHitResult hit;
-    private boolean lock;
-    private boolean own;
+    private int wait;
 
     public AirPlace() {
         super(Hyperglide.CATEGORY, "air-place",
-            "Places one block in the air per right-click."
+            "Places blocks in the air using vanilla timing."
         );
     }
 
@@ -70,8 +69,7 @@ public class AirPlace extends Module {
     @Override
     public void onActivate() {
         this.hit = null;
-        this.lock = this.mc.options.useKey.isPressed();
-        this.own = false;
+        this.wait = 0;
     }
 
     /**
@@ -80,8 +78,7 @@ public class AirPlace extends Module {
     @Override
     public void onDeactivate() {
         this.hit = null;
-        this.lock = false;
-        this.own = false;
+        this.wait = 0;
     }
 
     //region Event handlers
@@ -95,12 +92,12 @@ public class AirPlace extends Module {
     private void onTick(TickEvent.Post event) {
         if (!Client.ready() || this.mc.getCameraEntity() == null) {
             this.hit = null;
-            this.lock = false;
+            this.wait = 0;
             return;
         }
 
         boolean pressed = this.mc.options.useKey.isPressed();
-        if (!pressed) this.lock = false;
+        if (this.wait > 0) this.wait--;
 
         ItemStack stack = this.mc.player.getMainHandStack();
         if (!this.valid(stack)) {
@@ -125,25 +122,14 @@ public class AirPlace extends Module {
             this.hit = null;
         }
 
-        if (!pressed || this.lock || this.hit == null) {
+        if (!pressed || this.wait > 0 || this.hit == null) {
             return;
         }
 
-        this.lock = true;
         this.place(this.hit, stack);
-    }
+        this.wait = delay;
 
-    /**
-     * Cancels the normal interaction after air placement.
-     *
-     * @param event outgoing packet event
-     */
-    @EventHandler
-    private void onPacket(PacketEvent.Send event) {
-        if (this.lock && !this.own &&
-            event.packet instanceof PlayerInteractBlockC2SPacket) {
-            event.cancel();
-        }
+        ((ClientAccessor) this.mc).hyperglide$setUse(delay);
     }
 
     /**
@@ -210,7 +196,7 @@ public class AirPlace extends Module {
      * @param stack selected item stack
      */
     private void place(BlockHitResult hit, ItemStack stack) {
-        Placement.place(hit, value -> this.own = value);
+        Placement.place(hit);
         this.mc.player.swingHand(Hand.MAIN_HAND);
 
         if (stack.getItem() instanceof BlockItem block) {
