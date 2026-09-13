@@ -8,7 +8,6 @@ import hyperglide.modules.AutoWeb;
 import hyperglide.modules.BlockFarm;
 import hyperglide.modules.BounceFly;
 import hyperglide.modules.ControlFly;
-import hyperglide.modules.CriticalHits;
 import hyperglide.modules.DeepTrace;
 import hyperglide.modules.EasyAccess;
 import hyperglide.modules.ElytraTweaks;
@@ -47,7 +46,6 @@ public class Hyperglide extends MeteorAddon {
         Modules.get().add(new BlockFarm());
         Modules.get().add(new BounceFly());
         Modules.get().add(new ControlFly());
-        Modules.get().add(new CriticalHits());
         Modules.get().add(new DeepTrace());
         Modules.get().add(new EasyAccess());
         Modules.get().add(new ElytraTweaks());

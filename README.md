@@ -44,7 +44,6 @@ Alternatively, use the corresponding Baritone library included in the `/libs` fo
 - **Block Farm** - Automates placing and breaking blocks for extremely fast repeated farming
 - **Bounce Fly** - Uses elytra bouncing for fast highway travel with optional obstacle passing
 - **Control Fly** - Provides controlled elytra flight with automatic stabilization and boosting
-- **Critical Hits** - Triggers critical hits while keeping the player grounded during combat
 - **Deep Trace** - Highlights unusual dropped items and dungeon mobs below the surface
 - **Easy Access** - Opens hidden containers and supported interactive entities within range
 - **Elytra Tweaks** - Adds automatic elytra swap, takeoff, recovery and collision protection
