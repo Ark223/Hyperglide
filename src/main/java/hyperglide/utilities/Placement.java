@@ -14,7 +14,7 @@ import net.minecraft.util.math.Vec3d;
 import java.util.function.Consumer;
 
 /**
- * Handles block placement using a custom air-place interaction.
+ * Handles block placement using vanilla and air-place interactions.
  */
 public final class Placement {
     private static final MinecraftClient client = MinecraftClient.getInstance();
@@ -50,6 +50,35 @@ public final class Placement {
             client.player.swingHand(Hand.MAIN_HAND);
 
             sound(item, pos);
+            return true;
+        } finally {
+            Hotbar.restore();
+        }
+    }
+
+    /**
+     * Places a block against the supplied hit from a hotbar slot.
+     *
+     * @param hit block face used for placement
+     * @param slot hotbar slot containing the block
+     * @return true when the placement interaction was sent
+     */
+    public static boolean place(BlockHitResult hit, int slot) {
+        ItemStack stack = Hotbar.stack(slot);
+        if (!(stack.getItem() instanceof BlockItem)) {
+            return false;
+        }
+
+        if (!Client.interaction() || !Hotbar.swap(slot)) {
+            return false;
+        }
+
+        try {
+            client.interactionManager.interactBlock(
+                client.player, Hand.MAIN_HAND, hit
+            );
+
+            client.player.swingHand(Hand.MAIN_HAND);
             return true;
         } finally {
             Hotbar.restore();

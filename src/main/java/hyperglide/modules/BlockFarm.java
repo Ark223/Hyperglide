@@ -1,6 +1,7 @@
 package hyperglide.modules;
 
 import hyperglide.Hyperglide;
+import hyperglide.utilities.API;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Placement;
@@ -16,6 +17,7 @@ import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
@@ -23,6 +25,8 @@ import net.minecraft.util.math.Vec3d;
 import java.util.List;
 
 public class BlockFarm extends Module {
+    private static final double range = 4.0;
+
     private static final Direction[] sides = {
         Direction.NORTH, Direction.EAST,
         Direction.SOUTH, Direction.WEST
@@ -91,8 +95,11 @@ public class BlockFarm extends Module {
             return;
         }
 
-        if (this.pos == null || !this.nearby(this.pos)) {
+        if (this.pos != null && !this.nearby(this.pos)) {
             this.clear();
+        }
+
+        if (this.pos == null) {
             this.pos = this.target();
         }
 
@@ -101,19 +108,13 @@ public class BlockFarm extends Module {
         BlockState state = this.mc.world.getBlockState(this.pos);
 
         if (!state.isReplaceable()) {
-            if (!this.allowed(state.getBlock())) {
-                this.clear();
-                return;
-            }
+            if (!this.allowed(state.getBlock())) return;
 
             this.start(state);
             return;
         }
 
-        if (!this.support(this.pos)) {
-            this.clear();
-            return;
-        }
+        if (!this.support(this.pos)) return;
 
         if (this.started && !this.mining.armed(this.pos)) {
             return;
@@ -123,7 +124,7 @@ public class BlockFarm extends Module {
         if (slot < 0) return;
 
         BlockState placed = this.state(slot);
-        if (!Placement.place(this.pos, slot)) return;
+        if (!Placement.place(this.hit(), slot)) return;
 
         if (this.started) {
             this.mining.rebreak(this.pos, placed, Direction.UP);
@@ -172,7 +173,7 @@ public class BlockFarm extends Module {
         for (Direction side : sides) {
             BlockPos pos = base.offset(side);
             if (!this.mc.world.getBlockState(pos).isReplaceable() ||
-                !this.support(pos) || !this.nearby(pos)) {
+                !this.support(pos) || this.occupied(pos)) {
                 continue;
             }
 
@@ -188,18 +189,17 @@ public class BlockFarm extends Module {
     }
 
     /**
-     * Checks whether a farm position is beside and clear of the player.
+     * Creates the block hit used to place at the farm position.
      *
-     * @param pos farm position to check
-     * @return true when the position is adjacent and not occupied
+     * @return block hit result used for placement
      */
-    private boolean nearby(BlockPos pos) {
-        BlockPos base = this.mc.player.getBlockPos();
-        Box box = this.mc.player.getBoundingBox();
+    private BlockHitResult hit() {
+        BlockPos ground = this.pos.down();
 
-        return pos.getY() == base.getY()
-            && base.getManhattanDistance(pos) == 1
-            && !new Box(pos).intersects(box);
+        return new BlockHitResult(
+            Vec3d.ofCenter(ground).add(0.0, 0.5, 0.0),
+            Direction.UP, ground, false
+        );
     }
 
     //endregion
@@ -288,6 +288,30 @@ public class BlockFarm extends Module {
      */
     private boolean allowed(Block block) {
         return this.blocks.get().contains(block);
+    }
+
+    /**
+     * Checks whether the farm position is still within range.
+     *
+     * @param pos farm position to check
+     * @return true while the position remains within range
+     */
+    private boolean nearby(BlockPos pos) {
+        Vec3d center = Vec3d.ofCenter(pos);
+        Vec3d player = API.pos(this.mc.player);
+
+        double dist = player.squaredDistanceTo(center);
+        return dist <= range * range;
+    }
+
+    /**
+     * Checks whether the player intersects a farm position.
+     *
+     * @param pos farm position to check
+     * @return true when the player occupies the block space
+     */
+    private boolean occupied(BlockPos pos) {
+        return new Box(pos).intersects(this.mc.player.getBoundingBox());
     }
 
     /**
