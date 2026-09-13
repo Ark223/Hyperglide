@@ -865,7 +865,7 @@ public class ControlFly extends Module {
             this.flight.yaw, this.flight.pitch, boosted
         );
 
-        return next.length() < Math.min(
+        return next.horizontalLength() < Math.min(
             this.minimum.get() / ticks, this.maximum(dir)
         );
     }
