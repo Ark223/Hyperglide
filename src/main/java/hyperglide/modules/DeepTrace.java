@@ -46,14 +46,14 @@ public class DeepTrace extends Module {
     private final SettingGroup visuals = this.settings.createGroup("Visuals");
 
     private final Setting<Boolean> spawners = this.general.add(new BoolSetting.Builder()
-        .name("active-spawners")
-        .description("Detects mobs nearby active dungeon spawners.")
+        .name("spawner-mobs")
+        .description("Detects mobs near dungeon spawners.")
         .defaultValue(true)
         .build()
     );
 
     private final Setting<Boolean> items = this.general.add(new BoolSetting.Builder()
-        .name("unnatural-items")
+        .name("unusual-items")
         .description("Detects unusual dropped items.")
         .defaultValue(true)
         .build()
@@ -270,10 +270,6 @@ public class DeepTrace extends Module {
 
                 for (BlockEntity entity : chunk.getBlockEntities().values()) {
                     if (!(entity instanceof MobSpawnerBlockEntity spawner)) {
-                        continue;
-                    }
-
-                    if (spawner.getPos().getY() >= this.level.get() - 1) {
                         continue;
                     }
 
