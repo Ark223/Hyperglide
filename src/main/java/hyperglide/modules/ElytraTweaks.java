@@ -14,10 +14,12 @@ import meteordevelopment.meteorclient.mixininterface.IVec3d;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.KeybindSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
+import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.component.DataComponentTypes;
@@ -172,28 +174,38 @@ public class ElytraTweaks extends Module {
     private final Takeoff input = new Takeoff();
 
     private int tap;
-    private int jump;
-    private int sync;
-    private int retry;
-    private int hold;
+    private boolean pressed;
 
     private int phase;
     private int slot;
-
-    private boolean pressed;
     private boolean opened;
+
+    private int jump;
+    private int sync;
+    private boolean boost;
+
+    private int retry;
     private boolean escaping;
+
+    private int hold;
     private boolean halt;
-    private boolean shift;
-    private boolean fresh;
+    private boolean sneak;
+    private boolean renewed;
 
     private double speed;
-
     private FireworkRocketEntity rocket;
 
     public ElytraTweaks() {
         super(Hyperglide.CATEGORY, "elytra-tweaks",
             "Provides useful tweaks and automation for elytra flight."
+        );
+
+        this.takeoff.add(new KeybindSetting.Builder()
+            .name("toggle-key")
+            .description("Starts flight or uses a rocket while gliding.")
+            .defaultValue(Keybind.none())
+            .action(this::key)
+            .build()
         );
     }
 
@@ -225,7 +237,7 @@ public class ElytraTweaks extends Module {
     private void onTick(TickEvent.Pre event) {
         if (!Client.ready()) return;
 
-        if (this.shift) {
+        if (this.sneak) {
             this.mc.options.sneakKey.setPressed(true);
         }
 
@@ -234,6 +246,11 @@ public class ElytraTweaks extends Module {
         }
 
         this.input.pulse();
+
+        if (this.boost && this.mc.player.isGliding()) {
+            this.boost = false;
+            this.rocket();
+        }
 
         if (this.phase > 0) {
             this.strict();
@@ -274,7 +291,7 @@ public class ElytraTweaks extends Module {
             this.hold = 0;
             this.speed = 0.0;
 
-            if (this.shift) this.sneak(false);
+            if (this.sneak) this.sneak(false);
             return;
         }
 
@@ -289,7 +306,7 @@ public class ElytraTweaks extends Module {
                 ((IVec3d) event.movement).meteor$set(safe.x, safe.y, safe.z);
                 this.mc.player.setVelocity(safe);
 
-                if (this.fresh) this.sneak(false);
+                if (this.renewed) this.sneak(false);
                 return;
             }
 
@@ -309,7 +326,7 @@ public class ElytraTweaks extends Module {
             this.hold = 0;
             this.speed = 0.0;
 
-            if (this.fresh) this.sneak(false);
+            if (this.renewed) this.sneak(false);
             return;
         }
 
@@ -322,7 +339,7 @@ public class ElytraTweaks extends Module {
 
         this.halt = true;
         this.hold = 0;
-        this.fresh = false;
+        this.renewed = false;
         this.sneak(true);
         this.stop(event);
     }
@@ -373,7 +390,7 @@ public class ElytraTweaks extends Module {
      * Clears all runtime state.
      */
     private void reset() {
-        if (this.shift) {
+        if (this.sneak) {
             this.mc.options.sneakKey.setPressed(false);
         }
 
@@ -382,20 +399,23 @@ public class ElytraTweaks extends Module {
         }
 
         this.tap = 0;
-        this.jump = 0;
-        this.sync = 0;
-        this.retry = 0;
-        this.hold = 0;
+        this.pressed = false;
 
         this.phase = 0;
         this.slot = -1;
-
-        this.pressed = false;
         this.opened = false;
+
+        this.jump = 0;
+        this.sync = 0;
+        this.boost = false;
+
+        this.retry = 0;
         this.escaping = false;
+
+        this.hold = 0;
         this.halt = false;
-        this.shift = false;
-        this.fresh = false;
+        this.sneak = false;
+        this.renewed = false;
 
         this.input.reset();
 
@@ -450,6 +470,14 @@ public class ElytraTweaks extends Module {
      * Handles automatic elytra and chestplate swapping.
      */
     private void ground() {
+        if (this.bounce()) {
+            if (Elytra.equipped()) return;
+
+            int slot = this.hotbar(true);
+            if (slot >= 0) this.wear(slot);
+            return;
+        }
+
         if (!this.swap.get() || this.repair.get()) {
             return;
         }
@@ -462,9 +490,10 @@ public class ElytraTweaks extends Module {
             return;
         }
 
-        if (!this.mc.player.isOnGround() ||
+        if (this.boost || this.sync > 0 ||
+            this.input.active() || !Elytra.equipped() ||
             this.mc.options.jumpKey.isPressed() ||
-            !Elytra.equipped()) {
+            !this.mc.player.isOnGround()) {
             return;
         }
 
@@ -624,7 +653,7 @@ public class ElytraTweaks extends Module {
     }
 
     /**
-     * Finishes the active elytra replacement and closes the inventory.
+     * Finishes the elytra replacement and closes the inventory.
      */
     private void finish() {
         if (this.opened &&
@@ -660,6 +689,40 @@ public class ElytraTweaks extends Module {
     //region Takeoff control
 
     /**
+     * Handles takeoff and rocket use from the toggle key.
+     */
+    private void key() {
+        if (!Client.ready() || !Client.interaction() ||
+            this.phase > 0 || this.mc.currentScreen != null) {
+            return;
+        }
+
+        if (this.mc.player.isGliding()) {
+            this.rocket();
+            return;
+        }
+
+        this.jump = 0;
+        this.retry = 0;
+        this.sync = 0;
+
+        this.boost = true;
+
+        if (!Elytra.equipped()) {
+            int slot = this.hotbar(true);
+            if (slot < 0 || !this.wear(slot)) {
+                this.boost = false;
+                return;
+            }
+
+            this.sync = 1;
+            return;
+        }
+
+        this.input.start(this.mc.player.isOnGround());
+    }
+
+    /**
      * Starts automatic takeoff after jump is held long enough.
      */
     private void takeoff() {
@@ -677,11 +740,15 @@ public class ElytraTweaks extends Module {
             return;
         }
 
-        if (++this.jump < this.timer.get() || this.sync > 0) return;
+        if (++this.jump < this.timer.get() || this.sync > 0) {
+            return;
+        }
 
         if (!Elytra.equipped()) {
             int slot = this.hotbar(true);
-            if (slot < 0 || !this.wear(slot)) return;
+            if (slot < 0 || !this.wear(slot)) {
+                return;
+            }
 
             this.sync = 1;
             return;
@@ -696,8 +763,12 @@ public class ElytraTweaks extends Module {
     private void deploy() {
         if (this.sync <= 0) return;
 
-        if (this.mc.player.isGliding() ||
-            this.mc.player.isOnGround()) {
+        if (this.mc.player.isGliding()) {
+            this.sync = 0;
+            return;
+        }
+
+        if (!this.boost && this.mc.player.isOnGround()) {
             this.sync = 0;
             return;
         }
@@ -707,6 +778,12 @@ public class ElytraTweaks extends Module {
         }
 
         this.sync = 0;
+
+        if (this.boost) {
+            this.input.start(this.mc.player.isOnGround());
+            return;
+        }
+
         this.start();
     }
 
@@ -724,6 +801,42 @@ public class ElytraTweaks extends Module {
         this.input.start();
     }
 
+    /**
+     * Uses an available firework rocket.
+     *
+     * @return true when the rocket was used
+     */
+    private boolean rocket() {
+        if (!Client.interaction() ||
+            this.mc.interactionManager == null) {
+            return false;
+        }
+
+        int selected = Hotbar.selected();
+        int slot = -1;
+
+        ItemStack offhand = this.mc.player.getOffHandStack();
+        Hand hand = Hand.MAIN_HAND;
+
+        if (offhand.isOf(Items.FIREWORK_ROCKET)) {
+            hand = Hand.OFF_HAND;
+        } else {
+            slot = Hotbar.find(Items.FIREWORK_ROCKET);
+            if (slot < 0) return false;
+            if (slot != selected) Hotbar.select(slot);
+        }
+
+        try {
+            return this.mc.interactionManager.interactItem(
+                this.mc.player, hand
+            ).isAccepted();
+        } finally {
+            if (slot >= 0 && slot != selected) {
+                Hotbar.select(selected);
+            }
+        }
+    }
+
     //endregion
 
     //region Baritone recovery
@@ -738,10 +851,9 @@ public class ElytraTweaks extends Module {
             this.retry = 0;
             this.swim(false);
 
-            if (this.input.ground()) {
+            if (!this.boost && this.input.ground()) {
                 this.input.reset();
             }
-
             return;
         }
 
@@ -754,7 +866,7 @@ public class ElytraTweaks extends Module {
         if (Player.liquid()) {
             this.retry = 0;
 
-            if (this.input.ground()) {
+            if (!this.boost && this.input.ground()) {
                 this.input.reset();
             }
 
@@ -814,8 +926,8 @@ public class ElytraTweaks extends Module {
     public void track(FireworkRocketEntity rocket) {
         if (!this.isActive()) return;
 
-        if (this.shift && this.rocket != rocket) {
-            this.fresh = true;
+        if (this.sneak && this.rocket != rocket) {
+            this.renewed = true;
             if (!this.halt) this.sneak(false);
         }
 
@@ -926,7 +1038,9 @@ public class ElytraTweaks extends Module {
             )
         );
 
-        if (hit.getType() != HitResult.Type.BLOCK) return 0;
+        if (hit.getType() != HitResult.Type.BLOCK) {
+            return 0;
+        }
 
         Direction.Axis axis = hit.getSide().getAxis();
         if (axis == Direction.Axis.X) return xaxis;
@@ -982,9 +1096,9 @@ public class ElytraTweaks extends Module {
      * @param pressed whether sneak should be held
      */
     private void sneak(boolean pressed) {
-        this.shift = pressed;
+        this.sneak = pressed;
 
-        if (!pressed) this.fresh = false;
+        if (!pressed) this.renewed = false;
         this.mc.options.sneakKey.setPressed(pressed);
     }
 
