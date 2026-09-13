@@ -407,6 +407,8 @@ public class BounceFly extends Module {
         Vec3d vel = this.mc.player.getVelocity();
 
         double scan = vel.horizontalLength() * this.ticks.get();
+        double level = Math.floor(this.mc.player.getY());
+
         double width = this.mc.player.getWidth() / 2.0;
         width *= Math.abs(side.x) + Math.abs(side.z);
 
@@ -414,9 +416,9 @@ public class BounceFly extends Module {
         double distance = Double.MAX_VALUE;
 
         for (int idx = -1; idx <= 1; idx++) {
-            for (double y = 0.5; y <= 1.5; y++) {
+            for (double py = 0.5; py <= 1.5; py++) {
                 Vec3d start = new Vec3d(
-                    this.mc.player.getX(), this.level + y,
+                    this.mc.player.getX(), level + py,
                     this.mc.player.getZ()
                 );
 
@@ -430,8 +432,8 @@ public class BounceFly extends Module {
 
                 double current = start.squaredDistanceTo(hit.getPos());
                 if (current < distance) {
-                    distance = current;
                     closest = hit.getPos();
+                    distance = current;
                 }
             }
         }

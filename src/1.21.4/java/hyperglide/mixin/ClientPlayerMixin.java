@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.At;
 @Mixin(ClientPlayerEntity.class)
 public abstract class ClientPlayerMixin {
     /**
-     * Prevents gliding from cancelling sprint during bounce movement.
+     * Prevents gliding from cancelling sprint while bouncing.
      *
      * @param gliding vanilla gliding state
      * @return state used by vanilla sprint cancellation
@@ -20,6 +20,38 @@ public abstract class ClientPlayerMixin {
     ))
     private boolean hyperglide$sprint(boolean gliding) {
         if (!gliding) return false;
+
+        BounceFly module = Modules.get().get(BounceFly.class);
+        return module == null || !module.enabled();
+    }
+
+    /**
+     * Prevents item use from slowing movement while bouncing.
+     *
+     * @param using vanilla item use state
+     * @return state used by vanilla item slowdown
+     */
+    @ModifyExpressionValue(method = "tickMovement", at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/client/network/ClientPlayerEntity;isUsingItem()Z"
+    ))
+    private boolean hyperglide$slow(boolean using) {
+        if (!using) return false;
+
+        BounceFly module = Modules.get().get(BounceFly.class);
+        return module == null || !module.enabled();
+    }
+
+    /**
+     * Prevents item use from cancelling sprint while bouncing.
+     *
+     * @param using vanilla item use state
+     * @return state used by vanilla sprint cancellation
+     */
+    @ModifyExpressionValue(method = "shouldStopSprinting", at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/client/network/ClientPlayerEntity;isUsingItem()Z"
+    ))
+    private boolean hyperglide$use(boolean using) {
+        if (!using) return false;
 
         BounceFly module = Modules.get().get(BounceFly.class);
         return module == null || !module.enabled();
