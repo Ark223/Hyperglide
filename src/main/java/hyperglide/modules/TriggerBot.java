@@ -42,6 +42,15 @@ public class TriggerBot extends Module {
         .build()
     );
 
+    private final Setting<Integer> delay = this.general.add(new IntSetting.Builder()
+        .name("attack-delay")
+        .description("Additional ticks to wait before attacking.")
+        .defaultValue(0)
+        .min(0)
+        .sliderMax(3)
+        .build()
+    );
+
     private final Setting<Boolean> wall = this.general.add(new BoolSetting.Builder()
         .name("wall-check")
         .description("Prevents attacking entities through walls.")
@@ -60,6 +69,7 @@ public class TriggerBot extends Module {
     );
 
     private Entity target;
+    private int timer;
 
     public TriggerBot() {
         super(Hyperglide.CATEGORY, "trigger-bot",
@@ -73,6 +83,7 @@ public class TriggerBot extends Module {
     @Override
     public void onActivate() {
         this.target = null;
+        this.timer = 0;
     }
 
     /**
@@ -81,6 +92,7 @@ public class TriggerBot extends Module {
     @Override
     public void onDeactivate() {
         this.target = null;
+        this.timer = 0;
     }
 
     //region Event handlers
@@ -95,19 +107,27 @@ public class TriggerBot extends Module {
         if (!Client.interaction() ||
             this.mc.getCameraEntity() == null) {
             this.target = null;
+            this.timer = 0;
             return;
         }
 
         if (Player.consuming()) {
             this.target = null;
+            this.timer = 0;
             return;
         }
 
         this.target = this.target();
+
         if (this.target == null ||
             this.mc.player.getAttackCooldownProgress(0.5F) < 1.0F) {
+            this.timer = 0;
             return;
         }
+
+        if (this.timer++ < this.delay.get()) return;
+
+        this.timer = 0;
 
         this.mc.interactionManager.attackEntity(
             this.mc.player, this.target
