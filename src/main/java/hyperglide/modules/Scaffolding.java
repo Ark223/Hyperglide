@@ -18,8 +18,8 @@ import net.minecraft.util.math.Vec3d;
 import java.util.*;
 
 public class Scaffolding extends Module {
-    private static final double edge = 0.85;
-    private static final double extend = 1.0;
+    private static final double edge = 0.95;
+    private static final double extend = 1.25;
     private static final double step = 0.25;
     private static final double reach = 2.0;
 
@@ -35,9 +35,9 @@ public class Scaffolding extends Module {
     private final Setting<Integer> delay = this.general.add(new IntSetting.Builder()
         .name("place-delay")
         .description("Delay in ticks between placements.")
-        .defaultValue(3)
+        .defaultValue(2)
         .min(1)
-        .sliderMax(4)
+        .sliderMax(3)
         .build()
     );
 
@@ -201,8 +201,9 @@ public class Scaffolding extends Module {
     private void add(BlockPos pos, boolean first) {
         pos = pos.toImmutable();
 
-        if (!this.open(pos) || this.queue.contains(pos)
-            || this.marks.containsKey(pos)) return;
+        if (!this.open(pos) ||
+            this.queue.contains(pos) ||
+            this.marks.containsKey(pos)) return;
 
         if (first) this.queue.addFirst(pos);
         else this.queue.addLast(pos);
