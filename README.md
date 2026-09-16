@@ -50,8 +50,10 @@ Alternatively, use the corresponding Baritone library included in the `/libs` fo
 - **Fast Frame** - Automatically fills nearby empty item frames using items from your hotbar
 - **Fast Portal** - Builds nearby nether portals in the direction you're facing and lights them
 - **FD3 Crafter** - Strictly crafts all FD3 firework rockets from available inventory ingredients
+- **Force Log** - Disconnects when a whitelisted player sends the configured whisper message
 - **Mining Tweaks** - Enables packet mining, including fast remine and double-break support
 - **Navigation** - Provides a map of the nether highway network with interactive route planning
+- **No Coord Leak** - Prevents chat message containing coordinates from being sent by accident
 - **No Sprint FOV** - Removes vanilla sprinting zoom effects for a more consistent field of view
 - **Overview** - Displays a content icon on shulker boxes and bundles for quick identification
 - **Raid Starter** - Automatically drinks ominous bottles to start the raid for repeated farming

@@ -1,5 +1,6 @@
 package hyperglide.utilities;
 
+import com.mojang.authlib.GameProfile;
 import hyperglide.mixin.EntityAccessor;
 import hyperglide.mixin.InputAccessor;
 import net.minecraft.block.Block;
@@ -24,6 +25,16 @@ import net.minecraft.world.World;
  */
 public final class API {
     private API() {}
+
+    /**
+     * Returns the name stored in a game profile.
+     *
+     * @param profile game profile
+     * @return profile name
+     */
+    public static String name(GameProfile profile) {
+        return profile.getName();
+    }
 
     /**
      * Updates the forward and sideways player movement.
