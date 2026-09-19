@@ -1,7 +1,6 @@
 package hyperglide.modules;
 
 import hyperglide.Hyperglide;
-import hyperglide.utilities.API;
 import hyperglide.utilities.Baritone;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Elytra;
@@ -12,18 +11,27 @@ import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.orbit.EventHandler;
+import net.minecraft.block.BlockState;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.RaycastContext;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 public class BounceFly extends Module {
+    private static final double range = 4.5;
     private static final double stop = 0.2;
     private static final int grid = 10;
-    private static final int reach = 5;
+
+    private static final int reach = 1;
+    private static final int ahead = 8;
+    private static final int span = 192;
 
     private static final int wait = 20;
     private static final int warmup = 20;
@@ -34,19 +42,38 @@ public class BounceFly extends Module {
 
     private final SettingGroup general = this.settings.getDefaultGroup();
 
+    private final Setting<Boolean> acceleration = this.general.add(new BoolSetting.Builder()
+        .name("acceleration")
+        .description("Uses dynamic pitch to build up speed while bouncing.")
+        .defaultValue(false)
+        .build()
+    );
+
     private final Setting<Double> pitch = this.general.add(new DoubleSetting.Builder()
-        .name("pitch")
-        .description("The camera pitch used while bouncing.")
+        .name("standard-pitch")
+        .description("Camera pitch used while bouncing in standard mode.")
         .defaultValue(72.4)
         .min(-90.0)
         .sliderMax(90.0)
         .decimalPlaces(2)
+        .visible(() -> !this.acceleration.get())
+        .build()
+    );
+
+    private final Setting<Double> threshold = this.general.add(new DoubleSetting.Builder()
+        .name("fall-threshold")
+        .description("Vertical velocity used to switch acceleration pitch.")
+        .defaultValue(0.193)
+        .min(0.0)
+        .sliderMax(1.0)
+        .decimalPlaces(3)
+        .visible(this.acceleration::get)
         .build()
     );
 
     private final Setting<Boolean> obstacle = this.general.add(new BoolSetting.Builder()
         .name("obstacle-passer")
-        .description("Uses Baritone to pass obstacles when movement stops.")
+        .description("Uses Baritone to pass detected obstacles.")
         .defaultValue(true)
         .build()
     );
@@ -56,6 +83,14 @@ public class BounceFly extends Module {
         .description("Uses raycasts to detect obstacles and avoid collisions.")
         .defaultValue(true)
         .visible(this.obstacle::get)
+        .build()
+    );
+
+    private final Setting<Boolean> dig = this.general.add(new BoolSetting.Builder()
+        .name("mine-obstacles")
+        .description("Mines detected obstacle blocks before pathing past them.")
+        .defaultValue(false)
+        .visible(() -> this.obstacle.get() && this.avoid.get())
         .build()
     );
 
@@ -69,10 +104,19 @@ public class BounceFly extends Module {
         .build()
     );
 
+    private final Deque<BlockPos> blocks = new ArrayDeque<>();
+
+    private MiningTweaks mining;
+    private BlockPos focus;
+    private BlockPos goal;
+
     private int px;
     private int pz;
     private int dx;
     private int dz;
+
+    private double nx;
+    private double nz;
 
     private int slow;
     private int warm;
@@ -81,6 +125,7 @@ public class BounceFly extends Module {
 
     private boolean pass;
     private boolean launch;
+    private boolean enabled;
     private boolean started;
 
     public BounceFly() {
@@ -90,7 +135,7 @@ public class BounceFly extends Module {
     }
 
     /**
-     * Captures the current level and direction before flying.
+     * Prepares flight state and required modules.
      */
     @Override
     public void onActivate() {
@@ -102,20 +147,32 @@ public class BounceFly extends Module {
         this.center();
         this.reset();
 
+        this.mining = Modules.get().get(MiningTweaks.class);
+
+        if (this.mining != null) {
+            this.enabled = this.mining.isActive();
+            if (!this.enabled) this.mining.toggle();
+        }
+
+        this.clear();
         this.pass = false;
         this.started = false;
     }
 
     /**
-     * Releases movement, stops pathing and clears flight state.
+     * Stops active movement and restores module state.
      */
     @Override
     public void onDeactivate() {
         this.release();
 
-        if (this.pass) Baritone.cancel();
+        if (this.pass) Baritone.stop();
+        this.restore();
         this.reset();
+        this.clear();
 
+        this.mining = null;
+        this.enabled = false;
         this.pass = false;
         this.started = false;
     }
@@ -134,11 +191,16 @@ public class BounceFly extends Module {
         }
 
         if (!Baritone.pathing()) this.rotate();
+        Vec3d vel = this.mc.player.getVelocity();
 
-        float pitch = this.pitch.get().floatValue();
+        float pitch = !this.acceleration.get()
+            ? this.pitch.get().floatValue()
+            : vel.y > -this.threshold.get()
+            ? 90.0F : 0.0F;
+
         this.mc.player.setPitch(pitch);
 
-        this.launch(this.mc.player.getVelocity());
+        this.launch(vel);
         this.mc.player.setSprinting(true);
 
         if (!this.takeoff() || this.blocked()) {
@@ -179,6 +241,34 @@ public class BounceFly extends Module {
         this.warm = 0;
         this.jump = 0;
         this.launch = false;
+    }
+
+    /**
+     * Clears obstacle passing state.
+     */
+    private void clear() {
+        this.blocks.clear();
+        this.goal = null;
+        this.focus = null;
+    }
+
+    /**
+     * Keeps Mining Tweaks enabled while mining obstacles.
+     */
+    private void setup() {
+        if (this.mining != null && !this.mining.isActive()) {
+            this.mining.toggle();
+        }
+    }
+
+    /**
+     * Restores the Mining Tweaks state from before activation.
+     */
+    private void restore() {
+        if (this.mining != null && !this.enabled &&
+            this.mining.isActive()) {
+            this.mining.toggle();
+        }
     }
 
     //endregion
@@ -272,21 +362,29 @@ public class BounceFly extends Module {
 
     //endregion
 
-    //region Obstacle passing
+    //region Obstacle control
 
     /**
-     * Handles transitions into and out of Baritone pathing.
+     * Manages active obstacle passing and mining.
      *
-     * @return true while Baritone owns movement
+     * @return true while obstacle handling is active
      */
     private boolean pathing() {
         if (!this.obstacle.get()) {
             if (this.pass) {
-                Baritone.cancel();
+                Baritone.stop();
                 this.reset();
+                this.clear();
                 this.pass = false;
             }
             return false;
+        }
+
+        if (this.goal != null) {
+            this.release();
+            this.reset();
+            this.mine();
+            return true;
         }
 
         if (this.pass && Baritone.pathing()) {
@@ -298,6 +396,7 @@ public class BounceFly extends Module {
         if (this.pass) {
             this.rotate();
             this.reset();
+            this.clear();
             this.pass = false;
         }
 
@@ -305,19 +404,34 @@ public class BounceFly extends Module {
     }
 
     /**
-     * Starts obstacle pathing when a collision is detected.
+     * Starts obstacle handling when a collision is detected.
      *
-     * @return true when pathing was started
+     * @return true when obstacle handling was started
      */
     private boolean blocked() {
         if (!this.obstacle.get() || !this.avoid.get()) {
             return false;
         }
 
-        Vec3d hit = this.collision();
-        if (hit == null) return false;
+        if (this.collision() == null) {
+            return false;
+        }
 
-        this.path(hit);
+        BlockPos goal = this.trace();
+        if (goal == null) {
+            this.clear();
+            this.release();
+            this.reset();
+            return true;
+        }
+
+        if (this.dig.get() && !this.blocks.isEmpty() &&
+            this.mining != null) {
+            this.mine(goal);
+        } else {
+            this.path(goal);
+        }
+
         return true;
     }
 
@@ -342,52 +456,79 @@ public class BounceFly extends Module {
     }
 
     /**
-     * Starts Baritone pathing from the player's position.
+     * Starts obstacle mining before pathing onward.
+     *
+     * @param goal safe pathing goal after the obstacle
      */
-    private void path() {
-        this.path(API.pos(this.mc.player));
+    private void mine(BlockPos goal) {
+        this.release();
+        this.reset();
+        this.setup();
+
+        this.pass = true;
+        this.goal = goal;
+        this.focus = null;
+        this.started = false;
+
+        this.mine();
     }
 
     /**
-     * Starts Baritone pathing toward a point beyond the obstacle.
-     *
-     * @param point obstacle or starting reference point
+     * Queues obstacles for mining while approaching them.
      */
-    private void path(Vec3d point) {
-        this.mc.options.forwardKey.setPressed(false);
-        this.mc.options.jumpKey.setPressed(false);
+    private void mine() {
+        this.blocks.removeIf(pos -> !this.solid(pos));
 
+        if (this.blocks.isEmpty()) {
+            BlockPos goal = this.goal;
+            this.goal = null;
+            this.focus = null;
+
+            if (goal != null) this.path(goal);
+            return;
+        }
+
+        BlockPos pos = this.blocks.peekFirst();
+        if (!pos.equals(this.focus)) {
+            this.focus = pos;
+            Baritone.near(pos, 2);
+        }
+
+        this.setup();
+
+        for (BlockPos block : this.blocks) {
+            if (!this.mining.reachable(block, range)) {
+                continue;
+            }
+
+            this.mining.mine(block, Direction.UP);
+        }
+    }
+
+    /**
+     * Starts recovery pathing from the current highway position.
+     */
+    private void path() {
+        this.path(this.base());
+    }
+
+    /**
+     * Starts Baritone pathing slightly beyond the selected goal.
+     *
+     * @param pos pathing goal
+     */
+    private void path(BlockPos pos) {
+        this.release();
         this.reset();
+        this.clear();
 
         this.pass = true;
         this.started = false;
 
-        this.mc.player.setSprinting(false);
-        Baritone.walk(this.goal(point));
-    }
-
-    /**
-     * Calculates a goal beyond an obstacle along the highway.
-     *
-     * @param point obstacle or starting reference point
-     * @return block position used as the Baritone goal
-     */
-    private BlockPos goal(Vec3d point) {
-        Vec3d dir = new Vec3d(this.dx, 0, this.dz);
-        dir = dir.normalize();
-
-        double ox = point.x - this.px;
-        double oz = point.z - this.pz;
-
-        double along = ox * dir.x + oz * dir.z;
-
-        double px = this.px + dir.x * (along + reach);
-        double pz = this.pz + dir.z * (along + reach);
-
-        return new BlockPos(
-            (int) Math.round(px), this.level,
-            (int) Math.round(pz)
-        );
+        Baritone.walk(pos.add(
+            this.dx * reach, 0,
+            this.dz * reach
+        ));
     }
 
     //endregion
@@ -400,13 +541,13 @@ public class BounceFly extends Module {
      * @return closest collision point, or null when undetected
      */
     private Vec3d collision() {
-        Vec3d front = new Vec3d(this.dx, 0, this.dz);
-        front = front.normalize();
-
+        Vec3d front = new Vec3d(this.nx, 0, this.nz);
         Vec3d side = new Vec3d(-front.z, 0, front.x);
         Vec3d vel = this.mc.player.getVelocity();
 
-        double scan = vel.horizontalLength() * this.ticks.get();
+        double scan = vel.horizontalLength();
+        scan = Math.max(1.0, scan * this.ticks.get());
+
         double level = Math.floor(this.mc.player.getY());
 
         double width = this.mc.player.getWidth() / 2.0;
@@ -457,10 +598,88 @@ public class BounceFly extends Module {
 
     //endregion
 
+    //region Obstacle scanning
+
+    /**
+     * Finds a safe pathing goal beyond the last obstacle.
+     *
+     * @return validated goal, or null when none is available
+     */
+    private BlockPos trace() {
+        this.blocks.clear();
+
+        BlockPos pos = this.base();
+        BlockPos next = null;
+        int clear = 0;
+
+        for (int idx = 0; idx < span; idx++) {
+            if (this.step(pos)) {
+                clear = 0;
+                next = pos.add(this.dx, 0, this.dz);
+            } else if (++clear >= ahead) {
+                if (next == null) return null;
+                return next;
+            }
+
+            pos = pos.add(this.dx, 0, this.dz);
+        }
+
+        return null;
+    }
+
+    /**
+     * Checks the player-sized space for one trail step.
+     *
+     * @param pos center block of the trail step
+     * @return true when the step is obstructed
+     */
+    private boolean step(BlockPos pos) {
+        boolean blocked = this.column(pos);
+        if (this.dig.get()) this.collect(pos);
+
+        if (this.dx != 0 && this.dz != 0) {
+            BlockPos px = pos.add(this.dx, 0, 0);
+            BlockPos pz = pos.add(0, 0, this.dz);
+
+            blocked |= this.column(px);
+            blocked |= this.column(pz);
+
+            if (this.dig.get()) {
+                this.collect(px);
+                this.collect(pz);
+            }
+        }
+
+        return blocked;
+    }
+
+    /**
+     * Records breakable blocks from a trail column.
+     *
+     * @param pos lower block of the column
+     */
+    private void collect(BlockPos pos) {
+        for (int py = 0; py <= 1; py++) {
+            BlockPos block = pos.up(py);
+            if (!this.solid(block) || this.blocks.contains(block)) {
+                continue;
+            }
+
+            BlockState state = this.mc.world.getBlockState(block);
+            if (state.getHardness(this.mc.world, block) < 0) {
+                continue;
+            }
+
+            this.blocks.addLast(block);
+        }
+    }
+
+    //endregion
+
     //region Direction control
 
     /**
-     * Stores the highway direction from the player's yaw.
+     * Stores the closest highway direction from the player's yaw.
      */
     private void face() {
         float yaw = this.mc.player.getYaw();
@@ -470,10 +689,15 @@ public class BounceFly extends Module {
 
         this.dx = dxs[face];
         this.dz = dzs[face];
+
+        double len = Math.hypot(this.dx, this.dz);
+
+        this.nx = this.dx / len;
+        this.nz = this.dz / len;
     }
 
     /**
-     * Finds the snapped center line of the current highway.
+     * Stores the snapped center line of the current highway.
      */
     private void center() {
         double px = this.mc.player.getX();
@@ -503,6 +727,77 @@ public class BounceFly extends Module {
         this.mc.player.setYaw(yaw);
         this.mc.player.setHeadYaw(yaw);
         this.mc.player.setBodyYaw(yaw);
+    }
+
+    /**
+     * Finds the current block on the stored highway line.
+     *
+     * @return current center block
+     */
+    private BlockPos base() {
+        double px = this.mc.player.getX();
+        double pz = this.mc.player.getZ();
+
+        if (this.dx == 0) return this.block(this.px, pz);
+        if (this.dz == 0) return this.block(px, this.pz);
+
+        return this.diagonal(px, pz);
+    }
+
+    /**
+     * Projects a position onto the diagonal highway line.
+     *
+     * @param px world X coordinate
+     * @param pz world Z coordinate
+     * @return projected center block
+     */
+    private BlockPos diagonal(double px, double pz) {
+        boolean equal = this.dx == this.dz;
+        double axis = equal ? px + pz : px - pz;
+
+        double bx = axis + this.px;
+        double bz = equal ? axis - this.px : this.px - axis;
+
+        return this.block(bx / 2.0, bz / 2.0);
+    }
+
+    //endregion
+
+    //region Utilities and validation
+
+    /**
+     * Creates a block position on the highway level.
+     *
+     * @param px world X coordinate
+     * @param pz world Z coordinate
+     * @return block position on the highway level
+     */
+    private BlockPos block(double px, double pz) {
+        return new BlockPos(
+            (int) Math.round(px), this.level,
+            (int) Math.round(pz)
+        );
+    }
+
+    /**
+     * Checks a two-block-high trail column for collision.
+     *
+     * @param pos lower block of the column
+     * @return true when either block can collide
+     */
+    private boolean column(BlockPos pos) {
+        return this.solid(pos) || this.solid(pos.up());
+    }
+
+    /**
+     * Checks whether a block has a collision shape.
+     *
+     * @param pos block position to check
+     * @return true when the block can collide with the player
+     */
+    private boolean solid(BlockPos pos) {
+        BlockState state = this.mc.world.getBlockState(pos);
+        return !state.getCollisionShape(this.mc.world, pos).isEmpty();
     }
 
     /**

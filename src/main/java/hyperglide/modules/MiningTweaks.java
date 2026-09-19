@@ -1122,23 +1122,36 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Checks whether a block is within mining reach.
+     * Checks whether a block is within a given mining reach.
+     *
+     * @param pos block position to check
+     * @param reach maximum mining reach
+     * @return true when the block is within reach
+     */
+    public boolean reachable(BlockPos pos, double reach) {
+        if (!Client.ready() || pos == null) return false;
+
+        Vec3d eye = this.mc.player.getEyePos();
+
+        double px = Math.min(eye.x, pos.getX() + 1.0);
+        double py = Math.min(eye.y, pos.getY() + 1.0);
+        double pz = Math.min(eye.z, pos.getZ() + 1.0);
+
+        double dx = Math.max(pos.getX(), px) - eye.x;
+        double dy = Math.max(pos.getY(), py) - eye.y;
+        double dz = Math.max(pos.getZ(), pz) - eye.z;
+
+        return dx * dx + dy * dy + dz * dz <= reach * reach;
+    }
+
+    /**
+     * Checks whether a block is within normal mining reach.
      *
      * @param pos block position to check
      * @return true when the block is within reach
      */
     private boolean reachable(BlockPos pos) {
-        Vec3d eye = this.mc.player.getEyePos();
-
-        double px = Math.max(pos.getX(), Math.min(eye.x, pos.getX() + 1.0));
-        double py = Math.max(pos.getY(), Math.min(eye.y, pos.getY() + 1.0));
-        double pz = Math.max(pos.getZ(), Math.min(eye.z, pos.getZ() + 1.0));
-
-        double dx = px - eye.x;
-        double dy = py - eye.y;
-        double dz = pz - eye.z;
-
-        return dx * dx + dy * dy + dz * dz <= reach * reach;
+        return this.reachable(pos, reach);
     }
 
     /**

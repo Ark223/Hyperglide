@@ -5,6 +5,7 @@ import baritone.api.IBaritone;
 import baritone.api.Settings;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
+import baritone.api.pathing.goals.GoalNear;
 import baritone.api.pathing.goals.GoalXZ;
 import baritone.api.utils.input.Input;
 import net.minecraft.util.math.BlockPos;
@@ -102,6 +103,17 @@ public final class Baritone {
     }
 
     /**
+     * Starts walking to a destination within a given radius.
+     *
+     * @param pos destination position
+     * @param radius goal radius
+     */
+    public static void near(BlockPos pos, int radius) {
+        GoalNear goal = new GoalNear(pos, radius);
+        instance().getCustomGoalProcess().setGoalAndPath(goal);
+    }
+
+    /**
      * Cancels the current walking path.
      */
     public static void cancel() {
@@ -109,13 +121,14 @@ public final class Baritone {
     }
 
     /**
-     * Stops Baritone flight and walking immediately.
+     * Stops all active Baritone processes immediately.
      */
     public static void stop() {
         IBaritone baritone = instance();
 
         baritone.getElytraProcess().onLostControl();
         baritone.getCustomGoalProcess().onLostControl();
+        baritone.getBuilderProcess().onLostControl();
         baritone.getPathingBehavior().forceCancel();
     }
 
