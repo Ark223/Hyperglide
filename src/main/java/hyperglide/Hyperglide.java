@@ -1,6 +1,8 @@
 package hyperglide;
 
 import com.mojang.logging.LogUtils;
+
+import hyperglide.hud.AvgSpeed;
 import hyperglide.hud.TruePing;
 import hyperglide.modules.*;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
@@ -50,6 +52,8 @@ public class Hyperglide extends MeteorAddon {
     @Override
     public void onInitialize() {
         LOG.info("Initializing Hyperglide");
+
+        Hud.get().register(AvgSpeed.info);
         Hud.get().register(TruePing.info);
 
         for (Entry entry : MODULES) {
