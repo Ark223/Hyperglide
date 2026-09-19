@@ -33,9 +33,9 @@ public class BounceFly extends Module {
     private static final int ahead = 8;
     private static final int span = 192;
 
+    private static final int delay = 3;
     private static final int wait = 20;
     private static final int warmup = 20;
-    private static final int delay = 3;
 
     private static final int[] dxs = {0, -1, -1, -1, 0, 1, 1, 1};
     private static final int[] dzs = {1, 1, 0, -1, -1, -1, 0, 1};
@@ -53,7 +53,7 @@ public class BounceFly extends Module {
         .name("standard-pitch")
         .description("Camera pitch used while bouncing in standard mode.")
         .defaultValue(72.4)
-        .min(-90.0)
+        .min(0.0)
         .sliderMax(90.0)
         .decimalPlaces(2)
         .visible(() -> !this.acceleration.get())
@@ -62,7 +62,7 @@ public class BounceFly extends Module {
 
     private final Setting<Double> threshold = this.general.add(new DoubleSetting.Builder()
         .name("fall-threshold")
-        .description("Vertical velocity used to switch acceleration pitch.")
+        .description("Downward velocity used to switch acceleration pitch.")
         .defaultValue(0.193)
         .min(0.0)
         .sliderMax(1.0)
@@ -73,14 +73,14 @@ public class BounceFly extends Module {
 
     private final Setting<Boolean> obstacle = this.general.add(new BoolSetting.Builder()
         .name("obstacle-passer")
-        .description("Uses Baritone to pass detected obstacles.")
+        .description("Uses Baritone to pass through detected obstacles.")
         .defaultValue(true)
         .build()
     );
 
     private final Setting<Boolean> avoid = this.general.add(new BoolSetting.Builder()
         .name("avoid-collisions")
-        .description("Uses raycasts to detect obstacles and avoid collisions.")
+        .description("Uses raycasts to detect obstacles along the highway.")
         .defaultValue(true)
         .visible(this.obstacle::get)
         .build()
@@ -88,7 +88,7 @@ public class BounceFly extends Module {
 
     private final Setting<Boolean> dig = this.general.add(new BoolSetting.Builder()
         .name("mine-obstacles")
-        .description("Mines detected obstacle blocks before pathing past them.")
+        .description("Clears obstacles on the path before resuming travel.")
         .defaultValue(false)
         .visible(() -> this.obstacle.get() && this.avoid.get())
         .build()
