@@ -6,6 +6,7 @@ import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.systems.hud.elements.TextHud;
+import net.minecraft.client.gui.hud.PlayerListHud;
 import net.minecraft.text.Text;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -45,13 +46,10 @@ public class TruePing extends TextHud {
      * @return player list footer, or null when unavailable
      */
     private Text footer() {
-        if (MeteorClient.mc.inGameHud == null) {
-            return null;
-        }
+        if (MeteorClient.mc.inGameHud == null) return null;
 
-        return ((PlayerListAccessor)
-            MeteorClient.mc.inGameHud.getPlayerListHud()
-        ).hyperglide$getFooter();
+        PlayerListHud hud = MeteorClient.mc.inGameHud.getPlayerListHud();
+        return ((PlayerListAccessor) hud).hyperglide$getFooter();
     }
 
     /**

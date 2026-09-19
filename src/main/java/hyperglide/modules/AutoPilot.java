@@ -94,8 +94,8 @@ public class AutoPilot extends Module {
         }
 
         Baritone.settings(1.43, 0.4, false);
-
         this.reset();
+
         this.mining = Modules.get().get(MiningTweaks.class);
 
         if (this.mining != null) {
@@ -226,7 +226,7 @@ public class AutoPilot extends Module {
     }
 
     /**
-     * Restores Mining Tweaks to its state from before activation.
+     * Restores the Mining Tweaks state from before activation.
      */
     private void restore() {
         if (this.mining != null && !this.enabled &&
