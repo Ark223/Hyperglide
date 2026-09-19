@@ -9,7 +9,6 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.systems.hud.elements.TextHud;
-import net.minecraft.util.math.Vec3d;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Locale;
@@ -32,6 +31,15 @@ public class AvgSpeed extends TextHud {
         .build()
     );
 
+    private final Setting<Integer> precision = this.metrics.add(new IntSetting.Builder()
+        .name("precision")
+        .description("How many decimal places are displayed.")
+        .defaultValue(1)
+        .min(0)
+        .sliderMax(6)
+        .build()
+    );
+
     private final Setting<Unit> unit = this.metrics.add(new EnumSetting.Builder<Unit>()
         .name("speed-unit")
         .description("The unit used to display average speed.")
@@ -41,8 +49,11 @@ public class AvgSpeed extends TextHud {
 
     private final Deque<Double> speeds = new ArrayDeque<>();
 
-    private String value = "";
+    private double px = Double.NaN;
+    private double pz = Double.NaN;
+
     private double total;
+    private String value = "";
 
     /**
      * Defines the available units for displaying average speed.
@@ -73,6 +84,9 @@ public class AvgSpeed extends TextHud {
      */
     private void clear() {
         this.speeds.clear();
+
+        this.px = Double.NaN;
+        this.pz = Double.NaN;
         this.total = 0;
     }
 
@@ -87,8 +101,22 @@ public class AvgSpeed extends TextHud {
             return Double.NaN;
         }
 
-        Vec3d vel = MeteorClient.mc.player.getVelocity();
-        double speed = vel.horizontalLength() * 20.0;
+        double px = MeteorClient.mc.player.getX();
+        double pz = MeteorClient.mc.player.getZ();
+
+        if (!Double.isFinite(this.px)) {
+            this.px = px;
+            this.pz = pz;
+            return Double.NaN;
+        }
+
+        double dx = px - this.px;
+        double dz = pz - this.pz;
+
+        this.px = px;
+        this.pz = pz;
+
+        double speed = Math.hypot(dx, dz) * 20.0;
 
         this.speeds.addLast(speed);
         this.total += speed;
@@ -109,10 +137,12 @@ public class AvgSpeed extends TextHud {
     private void update(double speed) {
         boolean kmh = this.unit.get() == Unit.Kmh;
         double shown = kmh ? speed * 3.6 : speed;
+
         String suffix = kmh ? "km/h" : "bps";
+        String format = "%." + this.precision.get() + "f";
 
         String number = !Double.isFinite(shown) ? "speed"
-            : String.format(Locale.ROOT, "%.3f", shown);
+            : String.format(Locale.ROOT, format, shown);
 
         String value = number + " " + suffix;
         if (this.value.equals(value)) return;
