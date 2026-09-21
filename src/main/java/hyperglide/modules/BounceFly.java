@@ -30,7 +30,7 @@ public class BounceFly extends Module {
     private static final double stop = 0.2;
     private static final int grid = 10;
 
-    private static final int reach = 1;
+    private static final int reach = 2;
     private static final int ahead = 8;
     private static final int span = 192;
 
@@ -402,6 +402,7 @@ public class BounceFly extends Module {
             this.reset();
             this.clear();
             this.pass = false;
+            this.started = true;
         }
 
         return false;
@@ -417,12 +418,11 @@ public class BounceFly extends Module {
             return false;
         }
 
-        if (this.collision() == null) {
-            return false;
-        }
+        Vec3d hit = this.collision();
+        if (hit == null) return false;
 
         this.mc.player.stopGliding();
-        BlockPos goal = this.trace();
+        BlockPos goal = this.trace(hit);
 
         if (this.mining != null && this.dig.get() &&
             !this.blocks.isEmpty()) {
@@ -548,33 +548,38 @@ public class BounceFly extends Module {
     //region Obstacle scanning
 
     /**
-     * Finds a safe pathing goal beyond the last obstacle.
+     * Finds a safe pathing goal beyond the detected obstacle.
      *
+     * @param hit detected collision point
      * @return pathing goal
      */
-    private BlockPos trace() {
+    private BlockPos trace(Vec3d hit) {
         this.blocks.clear();
 
         BlockPos start = this.base();
-        BlockPos pos = start;
-        BlockPos next = null;
+        BlockPos point = this.point(hit.x, hit.z);
 
+        int distance = Math.max(
+            Math.abs(point.getX() - start.getX()),
+            Math.abs(point.getZ() - start.getZ())
+        );
+
+        BlockPos pos = start;
+        BlockPos last = null;
         int clear = 0;
 
         for (int idx = 0; idx < span; idx++) {
             if (this.step(pos)) {
+                last = pos;
                 clear = 0;
-                next = pos.add(this.dx, 0, this.dz);
-            } else if (++clear >= ahead) {
-                return next != null ? next : pos;
+            } else if (++clear >= ahead &&
+                (last != null || idx >= distance)) {
+                return last != null ? last : pos;
             }
             pos = pos.add(this.dx, 0, this.dz);
         }
 
-        int px = this.dx * span;
-        int pz = this.dz * span;
-
-        return start.add(px, 0, pz);
+        return start.add(this.dx * span, 0, this.dz * span);
     }
 
     /**
@@ -750,13 +755,34 @@ public class BounceFly extends Module {
      * @return current center block
      */
     private BlockPos base() {
-        double px = this.mc.player.getX();
-        double pz = this.mc.player.getZ();
+        return this.point(
+            this.mc.player.getX(),
+            this.mc.player.getZ()
+        );
+    }
 
+    /**
+     * Projects a position onto the stored highway line.
+     *
+     * @param px world X coordinate
+     * @param pz world Z coordinate
+     * @return projected center block
+     */
+    private BlockPos point(double px, double pz) {
+        return this.dx == 0 || this.dz == 0 ?
+            this.cardinal(px, pz) : this.diagonal(px, pz);
+    }
+
+    /**
+     * Projects a position onto a cardinal highway line.
+     *
+     * @param px world X coordinate
+     * @param pz world Z coordinate
+     * @return projected center block
+     */
+    private BlockPos cardinal(double px, double pz) {
         if (this.dx == 0) return this.block(this.px, pz);
-        if (this.dz == 0) return this.block(px, this.pz);
-
-        return this.diagonal(px, pz);
+        return this.block(px, this.pz);
     }
 
     /**
