@@ -108,7 +108,9 @@ public class BlockFarm extends Module {
         BlockState state = this.mc.world.getBlockState(this.pos);
 
         if (!state.isReplaceable()) {
-            if (!this.allowed(state.getBlock())) return;
+            if (!this.allowed(state.getBlock())) {
+                return;
+            }
 
             this.start(state);
             return;
@@ -165,14 +167,18 @@ public class BlockFarm extends Module {
      */
     private BlockPos target() {
         BlockPos base = this.mc.player.getBlockPos();
-        Vec3d look = Vec3d.fromPolar(0.0F, this.mc.player.getYaw());
+        if (!Placement.open(base)) base = base.up();
+
+        float yaw = this.mc.player.getYaw();
+        Vec3d look = Vec3d.fromPolar(0.0F, yaw);
 
         BlockPos best = null;
         double score = -Double.MAX_VALUE;
 
         for (Direction side : sides) {
             BlockPos pos = base.offset(side);
-            if (!this.mc.world.getBlockState(pos).isReplaceable() ||
+
+            if (!Placement.open(pos) ||
                 !this.support(pos) || this.occupied(pos)) {
                 continue;
             }

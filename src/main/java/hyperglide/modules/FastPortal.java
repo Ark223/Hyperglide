@@ -75,7 +75,7 @@ public class FastPortal extends Module {
         for (BlockPos pos : this.portal) {
             if (this.obsidian(pos)) continue;
 
-            if (!this.mc.world.getBlockState(pos).isReplaceable()) {
+            if (!Placement.open(pos)) {
                 this.error("Portal area is obstructed.");
                 this.toggle();
                 return;
@@ -85,13 +85,13 @@ public class FastPortal extends Module {
         }
 
         if (need == 0) {
-            this.info("A complete portal already exists here.");
+            this.info("A portal already exists here.");
             this.toggle();
             return;
         }
 
         if (Hotbar.count(Items.OBSIDIAN) < need) {
-            this.error("Not enough obsidian in hotbar (need " + need + ").");
+            this.error("Not enough obsidian in hotbar.");
             this.toggle();
         }
     }
@@ -127,7 +127,7 @@ public class FastPortal extends Module {
         if (++this.timer < this.delay.get()) return;
 
         BlockPos pos = this.portal.get(this.index);
-        if (!this.mc.world.getBlockState(pos).isReplaceable()) {
+        if (!Placement.open(pos)) {
             this.error("Portal area became obstructed.");
             this.toggle();
             return;
@@ -181,7 +181,7 @@ public class FastPortal extends Module {
 
         BlockPos base = BlockPos.ofFloored(
             this.mc.player.getX() + front.getOffsetX() * 2,
-            this.mc.player.getY(),
+            this.level(),
             this.mc.player.getZ() + front.getOffsetZ() * 2
         ).offset(right, -1);
 
@@ -258,6 +258,22 @@ public class FastPortal extends Module {
     //endregion
 
     //region Utilities and validation
+
+    /**
+     * Calculates the portal layer at the player's feet.
+     *
+     * @return Y coordinate of the portal base
+     */
+    private int level() {
+        boolean ground = this.mc.player.isOnGround();
+        double offset = ground ? 0.01 : 1.0;
+
+        double px = this.mc.player.getX();
+        double pz = this.mc.player.getZ();
+
+        double py = this.mc.player.getY() - offset;
+        return BlockPos.ofFloored(px, py, pz).getY() + 1;
+    }
 
     /**
      * Checks whether a position contains obsidian.

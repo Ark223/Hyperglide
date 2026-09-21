@@ -312,36 +312,19 @@ public class Scaffolding extends Module {
      * @return Y coordinate of the scaffold layer
      */
     private int layer() {
-        return BlockPos.ofFloored(
-            this.mc.player.getX(), this.mc.player.getY(),
-            this.mc.player.getZ()
-        ).down().getY();
+        boolean ground = this.mc.player.isOnGround();
+        double offset = ground ? 0.01 : 1.0;
+
+        double px = this.mc.player.getX();
+        double pz = this.mc.player.getZ();
+
+        double py = this.mc.player.getY() - offset;
+        return BlockPos.ofFloored(px, py, pz).getY();
     }
 
     //endregion
 
     //region Utilities and validation
-
-    /**
-     * Checks whether a position is replaceable on the scaffold layer.
-     *
-     * @param pos position to check
-     * @return true when the position is open on the active layer
-     */
-    private boolean open(BlockPos pos) {
-        return pos.getY() == this.level
-            && this.mc.world.getBlockState(pos).isReplaceable();
-    }
-
-    /**
-     * Checks whether a position is open and within reach.
-     *
-     * @param pos position to check
-     * @return true when the position is valid
-     */
-    private boolean valid(BlockPos pos) {
-        return this.open(pos) && !this.far(pos);
-    }
 
     /**
      * Checks whether a position is outside placement reach.
@@ -353,6 +336,26 @@ public class Scaffolding extends Module {
         double px = pos.getX() + 0.5 - this.mc.player.getX();
         double pz = pos.getZ() + 0.5 - this.mc.player.getZ();
         return px * px + pz * pz > reach * reach;
+    }
+
+    /**
+     * Checks whether a position is replaceable on the scaffold layer.
+     *
+     * @param pos position to check
+     * @return true when the position is open on the active layer
+     */
+    private boolean open(BlockPos pos) {
+        return pos.getY() == this.level && Placement.open(pos);
+    }
+
+    /**
+     * Checks whether a position is open and within reach.
+     *
+     * @param pos position to check
+     * @return true when the position is valid
+     */
+    private boolean valid(BlockPos pos) {
+        return this.open(pos) && !this.far(pos);
     }
 
     //endregion
