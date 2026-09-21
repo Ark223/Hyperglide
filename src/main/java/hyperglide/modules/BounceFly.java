@@ -170,6 +170,7 @@ public class BounceFly extends Module {
         this.release();
 
         if (this.pass) Baritone.stop();
+
         this.restore();
         this.reset();
         this.clear();
@@ -401,6 +402,7 @@ public class BounceFly extends Module {
             this.rotate();
             this.reset();
             this.clear();
+
             this.pass = false;
             this.started = true;
         }
@@ -518,10 +520,10 @@ public class BounceFly extends Module {
     }
 
     /**
-     * Starts recovery pathing from the current highway position.
+     * Starts recovery pathing toward a safe highway position.
      */
     private void path() {
-        this.path(this.base());
+        this.path(this.trace());
     }
 
     /**
@@ -548,6 +550,27 @@ public class BounceFly extends Module {
     //region Obstacle scanning
 
     /**
+     * Finds a safe center position for recovery pathing.
+     *
+     * @return recovery pathing goal
+     */
+    private BlockPos trace() {
+        BlockPos start = this.base();
+        BlockPos pos = start, goal;
+
+        for (int idx = 0; idx < span; idx++) {
+            goal = pos.add(this.dx * reach, 0, this.dz * reach);
+            if (!this.column(goal) && this.solid(goal.down())) {
+                return pos;
+            } else {
+                pos = pos.add(this.dx, 0, this.dz);
+            }
+        }
+
+        return start.add(this.dx * span, 0, this.dz * span);
+    }
+
+    /**
      * Finds a safe pathing goal beyond the detected obstacle.
      *
      * @param hit detected collision point
@@ -572,8 +595,9 @@ public class BounceFly extends Module {
             if (this.step(pos)) {
                 last = pos;
                 clear = 0;
-            } else if (++clear >= ahead &&
-                (last != null || idx >= distance)) {
+            } else if (
+                last != null && ++clear >= ahead ||
+                last == null && idx >= distance) {
                 return last != null ? last : pos;
             }
             pos = pos.add(this.dx, 0, this.dz);
