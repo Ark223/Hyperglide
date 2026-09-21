@@ -237,6 +237,15 @@ public class BounceFly extends Module {
     }
 
     /**
+     * Checks whether acceleration mode is enabled.
+     *
+     * @return true when acceleration mode is enabled
+     */
+    public boolean accelerated() {
+        return this.acceleration.get();
+    }
+
+    /**
      * Clears bounce movement state.
      */
     private void reset() {

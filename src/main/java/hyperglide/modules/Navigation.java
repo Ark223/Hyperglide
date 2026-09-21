@@ -34,8 +34,9 @@ public class Navigation extends Module {
     private static final double margin = 8.0;
     private static final double span = 100000.0;
 
-    private static final float highway = 41.1F;
     private static final float standard = 27.0F;
+    private static final float highway = 41.13F;
+    private static final float accelerated = 48.263F;
 
     private static final Color background = new Color(0, 0, 0, 220);
     private static final Color foreground = new Color(255, 255, 255, 255);
@@ -945,8 +946,19 @@ public class Navigation extends Module {
         }
 
         this.route = this.search.find(
-            Player.position(), this.target(), highway, standard
+            Player.position(), this.target(), this.speed(), standard
         );
+    }
+
+    /**
+     * Returns the highway speed used for route calculations.
+     *
+     * @return configured Bounce Fly highway speed
+     */
+    private float speed() {
+        BounceFly bounce = Modules.get().get(BounceFly.class);
+        boolean faster = bounce != null && bounce.accelerated();
+        return faster ? accelerated : highway;
     }
 
     /**
