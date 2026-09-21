@@ -88,9 +88,7 @@ public final class Elytra {
      * Sends a direct request to start elytra flight.
      */
     public static void start() {
-        Packets.command(
-            ClientCommandC2SPacket.Mode.START_FALL_FLYING
-        );
+        Packets.command(ClientCommandC2SPacket.Mode.START_FALL_FLYING);
     }
 
     /**

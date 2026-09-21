@@ -20,7 +20,7 @@ public abstract class SoundMixin {
      * @param info sound callback
      */
     @Inject(method = "play(Lnet/minecraft/client/sound/SoundInstance;)V",
-        at = @At("HEAD"), cancellable = true, require = 0
+        at = @At("HEAD"), cancellable = true
     )
     private void hyperglide$play(SoundInstance sound, CallbackInfo info) {
         if (hyperglide$mute(sound)) info.cancel();
@@ -34,7 +34,7 @@ public abstract class SoundMixin {
      * @param info sound callback
      */
     @Inject(method = "play(Lnet/minecraft/client/sound/SoundInstance;I)V",
-        at = @At("HEAD"), cancellable = true, require = 0
+        at = @At("HEAD"), cancellable = true
     )
     private void hyperglide$playDelayed(
         SoundInstance sound, int delay, CallbackInfo info) {
