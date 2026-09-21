@@ -1,6 +1,7 @@
 package hyperglide.modules;
 
 import hyperglide.Hyperglide;
+import hyperglide.utilities.API;
 import hyperglide.utilities.Baritone;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Elytra;
@@ -25,7 +26,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 
 public class BounceFly extends Module {
-    private static final double range = 4.5;
+    private static final double range = 5.0;
     private static final double stop = 0.2;
     private static final int grid = 10;
 
@@ -123,6 +124,8 @@ public class BounceFly extends Module {
     private int jump;
     private int level;
 
+    private Vec3d last;
+
     private boolean pass;
     private boolean launch;
     private boolean enabled;
@@ -203,9 +206,8 @@ public class BounceFly extends Module {
         this.launch(vel);
         this.mc.player.setSprinting(true);
 
-        if (!this.takeoff() || this.blocked()) {
-            return;
-        }
+        if (!this.takeoff()) return;
+        if (this.blocked()) return;
 
         this.stuck();
     }
@@ -240,7 +242,9 @@ public class BounceFly extends Module {
         this.slow = 0;
         this.warm = 0;
         this.jump = 0;
+
         this.launch = false;
+        this.last = null;
     }
 
     /**
@@ -362,7 +366,7 @@ public class BounceFly extends Module {
 
     //endregion
 
-    //region Obstacle control
+    //region Travel control
 
     /**
      * Manages active obstacle passing and mining.
@@ -417,16 +421,11 @@ public class BounceFly extends Module {
             return false;
         }
 
+        this.mc.player.stopGliding();
         BlockPos goal = this.trace();
-        if (goal == null) {
-            this.clear();
-            this.release();
-            this.reset();
-            return true;
-        }
 
-        if (this.dig.get() && !this.blocks.isEmpty() &&
-            this.mining != null) {
+        if (this.mining != null && this.dig.get() &&
+            !this.blocks.isEmpty()) {
             this.mine(goal);
         } else {
             this.path(goal);
@@ -436,9 +435,21 @@ public class BounceFly extends Module {
     }
 
     /**
-     * Detects low movement speed and starts recovery pathing.
+     * Detects stalled movement and starts recovery pathing.
      */
     private void stuck() {
+        Vec3d pos = API.pos(this.mc.player);
+
+        if (this.last == null) {
+            this.last = pos;
+            return;
+        }
+
+        double dx = pos.x - this.last.x;
+        double dz = pos.z - this.last.z;
+        double moved = Math.hypot(dx, dz);
+
+        this.last = pos;
         this.warm++;
 
         if (!this.obstacle.get() || this.warm < warmup) {
@@ -446,14 +457,15 @@ public class BounceFly extends Module {
             return;
         }
 
-        Vec3d velocity = this.mc.player.getVelocity();
-        double speed = velocity.horizontalLength();
-
-        if (speed < stop) this.slow++;
+        if (moved < stop) this.slow++;
         else this.slow = 0;
 
         if (this.slow > wait) this.path();
     }
+
+    //endregion
+
+    //region Obstacle pathing
 
     /**
      * Starts obstacle mining before pathing onward.
@@ -533,6 +545,87 @@ public class BounceFly extends Module {
 
     //endregion
 
+    //region Obstacle scanning
+
+    /**
+     * Finds a safe pathing goal beyond the last obstacle.
+     *
+     * @return pathing goal
+     */
+    private BlockPos trace() {
+        this.blocks.clear();
+
+        BlockPos start = this.base();
+        BlockPos pos = start;
+        BlockPos next = null;
+
+        int clear = 0;
+
+        for (int idx = 0; idx < span; idx++) {
+            if (this.step(pos)) {
+                clear = 0;
+                next = pos.add(this.dx, 0, this.dz);
+            } else if (++clear >= ahead) {
+                return next != null ? next : pos;
+            }
+            pos = pos.add(this.dx, 0, this.dz);
+        }
+
+        int px = this.dx * span;
+        int pz = this.dz * span;
+
+        return start.add(px, 0, pz);
+    }
+
+    /**
+     * Checks the player-sized space for one trail step.
+     *
+     * @param pos center block of the trail step
+     * @return true when the step is obstructed
+     */
+    private boolean step(BlockPos pos) {
+        boolean blocked = this.column(pos);
+        if (this.dig.get()) this.collect(pos);
+
+        if (this.dx != 0 && this.dz != 0) {
+            BlockPos px = pos.add(this.dx, 0, 0);
+            BlockPos pz = pos.add(0, 0, this.dz);
+
+            blocked |= this.column(px);
+            blocked |= this.column(pz);
+
+            if (this.dig.get()) {
+                this.collect(px);
+                this.collect(pz);
+            }
+        }
+
+        return blocked;
+    }
+
+    /**
+     * Records breakable blocks from a trail column.
+     *
+     * @param pos lower block of the column
+     */
+    private void collect(BlockPos pos) {
+        for (int py = 0; py <= 1; py++) {
+            BlockPos block = pos.up(py);
+            if (!this.solid(block) || this.blocks.contains(block)) {
+                continue;
+            }
+
+            BlockState state = this.mc.world.getBlockState(block);
+            if (state.getHardness(this.mc.world, block) < 0) {
+                continue;
+            }
+
+            this.blocks.addLast(block);
+        }
+    }
+
+    //endregion
+
     //region Collision detection
 
     /**
@@ -598,88 +691,10 @@ public class BounceFly extends Module {
 
     //endregion
 
-    //region Obstacle scanning
-
-    /**
-     * Finds a safe pathing goal beyond the last obstacle.
-     *
-     * @return validated goal, or null when none is available
-     */
-    private BlockPos trace() {
-        this.blocks.clear();
-
-        BlockPos pos = this.base();
-        BlockPos next = null;
-        int clear = 0;
-
-        for (int idx = 0; idx < span; idx++) {
-            if (this.step(pos)) {
-                clear = 0;
-                next = pos.add(this.dx, 0, this.dz);
-            } else if (++clear >= ahead) {
-                if (next == null) return null;
-                return next;
-            }
-
-            pos = pos.add(this.dx, 0, this.dz);
-        }
-
-        return null;
-    }
-
-    /**
-     * Checks the player-sized space for one trail step.
-     *
-     * @param pos center block of the trail step
-     * @return true when the step is obstructed
-     */
-    private boolean step(BlockPos pos) {
-        boolean blocked = this.column(pos);
-        if (this.dig.get()) this.collect(pos);
-
-        if (this.dx != 0 && this.dz != 0) {
-            BlockPos px = pos.add(this.dx, 0, 0);
-            BlockPos pz = pos.add(0, 0, this.dz);
-
-            blocked |= this.column(px);
-            blocked |= this.column(pz);
-
-            if (this.dig.get()) {
-                this.collect(px);
-                this.collect(pz);
-            }
-        }
-
-        return blocked;
-    }
-
-    /**
-     * Records breakable blocks from a trail column.
-     *
-     * @param pos lower block of the column
-     */
-    private void collect(BlockPos pos) {
-        for (int py = 0; py <= 1; py++) {
-            BlockPos block = pos.up(py);
-            if (!this.solid(block) || this.blocks.contains(block)) {
-                continue;
-            }
-
-            BlockState state = this.mc.world.getBlockState(block);
-            if (state.getHardness(this.mc.world, block) < 0) {
-                continue;
-            }
-
-            this.blocks.addLast(block);
-        }
-    }
-
-    //endregion
-
     //region Direction control
 
     /**
-     * Stores the closest highway direction from the player's yaw.
+     * Stores the highway direction from the player's yaw.
      */
     private void face() {
         float yaw = this.mc.player.getYaw();
