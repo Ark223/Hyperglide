@@ -1,6 +1,7 @@
 package hyperglide.mixin;
 
 import hyperglide.modules.NoSprintFov;
+import hyperglide.utilities.Flight;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import org.spongepowered.asm.mixin.Mixin;
@@ -15,9 +16,14 @@ public abstract class FovMixin {
      * @param scale FOV multiplier
      * @return adjusted FOV multiplier
      */
-    @ModifyVariable(method = "getFovMultiplier", at = @At("HEAD"), argsOnly = true, ordinal = 0)
+    @ModifyVariable(method = "getFovMultiplier",
+        at = @At("HEAD"), argsOnly = true, ordinal = 0
+    )
     private float hyperglide$fov(float scale) {
-        AbstractClientPlayerEntity player = (AbstractClientPlayerEntity) (Object) this;
+        if (Flight.get().spoof()) return 0.0F;
+
+        AbstractClientPlayerEntity player =
+            (AbstractClientPlayerEntity) (Object) this;
         if (!player.isSprinting()) return scale;
 
         NoSprintFov module = Modules.get().get(NoSprintFov.class);

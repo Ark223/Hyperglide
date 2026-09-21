@@ -3,8 +3,8 @@ package hyperglide.modules;
 import hyperglide.Hyperglide;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Elytra;
+import hyperglide.utilities.Flight;
 import hyperglide.utilities.Hotbar;
-import hyperglide.utilities.Packets;
 import hyperglide.utilities.Takeoff;
 import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
@@ -28,7 +28,6 @@ import net.minecraft.entity.projectile.FireworkRocketEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket;
-import net.minecraft.util.Hand;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
@@ -110,9 +109,11 @@ public class ControlFly extends Module {
 
     private final Boost boost = new Boost();
     private final Takeoff input = new Takeoff();
-    private final Flight flight = new Flight();
+    private final Motion motion = new Motion();
     private final Turn turn = new Turn();
     private final View view = new View();
+
+    private final Flight flight = Flight.get();
 
     private int jump;
 
@@ -133,9 +134,9 @@ public class ControlFly extends Module {
         this.view.yaw = this.mc.player.getYaw();
         this.view.pitch = this.mc.player.getPitch();
 
-        this.flight.yaw = this.view.yaw;
-        this.flight.pitch = this.view.pitch;
-        this.flight.altitude = this.mc.player.getY();
+        this.motion.yaw = this.view.yaw;
+        this.motion.pitch = this.view.pitch;
+        this.motion.altitude = this.mc.player.getY();
     }
 
     /**
@@ -195,8 +196,8 @@ public class ControlFly extends Module {
             return;
         }
 
-        if (this.flight.brake) {
-            this.flight.brake = false;
+        if (this.motion.brake) {
+            this.motion.brake = false;
             this.stop(event);
             return;
         }
@@ -254,9 +255,9 @@ public class ControlFly extends Module {
         this.jump = 0;
         this.input.reset();
 
-        this.flight.yaw = 0.0F;
-        this.flight.pitch = 0.0F;
-        this.flight.altitude = 0.0;
+        this.motion.yaw = 0.0F;
+        this.motion.pitch = 0.0F;
+        this.motion.altitude = 0.0;
 
         this.view.active = false;
         this.view.yaw = 0.0F;
@@ -280,11 +281,11 @@ public class ControlFly extends Module {
 
         this.idle();
 
-        this.flight.input = 0;
-        this.flight.dir = Vec3d.ZERO;
-        this.flight.brake = false;
+        this.motion.input = 0;
+        this.motion.dir = Vec3d.ZERO;
+        this.motion.brake = false;
 
-        this.flight.altitude =
+        this.motion.altitude =
             this.mc.player == null ?
             0.0 : this.mc.player.getY();
 
@@ -295,9 +296,9 @@ public class ControlFly extends Module {
      * Clears manual, leveling and steering flight states.
      */
     private void idle() {
-        this.flight.manual = false;
-        this.flight.leveling = false;
-        this.flight.steering = false;
+        this.motion.manual = false;
+        this.motion.leveling = false;
+        this.motion.steering = false;
     }
 
     //endregion
@@ -316,22 +317,22 @@ public class ControlFly extends Module {
 
         int state = this.state();
         boolean redirect =
-            this.flight.input != 0 &&
-            this.flight.input != state;
+            this.motion.input != 0 &&
+            this.motion.input != state;
 
-        this.flight.input = state;
-        this.flight.manual =
+        this.motion.input = state;
+        this.motion.manual =
             this.mc.options.jumpKey.isPressed() ||
             this.mc.options.sneakKey.isPressed();
 
         Vec3d dir = this.steer(input.normalize());
 
-        if (this.flight.dir.lengthSquared() >= epsilon &&
-            this.sharp(this.flight.dir, dir)) {
-            this.flight.brake = true;
+        if (this.motion.dir.lengthSquared() >= epsilon &&
+            this.sharp(this.motion.dir, dir)) {
+            this.motion.brake = true;
         }
 
-        this.flight.dir = dir;
+        this.motion.dir = dir;
 
         boolean boosted = this.active();
         this.aim(dir, boosted);
@@ -339,8 +340,8 @@ public class ControlFly extends Module {
         boolean launch = this.launch(dir, boosted, redirect);
         if (launch) this.prepare();
 
-        this.mc.player.setYaw(this.flight.yaw);
-        this.mc.player.setPitch(this.flight.pitch);
+        this.mc.player.setYaw(this.motion.yaw);
+        this.mc.player.setPitch(this.motion.pitch);
 
         this.rotate(launch);
     }
@@ -351,13 +352,13 @@ public class ControlFly extends Module {
     private void rest() {
         this.idle();
 
-        this.flight.yaw = this.mc.player.getYaw();
-        this.flight.pitch = this.mc.player.getPitch();
+        this.motion.yaw = this.mc.player.getYaw();
+        this.motion.pitch = this.mc.player.getPitch();
 
         if (!this.renew()) return;
 
         this.await();
-        this.rocket(this.flight.yaw, this.flight.pitch);
+        this.rocket(this.motion.yaw, this.motion.pitch);
     }
 
     /**
@@ -414,7 +415,7 @@ public class ControlFly extends Module {
             return flat.multiply(amount / horizontal);
         }
 
-        return Vec3d.fromPolar(0.0F, this.flight.yaw).multiply(amount);
+        return Vec3d.fromPolar(0.0F, this.motion.yaw).multiply(amount);
     }
 
     //endregion
@@ -514,7 +515,7 @@ public class ControlFly extends Module {
      * Starts automatic takeoff after jump is held long enough.
      */
     private void takeoff() {
-        if (!this.starter.get() || !Elytra.equipped()) {
+        if (!this.starter.get() || !this.flight.available()) {
             this.jump = 0;
             this.input.reset();
             return;
@@ -583,19 +584,19 @@ public class ControlFly extends Module {
     private Vec3d steer(Vec3d input) {
         double length = input.horizontalLength();
         if (length < epsilon) {
-            if (!this.flight.steering) {
-                this.flight.yaw = this.mc.player.getYaw();
-                this.flight.steering = true;
+            if (!this.motion.steering) {
+                this.motion.yaw = this.mc.player.getYaw();
+                this.motion.steering = true;
             }
             return input;
         }
 
-        this.flight.steering = true;
-        this.flight.yaw = (float) (Math.toDegrees(
+        this.motion.steering = true;
+        this.motion.yaw = (float) (Math.toDegrees(
             Math.atan2(input.z, input.x)) - 90.0
         );
 
-        Vec3d flat = Vec3d.fromPolar(0.0F, this.flight.yaw);
+        Vec3d flat = Vec3d.fromPolar(0.0F, this.motion.yaw);
         flat = flat.multiply(length);
 
         return flat.add(0.0, input.y, 0.0).normalize();
@@ -644,19 +645,19 @@ public class ControlFly extends Module {
      * @param boosted whether an active rocket is boosting the player
      */
     private void aim(Vec3d dir, boolean boosted) {
-        if (this.flight.manual) {
-            this.flight.leveling = false;
-            this.flight.altitude = this.mc.player.getY();
-            this.flight.pitch = this.angle(dir);
+        if (this.motion.manual) {
+            this.motion.leveling = false;
+            this.motion.altitude = this.mc.player.getY();
+            this.motion.pitch = this.angle(dir);
             return;
         }
 
-        if (!this.flight.leveling) {
-            this.flight.altitude = this.mc.player.getY();
-            this.flight.leveling = true;
+        if (!this.motion.leveling) {
+            this.motion.altitude = this.mc.player.getY();
+            this.motion.leveling = true;
         }
 
-        this.flight.pitch = !this.gravity.get() ? 0.0F :
+        this.motion.pitch = !this.gravity.get() ? 0.0F :
             this.level(this.mc.player.getVelocity(), boosted);
     }
 
@@ -668,11 +669,11 @@ public class ControlFly extends Module {
      * @return selected leveling pitch
      */
     private float level(Vec3d velocity, boolean boosted) {
-        double error = this.flight.altitude - this.mc.player.getY();
-        double desired = MathHelper.clamp(error * gain + lift, -0.20, 0.20);
+        double error = this.motion.altitude - this.mc.player.getY();
+        double desired = MathHelper.clamp(error * gain + lift, -0.2, 0.2);
 
         Choice choice = new Choice(
-            this.flight.pitch, Double.POSITIVE_INFINITY
+            this.motion.pitch, Double.POSITIVE_INFINITY
         );
 
         choice = this.search(velocity, boosted, desired,
@@ -721,14 +722,14 @@ public class ControlFly extends Module {
      * @return candidate score
      */
     private double score(Vec3d velocity, float pitch, double desired, boolean boosted) {
-        Vec3d next = this.predict(velocity, this.flight.yaw, pitch, boosted);
+        Vec3d next = this.predict(velocity, this.motion.yaw, pitch, boosted);
         double score = Math.abs(next.y - desired);
 
         score += Math.max(0.0,
             this.minimum.get() / ticks - next.horizontalLength()
         ) * 0.01;
 
-        score += Math.abs(pitch - this.flight.pitch) * 1.0E-5;
+        score += Math.abs(pitch - this.motion.pitch) * 1.0E-5;
         return score;
     }
 
@@ -745,15 +746,15 @@ public class ControlFly extends Module {
         boolean changed = this.changed();
 
         if (launch) {
-            float yaw = this.flight.yaw;
-            float pitch = this.flight.pitch;
+            float yaw = this.motion.yaw;
+            float pitch = this.motion.pitch;
 
             this.boost.launching = true;
 
             Rotations.rotate(yaw, pitch, priority, () -> this.rocket(yaw, pitch));
             changed = true;
         } else if (changed) {
-            Rotations.rotate(this.flight.yaw, this.flight.pitch, priority);
+            Rotations.rotate(this.motion.yaw, this.motion.pitch, priority);
         }
 
         if (changed) this.remember();
@@ -767,17 +768,17 @@ public class ControlFly extends Module {
     private boolean changed() {
         return !this.turn.active ||
             Math.abs(MathHelper.wrapDegrees(
-                this.flight.yaw - this.turn.yaw)) > 0.05F ||
+                this.motion.yaw - this.turn.yaw)) > 0.05F ||
             Math.abs(
-                this.flight.pitch - this.turn.pitch) > 0.05F;
+                this.motion.pitch - this.turn.pitch) > 0.05F;
     }
 
     /**
      * Stores the most recently synchronized flight rotation.
      */
     private void remember() {
-        this.turn.yaw = this.flight.yaw;
-        this.turn.pitch = this.flight.pitch;
+        this.turn.yaw = this.motion.yaw;
+        this.turn.pitch = this.motion.pitch;
         this.turn.active = true;
     }
 
@@ -862,7 +863,7 @@ public class ControlFly extends Module {
 
         Vec3d next = this.predict(
             this.mc.player.getVelocity(),
-            this.flight.yaw, this.flight.pitch, boosted
+            this.motion.yaw, this.motion.pitch, boosted
         );
 
         return next.horizontalLength() < Math.min(
@@ -876,15 +877,15 @@ public class ControlFly extends Module {
     private void prepare() {
         this.await();
 
-        if (!this.flight.manual && this.gravity.get()) {
-            this.flight.pitch = this.level(
+        if (!this.motion.manual && this.gravity.get()) {
+            this.motion.pitch = this.level(
                 this.mc.player.getVelocity(), true
             );
         }
     }
 
     /**
-     * Selects and uses a firework rocket at the controlled rotation.
+     * Requests a firework at the controlled rotation.
      *
      * @param yaw controlled flight yaw
      * @param pitch controlled flight pitch
@@ -895,36 +896,39 @@ public class ControlFly extends Module {
             return;
         }
 
-        FindItemResult result = InvUtils.findInHotbar(Items.FIREWORK_ROCKET);
-        if (!result.found()) {
+        if (!this.flight.request(() -> this.firework(yaw, pitch))) {
             this.cancel();
-            return;
         }
+    }
 
-        Hand hand = result.isOffhand() ? Hand.OFF_HAND : Hand.MAIN_HAND;
+    /**
+     * Sends a firework and updates the current boost timer.
+     *
+     * @param yaw controlled flight yaw
+     * @param pitch controlled flight pitch
+     * @return true when the firework packet was sent
+     */
+    private boolean firework(float yaw, float pitch) {
+        FindItemResult result = InvUtils.findInHotbar(Items.FIREWORK_ROCKET);
+        if (!result.found()) return false;
 
         ItemStack stack = this.stack(result);
         if (!stack.isOf(Items.FIREWORK_ROCKET)) {
-            this.cancel();
-            return;
+            return false;
         }
-
-        int selected = Hotbar.selected();
-        boolean swap = !result.isOffhand() && result.slot() != selected;
 
         this.boost.automatic = true;
 
         try {
-            if (swap) Hotbar.sync(result.slot());
-            Packets.item(hand, yaw, pitch);
+            if (!Elytra.firework(yaw, pitch)) return false;
             this.count(stack);
         } finally {
-            if (swap) Hotbar.sync(selected);
             this.boost.automatic = false;
         }
 
         this.boost.expiry = this.mc.player.age + timeout;
         this.boost.launching = false;
+        return true;
     }
 
     /**
@@ -965,14 +969,14 @@ public class ControlFly extends Module {
     /**
      * Applies mouse movement to the independent camera rotation.
      *
-     * @param x horizontal mouse movement
-     * @param y vertical mouse movement
+     * @param mx horizontal mouse movement
+     * @param my vertical mouse movement
      */
-    public void look(double x, double y) {
-        this.view.yaw += (float) (x * 0.15);
+    public void look(double mx, double my) {
+        this.view.yaw += (float) (mx * 0.15);
 
         this.view.pitch = MathHelper.clamp(
-            this.view.pitch + (float) (y * 0.15), -90.0F, 90.0F
+            this.view.pitch + (float) (my * 0.15), -90.0F, 90.0F
         );
     }
 
@@ -1066,9 +1070,9 @@ public class ControlFly extends Module {
     private record Choice(float pitch, double score) {}
 
     /**
-     * Stores active controlled flight state.
+     * Stores the movement state used by controlled flight.
      */
-    private static class Flight {
+    private static class Motion {
         private int input;
 
         private boolean manual;

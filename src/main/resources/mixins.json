@@ -7,6 +7,7 @@
     "CameraMixin",
     "ClientAccessor",
     "ClientPlayerMixin",
+    "DataTrackerMixin",
     "EntityAccessor",
     "EntityMixin",
     "FireworkMixin",
@@ -14,11 +15,13 @@
     "InGameHudMixin",
     "InputAccessor",
     "InteractionAccessor",
+    "InteractionMixin",
     "ItemOverlayMixin",
     "KeyBindingMixin",
     "LivingEntityMixin",
     "MiningTweaksMixin",
-    "PlayerListAccessor"
+    "PlayerListAccessor",
+    "SoundMixin"
   ],
   "injectors": {
     "defaultRequire": 1

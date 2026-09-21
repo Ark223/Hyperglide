@@ -1,10 +1,14 @@
 package hyperglide.utilities;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.EquippableComponent;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
+import net.minecraft.screen.PlayerScreenHandler;
+import net.minecraft.util.Hand;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
@@ -28,6 +32,48 @@ public final class Elytra {
     }
 
     /**
+     * Checks whether the player is wearing a chestplate.
+     *
+     * @return true when a chestplate is equipped
+     */
+    public static boolean chestplate() {
+        return chestplate(client.player.getEquippedStack(
+            EquipmentSlot.CHEST
+        ));
+    }
+
+    /**
+     * Checks whether a stack can be worn as a chestplate.
+     *
+     * @param stack item stack to inspect
+     * @return true when the stack uses the chest slot
+     */
+    public static boolean chestplate(ItemStack stack) {
+        if (stack.isEmpty() || stack.isOf(Items.ELYTRA)) {
+            return false;
+        }
+
+        EquippableComponent equipment = stack.get(
+            DataComponentTypes.EQUIPPABLE
+        );
+
+        if (equipment == null) return false;
+        return equipment.slot() == EquipmentSlot.CHEST;
+    }
+
+    /**
+     * Finds the healthiest elytra in the hotbar.
+     *
+     * @return matching hotbar slot, or -1 when unavailable
+     */
+    public static int hotbar() {
+        return Hotbar.best(
+            stack -> stack.isOf(Items.ELYTRA),
+            Elytra::remaining
+        );
+    }
+
+    /**
      * Returns the remaining durability of an item stack.
      *
      * @param stack item stack to check
@@ -42,11 +88,62 @@ public final class Elytra {
      * Sends a direct request to start elytra flight.
      */
     public static void start() {
-        client.getNetworkHandler().sendPacket(
-            new ClientCommandC2SPacket(client.player,
-                ClientCommandC2SPacket.Mode.START_FALL_FLYING
-            )
+        Packets.command(
+            ClientCommandC2SPacket.Mode.START_FALL_FLYING
         );
+    }
+
+    /**
+     * Uses a firework with the current player rotation.
+     *
+     * @return true when the firework packet was sent
+     */
+    public static boolean firework() {
+        if (client.player == null) return false;
+
+        float yaw = client.player.getYaw();
+        float pitch = client.player.getPitch();
+
+        return firework(yaw, pitch);
+    }
+
+    /**
+     * Uses a firework without changing the selected hotbar slot.
+     *
+     * @param yaw interaction yaw
+     * @param pitch interaction pitch
+     * @return true when the firework packet was sent
+     */
+    public static boolean firework(float yaw, float pitch) {
+        if (!Client.interaction() || !Inventory.ready()) {
+            return false;
+        }
+
+        if (client.player.getMainHandStack().isOf(Items.FIREWORK_ROCKET)) {
+            Packets.item(Hand.MAIN_HAND, yaw, pitch);
+            return true;
+        }
+
+        if (client.player.getOffHandStack().isOf(Items.FIREWORK_ROCKET)) {
+            Packets.item(Hand.OFF_HAND, yaw, pitch);
+            return true;
+        }
+
+        int slot = Hotbar.find(Items.FIREWORK_ROCKET);
+        if (slot < 0) return false;
+
+        Inventory.swap(PlayerScreenHandler.OFFHAND_ID, slot);
+
+        try {
+            if (!client.player.getOffHandStack().isOf(Items.FIREWORK_ROCKET)) {
+                return false;
+            }
+
+            Packets.item(Hand.OFF_HAND, yaw, pitch);
+            return true;
+        } finally {
+            Inventory.swap(PlayerScreenHandler.OFFHAND_ID, slot);
+        }
     }
 
     /**

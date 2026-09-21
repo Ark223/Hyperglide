@@ -4,6 +4,7 @@ import hyperglide.Hyperglide;
 import hyperglide.utilities.Baritone;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Elytra;
+import hyperglide.utilities.Flight;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Inventory;
 import hyperglide.utilities.Player;
@@ -22,8 +23,6 @@ import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.EquippableComponent;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.projectile.FireworkRocketEntity;
@@ -49,6 +48,7 @@ public class ElytraTweaks extends Module {
     private final SettingGroup recovery = this.settings.createGroup("Recovery");
     private final SettingGroup safety = this.settings.createGroup("Safety");
     private final SettingGroup takeoff = this.settings.createGroup("Takeoff");
+    private final SettingGroup advanced = this.settings.createGroup("Advanced");
 
     private final Setting<Boolean> swap = this.equipment.add(new BoolSetting.Builder()
         .name("auto-swap")
@@ -157,7 +157,7 @@ public class ElytraTweaks extends Module {
     private final Setting<Boolean> starter = this.takeoff.add(new BoolSetting.Builder()
         .name("auto-takeoff")
         .description("Starts gliding after holding jump while airborne.")
-        .defaultValue(true)
+        .defaultValue(false)
         .build()
     );
 
@@ -171,7 +171,15 @@ public class ElytraTweaks extends Module {
         .build()
     );
 
+    private final Setting<Boolean> spoof = this.advanced.add(new BoolSetting.Builder()
+        .name("spoof-mode")
+        .description("Keeps a chestplate equipped during elytra flight.")
+        .defaultValue(false)
+        .build()
+    );
+
     private final Takeoff input = new Takeoff();
+    private final Flight flight = Flight.get();
 
     private int tap;
     private boolean pressed;
@@ -215,6 +223,7 @@ public class ElytraTweaks extends Module {
     @Override
     public void onActivate() {
         this.reset();
+        this.flight.enabled(this.spoof.get() && !this.bounce());
     }
 
     /**
@@ -222,6 +231,7 @@ public class ElytraTweaks extends Module {
      */
     @Override
     public void onDeactivate() {
+        this.flight.enabled(false);
         this.abort();
         this.reset();
     }
@@ -236,6 +246,18 @@ public class ElytraTweaks extends Module {
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (!Client.ready()) return;
+
+        this.flight.enabled(this.spoof.get() && !this.bounce());
+
+        if (Baritone.elytra()) {
+            this.flight.normal();
+        } else {
+            if (this.flight.standby() &&
+                this.mc.player.isGliding()) {
+                this.flight.activate();
+            }
+            this.flight.tick();
+        }
 
         if (this.sneak) {
             this.mc.options.sneakKey.setPressed(true);
@@ -274,6 +296,16 @@ public class ElytraTweaks extends Module {
         }
 
         this.recover();
+    }
+
+    /**
+     * Restores spoof inventory state after the tick.
+     *
+     * @param event post-tick event
+     */
+    @EventHandler
+    private void onTick(TickEvent.Post event) {
+        this.flight.finish();
     }
 
     /**
@@ -387,6 +419,34 @@ public class ElytraTweaks extends Module {
     }
 
     /**
+     * Checks whether elytra flight is available.
+     *
+     * @return true when normal or spoofed flight can be started
+     */
+    private boolean ready() {
+        return this.flight.available();
+    }
+
+    /**
+     * Checks whether normal elytra swapping is already handled.
+     *
+     * @return true when spoofing may be used or an elytra is equipped
+     */
+    private boolean managed() {
+        return this.flight.spoof() || Elytra.equipped();
+    }
+
+    /**
+     * Checks whether Bounce Fly is currently active.
+     *
+     * @return true while Bounce Fly is active
+     */
+    private boolean bounce() {
+        BounceFly module = Modules.get().get(BounceFly.class);
+        return module != null && module.isActive();
+    }
+
+    /**
      * Clears all runtime state.
      */
     private void reset() {
@@ -453,6 +513,15 @@ public class ElytraTweaks extends Module {
      * Equips an elytra from the hotbar and prepares for takeoff.
      */
     private void launch() {
+        if (this.flight.spoof()) {
+            if (this.mc.player.isGliding()) {
+                this.flight.activate();
+            } else if (this.flight.ready()) {
+                this.flight.start();
+            }
+            return;
+        }
+
         if (Elytra.equipped()) {
             this.sync = 1;
             return;
@@ -471,7 +540,7 @@ public class ElytraTweaks extends Module {
      */
     private void ground() {
         if (this.bounce()) {
-            if (Elytra.equipped()) return;
+            if (this.managed()) return;
 
             int slot = this.hotbar(true);
             if (slot >= 0) this.wear(slot);
@@ -483,7 +552,7 @@ public class ElytraTweaks extends Module {
         }
 
         if (Baritone.elytra()) {
-            if (Elytra.equipped()) return;
+            if (this.flight.normal()) return;
 
             int slot = this.hotbar(true);
             if (slot >= 0) this.wear(slot);
@@ -508,7 +577,8 @@ public class ElytraTweaks extends Module {
      * @return true when the equip interaction was sent
      */
     private boolean wear(int slot) {
-        if (this.mc.interactionManager == null || !Inventory.ready()) {
+        if (!Inventory.ready() ||
+            this.mc.interactionManager == null) {
             return false;
         }
 
@@ -530,12 +600,7 @@ public class ElytraTweaks extends Module {
      * @return matching hotbar slot, or -1 when unavailable
      */
     private int hotbar(boolean elytra) {
-        if (!elytra) return Hotbar.find(this::chestplate);
-
-        return Hotbar.best(
-            stack -> stack.isOf(Items.ELYTRA),
-            Elytra::remaining
-        );
+        return elytra ? Elytra.hotbar() : Hotbar.find(Elytra::chestplate);
     }
 
     //endregion
@@ -548,7 +613,7 @@ public class ElytraTweaks extends Module {
      * @return true when a repair swap starts
      */
     private boolean mend() {
-        if (!this.repair.get()) return false;
+        if (!this.repair.get() || this.flight.active()) return false;
 
         ItemStack stack = this.mc.player.getEquippedStack(EquipmentSlot.CHEST);
         if (stack.isOf(Items.ELYTRA) && stack.getDamage() > 0) return false;
@@ -698,6 +763,11 @@ public class ElytraTweaks extends Module {
         }
 
         if (this.mc.player.isGliding()) {
+            if (this.flight.standby() &&
+                !this.flight.activate()) {
+                return;
+            }
+
             this.rocket();
             return;
         }
@@ -708,7 +778,17 @@ public class ElytraTweaks extends Module {
 
         this.boost = true;
 
-        if (!Elytra.equipped()) {
+        if (this.flight.blocked()) {
+            this.boost = false;
+            return;
+        }
+
+        if (!this.ready()) {
+            if (this.flight.spoof()) {
+                this.boost = false;
+                return;
+            }
+
             int slot = this.hotbar(true);
             if (slot < 0 || !this.wear(slot)) {
                 this.boost = false;
@@ -744,7 +824,9 @@ public class ElytraTweaks extends Module {
             return;
         }
 
-        if (!Elytra.equipped()) {
+        if (!this.ready()) {
+            if (this.flight.spoof()) return;
+
             int slot = this.hotbar(true);
             if (slot < 0 || !this.wear(slot)) {
                 return;
@@ -791,8 +873,7 @@ public class ElytraTweaks extends Module {
      * Starts elytra flight using jump input.
      */
     private void start() {
-        if (this.input.active() ||
-            !Elytra.equipped() ||
+        if (this.input.active() || !this.ready() ||
             this.mc.player.isGliding() ||
             this.mc.player.isOnGround()) {
             return;
@@ -801,40 +882,51 @@ public class ElytraTweaks extends Module {
         this.input.start();
     }
 
+    //endregion
+
+    //region Boost control
+
     /**
      * Uses an available firework rocket.
      *
      * @return true when the rocket was used
      */
     private boolean rocket() {
-        if (!Client.interaction() ||
-            this.mc.interactionManager == null) {
-            return false;
+        return this.flight.request(this::firework);
+    }
+
+    /**
+     * Uses an available firework rocket immediately.
+     *
+     * @return true when the rocket interaction was accepted
+     */
+    private boolean firework() {
+        return Elytra.firework();
+    }
+
+    /**
+     * Tracks the firework currently boosting the player.
+     *
+     * @param rocket player-owned firework rocket
+     */
+    public void track(FireworkRocketEntity rocket) {
+        if (!this.isActive()) return;
+
+        if (this.sneak && this.rocket != rocket) {
+            this.renewed = true;
+            if (!this.halt) this.sneak(false);
         }
 
-        int selected = Hotbar.selected();
-        int slot = -1;
+        this.rocket = rocket;
+    }
 
-        ItemStack offhand = this.mc.player.getOffHandStack();
-        Hand hand = Hand.MAIN_HAND;
-
-        if (offhand.isOf(Items.FIREWORK_ROCKET)) {
-            hand = Hand.OFF_HAND;
-        } else {
-            slot = Hotbar.find(Items.FIREWORK_ROCKET);
-            if (slot < 0) return false;
-            if (slot != selected) Hotbar.select(slot);
-        }
-
-        try {
-            return this.mc.interactionManager.interactItem(
-                this.mc.player, hand
-            ).isAccepted();
-        } finally {
-            if (slot >= 0 && slot != selected) {
-                Hotbar.select(selected);
-            }
-        }
+    /**
+     * Checks whether the tracked firework boost is still active.
+     *
+     * @return true while the tracked rocket is alive
+     */
+    private boolean boosted() {
+        return this.rocket != null && this.rocket.isAlive();
     }
 
     //endregion
@@ -845,8 +937,8 @@ public class ElytraTweaks extends Module {
      * Starts or restores Baritone elytra flight.
      */
     private void recover() {
-        if (!this.deploy.get() || !Baritone.elytra() ||
-            !Elytra.equipped() || this.bounce()) {
+        if (!this.deploy.get() || !Elytra.equipped() ||
+            !Baritone.elytra() || this.bounce()) {
 
             this.retry = 0;
             this.swim(false);
@@ -912,35 +1004,6 @@ public class ElytraTweaks extends Module {
 
         this.escaping = pressed;
         this.mc.options.jumpKey.setPressed(pressed);
-    }
-
-    //endregion
-
-    //region Boost tracking
-
-    /**
-     * Tracks the firework currently boosting the player.
-     *
-     * @param rocket player-owned firework rocket
-     */
-    public void track(FireworkRocketEntity rocket) {
-        if (!this.isActive()) return;
-
-        if (this.sneak && this.rocket != rocket) {
-            this.renewed = true;
-            if (!this.halt) this.sneak(false);
-        }
-
-        this.rocket = rocket;
-    }
-
-    /**
-     * Checks whether the tracked firework boost is still active.
-     *
-     * @return true while the tracked rocket is alive
-     */
-    private boolean boosted() {
-        return this.rocket != null && this.rocket.isAlive();
     }
 
     //endregion
@@ -1066,6 +1129,10 @@ public class ElytraTweaks extends Module {
         return Math.max(0.0, (old - speed) * 10.0 - 3.0);
     }
 
+    //endregion
+
+    //region Collision recovery
+
     /**
      * Calculates safe movement in the current look direction.
      *
@@ -1100,33 +1167,6 @@ public class ElytraTweaks extends Module {
 
         if (!pressed) this.renewed = false;
         this.mc.options.sneakKey.setPressed(pressed);
-    }
-
-    //endregion
-
-    //region Utilities and validation
-
-    /**
-     * Checks whether Bounce Fly is currently active.
-     *
-     * @return true while Bounce Fly is active
-     */
-    private boolean bounce() {
-        BounceFly module = Modules.get().get(BounceFly.class);
-        return module != null && module.isActive();
-    }
-
-    /**
-     * Checks whether an item can be equipped in the chest slot.
-     *
-     * @param stack item stack to inspect
-     * @return true when the item is a chestplate
-     */
-    private boolean chestplate(ItemStack stack) {
-        if (stack.isEmpty() || stack.isOf(Items.ELYTRA)) return false;
-
-        EquippableComponent equipment = stack.get(DataComponentTypes.EQUIPPABLE);
-        return equipment != null && equipment.slot() == EquipmentSlot.CHEST;
     }
 
     //endregion

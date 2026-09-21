@@ -4,9 +4,10 @@ import hyperglide.Hyperglide;
 import hyperglide.utilities.Baritone;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Elytra;
+import hyperglide.utilities.Flight;
 import hyperglide.utilities.Hotbar;
-import hyperglide.utilities.Inventory;
 import hyperglide.utilities.Player;
+import hyperglide.utilities.Placement;
 import hyperglide.navigation.Route;
 import hyperglide.navigation.Segment;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
@@ -18,7 +19,6 @@ import net.minecraft.block.BlockState;
 import net.minecraft.fluid.Fluid;
 import net.minecraft.fluid.Fluids;
 import net.minecraft.item.Items;
-import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
@@ -43,6 +43,8 @@ public class AutoPilot extends Module {
     private static final int search = 32;
     private static final int retry = 10;
     private static final int settle = 5;
+
+    private final Flight flight = Flight.get();
 
     private State state = State.Idle;
     private Route route;
@@ -135,8 +137,8 @@ public class AutoPilot extends Module {
     private void tick(TickEvent.Pre event) {
         if (!this.valid()) return;
 
-        if (!Elytra.equipped()) {
-            this.error("Elytra is not equipped.");
+        if (!this.flight.available()) {
+            this.error("Elytra flight is unavailable.");
             this.toggle();
             return;
         }
@@ -523,31 +525,16 @@ public class AutoPilot extends Module {
     }
 
     /**
-     * Uses a firework rocket from the selected hotbar slot.
+     * Requests a firework for the current flight.
      *
-     * @return true when the firework use was sent
+     * @return true when the request was accepted
      */
     private boolean rocket() {
         if (this.mc.interactionManager == null) {
             return false;
         }
 
-        int selected = Hotbar.selected();
-
-        if (!Hotbar.stack(selected).isOf(Items.FIREWORK_ROCKET)) {
-            int slot = Inventory.find(9, 35,
-                stack -> stack.isOf(Items.FIREWORK_ROCKET)
-            );
-
-            if (slot < 0) return false;
-            Inventory.swap(Inventory.slot(slot), selected);
-        }
-
-        this.mc.interactionManager.interactItem(
-            this.mc.player, Hand.MAIN_HAND
-        );
-
-        return true;
+        return this.flight.request(Elytra::firework);
     }
 
     /**
@@ -995,10 +982,7 @@ public class AutoPilot extends Module {
         }
 
         for (BlockPos pos : this.blocks) {
-            if (!this.mc.world.getBlockState(pos).isReplaceable()) {
-                continue;
-            }
-
+            if (!Placement.open(pos)) continue;
             if (!this.place(pos)) return false;
         }
 
@@ -1030,7 +1014,9 @@ public class AutoPilot extends Module {
      * @return true when elytra pathing was started
      */
     private boolean fly(BlockPos pos, boolean exact) {
-        if (!Baritone.loaded()) return false;
+        if (!Baritone.loaded() || !this.flight.normal()) {
+            return false;
+        }
 
         if (this.goal != null && this.goal.equals(pos) &&
             Baritone.elytra()) {

@@ -8,6 +8,8 @@ import net.minecraft.client.MinecraftClient;
 public final class Takeoff {
     private static final MinecraftClient client = MinecraftClient.getInstance();
 
+    private final Flight flight = Flight.get();
+
     private boolean active;
     private boolean pressed;
     private boolean ground;
@@ -36,8 +38,9 @@ public final class Takeoff {
     public void pulse() {
         if (!this.active) return;
 
-        boolean ready = Client.loaded() && Elytra.equipped();
-        if (!ready || client.player.isGliding()) {
+        if (!(Client.loaded() &&
+            this.flight.available()) ||
+            client.player.isGliding()) {
             this.reset();
             return;
         }
@@ -49,6 +52,22 @@ public final class Takeoff {
             }
 
             this.pressed = true;
+            return;
+        }
+
+        if (this.flight.spoof()) {
+            if (this.flight.active()) {
+                this.pressed = Player.liquid();
+                return;
+            }
+
+            if (this.flight.start()) {
+                if (Player.liquid()) {
+                    this.pressed = true;
+                } else {
+                    this.reset();
+                }
+            }
             return;
         }
 
