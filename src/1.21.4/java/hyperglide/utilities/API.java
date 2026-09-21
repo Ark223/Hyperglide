@@ -11,7 +11,6 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket.Mode;
 import net.minecraft.sound.BlockSoundGroup;
 import net.minecraft.sound.SoundCategory;
@@ -82,7 +81,7 @@ public final class API {
      */
     public static void sneak(ClientPlayerEntity player, boolean value) {
         Mode mode = value ? Mode.PRESS_SHIFT_KEY : Mode.RELEASE_SHIFT_KEY;
-        player.networkHandler.sendPacket(new ClientCommandC2SPacket(player, mode));
+        Packets.command(mode);
     }
 
     /**

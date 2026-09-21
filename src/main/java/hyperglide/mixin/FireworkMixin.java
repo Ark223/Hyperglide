@@ -61,8 +61,7 @@ public abstract class FireworkMixin {
     @WrapOperation(method = "tick", at = @At(value = "INVOKE",
         target = "Lnet/minecraft/entity/LivingEntity;setVelocity(Lnet/minecraft/util/math/Vec3d;)V"
     ))
-    private void hyperglide$velocity(LivingEntity shooter, Vec3d velocity,
-        Operation<Void> original) {
+    private void hyperglide$velocity(LivingEntity shooter, Vec3d velocity, Operation<Void> original) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player != shooter) {
             original.call(shooter, velocity);

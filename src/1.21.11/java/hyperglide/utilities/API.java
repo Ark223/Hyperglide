@@ -10,10 +10,8 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.PlayerInputC2SPacket;
 import net.minecraft.sound.BlockSoundGroup;
 import net.minecraft.sound.SoundCategory;
-import net.minecraft.util.PlayerInput;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
@@ -81,15 +79,7 @@ public final class API {
      * @param value requested sneaking state
      */
     public static void sneak(ClientPlayerEntity player, boolean value) {
-        PlayerInput state = player.input.playerInput;
-
-        PlayerInput input = new PlayerInput(
-            state.forward(), state.backward(),
-            state.left(), state.right(),
-            state.jump(), value, state.sprint()
-        );
-
-        player.networkHandler.sendPacket(new PlayerInputC2SPacket(input));
+        Packets.input(Packets.sneak(value));
     }
 
     /**

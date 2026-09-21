@@ -144,6 +144,17 @@ public final class Placement {
     }
 
     /**
+     * Checks whether a block position can be replaced.
+     *
+     * @param pos block position to check
+     * @return true when the block can be replaced
+     */
+    public static boolean open(BlockPos pos) {
+        return client.world != null
+            && client.world.getBlockState(pos).isReplaceable();
+    }
+
+    /**
      * Plays the local placement sound for a block item.
      *
      * @param item placed block item

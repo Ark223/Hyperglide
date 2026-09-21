@@ -209,7 +209,7 @@ public class SelfTrapper extends Module {
         boxes.addAll(this.waiting.keySet());
 
         for (BlockPos pos : boxes) {
-            if (this.wanted.contains(pos) && this.open(pos)) {
+            if (this.wanted.contains(pos) && Placement.open(pos)) {
                 this.box.box(event, pos);
             }
         }
@@ -320,8 +320,8 @@ public class SelfTrapper extends Module {
      * Checks whether a candidate column supports the player.
      *
      * @param box player's current bounding box
-     * @param x candidate block X coordinate
-     * @param z candidate block Z coordinate
+     * @param px candidate block X coordinate
+     * @param pz candidate block Z coordinate
      * @return true when the candidate matches the player's height
      */
     private boolean supported(Box box, int px, int pz) {
@@ -360,15 +360,15 @@ public class SelfTrapper extends Module {
      * Checks whether the player can occupy a position without collisions.
      *
      * @param box player's current bounding box
-     * @param x candidate center X coordinate
-     * @param z candidate center Z coordinate
+     * @param px candidate center X coordinate
+     * @param pz candidate center Z coordinate
      * @return true when the candidate is collision-free
      */
-    private boolean safe(Box box, double x, double z) {
+    private boolean safe(Box box, double px, double pz) {
         double ox = this.mc.player.getX();
         double oz = this.mc.player.getZ();
 
-        Box moved = box.offset(x - ox, 0.0, z - oz);
+        Box moved = box.offset(px - ox, 0.0, pz - oz);
         return this.mc.world.isSpaceEmpty(this.mc.player, moved);
     }
 
@@ -489,17 +489,18 @@ public class SelfTrapper extends Module {
      */
     private void clean() {
         this.queue.removeIf(pos ->
-            !this.wanted.contains(pos) || !this.open(pos)
+            !this.wanted.contains(pos) ||
+            !Placement.open(pos)
         );
 
         this.pending.entrySet().removeIf(entry ->
             !this.wanted.contains(entry.getKey()) ||
-            !this.open(entry.getKey())
+            !Placement.open(entry.getKey())
         );
 
         this.waiting.entrySet().removeIf(entry ->
             !this.wanted.contains(entry.getKey()) ||
-            !this.open(entry.getKey())
+            !Placement.open(entry.getKey())
         );
     }
 
@@ -517,7 +518,7 @@ public class SelfTrapper extends Module {
             BlockPos pos = entry.getKey();
             iterator.remove();
 
-            if (this.wanted.contains(pos) && this.open(pos)) {
+            if (this.wanted.contains(pos) && Placement.open(pos)) {
                 this.retry(pos);
             }
         }
@@ -537,7 +538,7 @@ public class SelfTrapper extends Module {
             BlockPos pos = entry.getKey();
             iterator.remove();
 
-            if (this.wanted.contains(pos) && this.open(pos)) {
+            if (this.wanted.contains(pos) && Placement.open(pos)) {
                 this.queue.add(pos);
             }
         }
@@ -548,7 +549,7 @@ public class SelfTrapper extends Module {
      */
     private void fill() {
         for (BlockPos pos : this.wanted) {
-            if (this.open(pos) && !this.tracked(pos)) {
+            if (Placement.open(pos) && !this.tracked(pos)) {
                 this.queue.add(pos);
             }
         }
@@ -620,11 +621,11 @@ public class SelfTrapper extends Module {
      * Checks whether a position can currently be processed.
      *
      * @param pos position to check
-     * @return true when the position is required, open and not already tracked
+     * @return true when the position is required and open
      */
     private boolean ready(BlockPos pos) {
         return this.wanted.contains(pos)
-            && this.open(pos)
+            && Placement.open(pos)
             && !this.pending.containsKey(pos)
             && !this.waiting.containsKey(pos);
     }
@@ -635,18 +636,11 @@ public class SelfTrapper extends Module {
      * @param pos failed block position
      */
     private void retry(BlockPos pos) {
-        if (!this.wanted.contains(pos) || !this.open(pos)) return;
-        this.waiting.put(pos.toImmutable(), this.tick + this.cooldown.get());
-    }
+        if (!Placement.open(pos)) return;
+        if (!this.wanted.contains(pos)) return;
 
-    /**
-     * Checks whether a block position can be replaced.
-     *
-     * @param pos block position to check
-     * @return true when the block can be placed
-     */
-    private boolean open(BlockPos pos) {
-        return this.mc.world.getBlockState(pos).isReplaceable();
+        int timer = this.tick + this.cooldown.get();
+        this.waiting.put(pos.toImmutable(), timer);
     }
 
     //endregion

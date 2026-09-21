@@ -245,8 +245,8 @@ public class AutoWeb extends Module {
     private void clean() {
         this.marks.entrySet().removeIf(entry -> {
             BlockPos pos = entry.getKey();
-            return this.tick - entry.getValue() > life
-                || !this.mc.world.getBlockState(pos).isReplaceable();
+            int diff = this.tick - entry.getValue();
+            return diff > life || !Placement.open(pos);
         });
     }
 
@@ -273,9 +273,7 @@ public class AutoWeb extends Module {
      * @return true when placement is possible
      */
     private boolean valid(BlockPos pos) {
-        if (!this.mc.world.getBlockState(pos).isReplaceable()) {
-            return false;
-        }
+        if (!Placement.open(pos)) return false;
 
         Vec3d center = Vec3d.ofCenter(pos);
         Vec3d eye = this.mc.player.getEyePos();

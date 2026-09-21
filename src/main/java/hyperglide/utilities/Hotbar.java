@@ -7,7 +7,6 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
 import net.minecraft.util.math.BlockPos;
 import java.util.function.Predicate;
 import java.util.function.ToIntFunction;
@@ -186,9 +185,7 @@ public final class Hotbar {
      * @param slot hotbar slot
      */
     public static void sync(int slot) {
-        client.getNetworkHandler().sendPacket(
-            new UpdateSelectedSlotC2SPacket(slot)
-        );
+        Packets.slot(slot);
     }
 
     /**

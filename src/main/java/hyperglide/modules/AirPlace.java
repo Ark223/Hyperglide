@@ -116,7 +116,7 @@ public class AirPlace extends Module {
         );
 
         if (ray instanceof BlockHitResult block &&
-            this.open(block.getBlockPos())) {
+            Placement.open(block.getBlockPos())) {
             this.hit = block;
         } else {
             this.hit = null;
@@ -142,7 +142,7 @@ public class AirPlace extends Module {
         if (!this.box.enabled() ||
             this.hit == null || !Client.ready() ||
             !this.valid(this.mc.player.getMainHandStack()) ||
-            !this.open(this.hit.getBlockPos())) {
+            !Placement.open(this.hit.getBlockPos())) {
             return;
         }
 
@@ -161,7 +161,8 @@ public class AirPlace extends Module {
      * @return true when the placement packet was sent
      */
     public boolean place(BlockPos pos, int slot) {
-        if (!Client.ready() || this.waiting(pos) || !this.open(pos)) {
+        if (!Client.ready() || this.waiting(pos) ||
+            !Placement.open(pos)) {
             return false;
         }
 
@@ -215,7 +216,7 @@ public class AirPlace extends Module {
 
         this.pending.entrySet().removeIf(
             entry -> entry.getValue() <= tick ||
-            !this.open(entry.getKey())
+            !Placement.open(entry.getKey())
         );
 
         return this.pending.containsKey(pos);
@@ -225,15 +226,6 @@ public class AirPlace extends Module {
 
     //region Utilities and validation
 
-    /**
-     * Checks whether a block position can be replaced.
-     *
-     * @param pos block position to check
-     * @return true when the block can be placed
-     */
-    private boolean open(BlockPos pos) {
-        return this.mc.world.getBlockState(pos).isReplaceable();
-    }
 
     /**
      * Checks whether an item can be placed using Air Place.

@@ -917,18 +917,18 @@ public class Navigation extends Module {
     /**
      * Checks whether the mouse is inside the map.
      *
-     * @param x mouse X position
-     * @param y mouse Y position
+     * @param mx mouse X position
+     * @param my mouse Y position
      * @return true when the mouse is inside the map
      */
-    private boolean hovered(double x, double y) {
+    private boolean hovered(double mx, double my) {
         double size = this.size.get();
 
         double left = this.left();
         double top = this.top();
 
-        return x >= left && x <= left + size
-            && y >= top && y <= top + size;
+        return mx >= left && mx <= left + size
+            && my >= top && my <= top + size;
     }
 
     //endregion
@@ -1025,20 +1025,20 @@ public class Navigation extends Module {
          * Renders the destination text or its character mask.
          *
          * @param renderer GUI renderer
-         * @param x text X position
-         * @param y text Y position
+         * @param tx text X position
+         * @param ty text Y position
          * @param text actual destination text
          * @param color text color
          */
         @Override
         public void render(GuiRenderer renderer,
-            double px, double py, String text, Color color) {
+            double tx, double ty, String text, Color color) {
 
             Navigation module = Modules.get().get(Navigation.class);
             Boolean streamer = module != null && module.streamer.get();
             String value = streamer ? "*".repeat(text.length()) : text;
 
-            renderer.text(value, px, py, color, false);
+            renderer.text(value, tx, ty, color, false);
         }
     }
 

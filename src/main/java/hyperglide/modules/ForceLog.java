@@ -304,6 +304,8 @@ public class ForceLog extends Module {
         this.next = 0L;
     }
 
+    //endregion
+
     //region Data structures
 
     /**

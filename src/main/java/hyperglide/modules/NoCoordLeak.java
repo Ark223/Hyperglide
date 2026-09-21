@@ -37,7 +37,7 @@ public class NoCoordLeak extends Module {
 
     public NoCoordLeak() {
         super(Hyperglide.CATEGORY, "no-coord-leak",
-            "Prevents accidentally sending coordinates in chat."
+            "Prevents sending coordinates in chat by accident."
         );
     }
 
