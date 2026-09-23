@@ -25,7 +25,7 @@ public class AvgSpeed extends TextHud {
     private final Setting<Integer> time = this.metrics.add(new IntSetting.Builder()
         .name("total-time")
         .description("How many seconds are used for the test.")
-        .defaultValue(3)
+        .defaultValue(1)
         .min(1)
         .sliderMax(10)
         .build()
