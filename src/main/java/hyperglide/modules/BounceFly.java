@@ -1,7 +1,6 @@
 package hyperglide.modules;
 
 import hyperglide.Hyperglide;
-import hyperglide.utilities.API;
 import hyperglide.utilities.Baritone;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Elytra;
@@ -27,16 +26,18 @@ import java.util.Deque;
 
 public class BounceFly extends Module {
     private static final double range = 5.0;
-    private static final double stop = 0.2;
+    private static final double stop = 4.0;
     private static final int grid = 10;
 
     private static final int reach = 2;
     private static final int ahead = 8;
+    private static final int sample = 16;
     private static final int span = 192;
 
+    private static final int low = 119;
+    private static final int high = 120;
     private static final int delay = 3;
     private static final int wait = 20;
-    private static final int warmup = 20;
 
     private static final int[] dxs = {0, -1, -1, -1, 0, 1, 1, 1};
     private static final int[] dzs = {1, 1, 0, -1, -1, -1, 0, 1};
@@ -120,11 +121,8 @@ public class BounceFly extends Module {
     private double nz;
 
     private int slow;
-    private int warm;
     private int jump;
-    private int level;
-
-    private Vec3d last;
+    private int level = low;
 
     private boolean pass;
     private boolean launch;
@@ -144,10 +142,10 @@ public class BounceFly extends Module {
     public void onActivate() {
         if (!Client.ready()) return;
 
-        this.level = this.mc.player.getBlockY();
-
         this.face();
         this.center();
+
+        this.level = this.level();
         this.reset();
 
         this.mining = Modules.get().get(MiningTweaks.class);
@@ -176,8 +174,8 @@ public class BounceFly extends Module {
         this.clear();
 
         this.mining = null;
-        this.enabled = false;
         this.pass = false;
+        this.enabled = false;
         this.started = false;
     }
 
@@ -250,11 +248,8 @@ public class BounceFly extends Module {
      */
     private void reset() {
         this.slow = 0;
-        this.warm = 0;
         this.jump = 0;
-
         this.launch = false;
-        this.last = null;
     }
 
     /**
@@ -304,9 +299,7 @@ public class BounceFly extends Module {
      * @return true when an elytra is equipped
      */
     private boolean equipped() {
-        if (Elytra.equipped()) {
-            return true;
-        }
+        if (Elytra.equipped()) return true;
 
         this.release();
         this.reset();
@@ -322,16 +315,16 @@ public class BounceFly extends Module {
      */
     private void launch(Vec3d velocity) {
         if (this.mc.player.isOnGround()) {
-            this.jump = 0;
             this.launch = this.started ||
                 this.mc.player.isSprinting() &&
                 velocity.horizontalLength() > 0.05;
+            this.jump = 0;
             return;
         }
 
         if (this.mc.player.isGliding()) {
-            this.jump = 0;
             this.launch = false;
+            this.jump = 0;
             return;
         }
 
@@ -352,8 +345,6 @@ public class BounceFly extends Module {
         if (this.started) return true;
 
         this.slow = 0;
-        this.warm = 0;
-
         if (!this.mc.player.isGliding()) {
             return false;
         }
@@ -429,10 +420,12 @@ public class BounceFly extends Module {
             return false;
         }
 
-        Vec3d hit = this.collision();
+        BlockPos hit = this.collision();
         if (hit == null) return false;
 
         this.mc.player.stopGliding();
+
+        this.level = this.level();
         BlockPos goal = this.trace(hit);
 
         if (this.mining != null && this.dig.get() &&
@@ -446,32 +439,21 @@ public class BounceFly extends Module {
     }
 
     /**
-     * Detects stalled movement and starts recovery pathing.
+     * Detects slow movement and starts recovery pathing.
      */
     private void stuck() {
-        Vec3d pos = API.pos(this.mc.player);
+        Vec3d vel = this.mc.player.getVelocity();
+        double speed = vel.horizontalLength() * 20.0;
 
-        if (this.last == null) {
-            this.last = pos;
-            return;
-        }
-
-        double dx = pos.x - this.last.x;
-        double dz = pos.z - this.last.z;
-        double moved = Math.hypot(dx, dz);
-
-        this.last = pos;
-        this.warm++;
-
-        if (!this.obstacle.get() || this.warm < warmup) {
+        if (!this.obstacle.get() || speed >= stop) {
             this.slow = 0;
             return;
         }
 
-        if (moved < stop) this.slow++;
-        else this.slow = 0;
-
-        if (this.slow > wait) this.path();
+        if (++this.slow >= wait) {
+            this.slow = 0;
+            this.path();
+        }
     }
 
     //endregion
@@ -520,11 +502,9 @@ public class BounceFly extends Module {
         this.setup();
 
         for (BlockPos block : this.blocks) {
-            if (!this.mining.reachable(block, range)) {
-                continue;
+            if (this.mining.reachable(block, range)) {
+                this.mining.mine(block, Direction.UP);
             }
-
-            this.mining.mine(block, Direction.UP);
         }
     }
 
@@ -532,6 +512,7 @@ public class BounceFly extends Module {
      * Starts recovery pathing toward a safe highway position.
      */
     private void path() {
+        this.level = this.level();
         this.path(this.trace());
     }
 
@@ -541,6 +522,8 @@ public class BounceFly extends Module {
      * @param pos pathing goal
      */
     private void path(BlockPos pos) {
+        this.level = this.level();
+
         this.release();
         this.reset();
         this.clear();
@@ -548,10 +531,11 @@ public class BounceFly extends Module {
         this.pass = true;
         this.started = false;
 
-        Baritone.walk(pos.add(
-            this.dx * reach, 0,
-            this.dz * reach
-        ));
+        int px = this.dx * reach;
+        int pz = this.dz * reach;
+
+        pos = this.block(pos.getX(), pos.getZ());
+        Baritone.walk(pos.add(px, 0, pz));
     }
 
     //endregion
@@ -569,7 +553,7 @@ public class BounceFly extends Module {
 
         for (int idx = 0; idx < span; idx++) {
             goal = pos.add(this.dx * reach, 0, this.dz * reach);
-            if (!this.column(goal) && this.solid(goal.down())) {
+            if (this.clear(goal)) {
                 return pos;
             } else {
                 pos = pos.add(this.dx, 0, this.dz);
@@ -582,14 +566,14 @@ public class BounceFly extends Module {
     /**
      * Finds a safe pathing goal beyond the detected obstacle.
      *
-     * @param hit detected collision point
+     * @param hit detected collision block
      * @return pathing goal
      */
-    private BlockPos trace(Vec3d hit) {
+    private BlockPos trace(BlockPos hit) {
         this.blocks.clear();
 
         BlockPos start = this.base();
-        BlockPos point = this.point(hit.x, hit.z);
+        BlockPos point = this.point(hit.getX(), hit.getZ());
 
         int distance = Math.max(
             Math.abs(point.getX() - start.getX()),
@@ -669,9 +653,9 @@ public class BounceFly extends Module {
     /**
      * Finds the closest obstacle along the highway direction.
      *
-     * @return closest collision point, or null when undetected
+     * @return closest collision block, or null when undetected
      */
-    private Vec3d collision() {
+    private BlockPos collision() {
         Vec3d front = new Vec3d(this.nx, 0, this.nz);
         Vec3d side = new Vec3d(-front.z, 0, front.x);
         Vec3d vel = this.mc.player.getVelocity();
@@ -684,7 +668,7 @@ public class BounceFly extends Module {
         double width = this.mc.player.getWidth() / 2.0;
         width *= Math.abs(side.x) + Math.abs(side.z);
 
-        Vec3d closest = null;
+        BlockPos closest = null;
         double distance = Double.MAX_VALUE;
 
         for (int idx = -1; idx <= 1; idx++) {
@@ -704,7 +688,7 @@ public class BounceFly extends Module {
 
                 double current = start.squaredDistanceTo(hit.getPos());
                 if (current < distance) {
-                    closest = hit.getPos();
+                    closest = hit.getBlockPos();
                     distance = current;
                 }
             }
@@ -788,10 +772,9 @@ public class BounceFly extends Module {
      * @return current center block
      */
     private BlockPos base() {
-        return this.point(
-            this.mc.player.getX(),
-            this.mc.player.getZ()
-        );
+        double px = this.mc.player.getX();
+        double pz = this.mc.player.getZ();
+        return this.point(px, pz);
     }
 
     /**
@@ -837,6 +820,39 @@ public class BounceFly extends Module {
 
     //endregion
 
+    //region Height correction
+
+    /**
+     * Finds the most likely highway level around the current one.
+     *
+     * @return detected highway level
+     */
+    private int level() {
+        return this.trail(high) > this.trail(low) ? high : low;
+    }
+
+    /**
+     * Scores clear supported positions along the highway center line.
+     *
+     * @param level highway level to check
+     * @return number of valid center positions
+     */
+    private int trail(int level) {
+        int score = 0;
+
+        BlockPos pos = this.base();
+        pos = this.block(pos.getX(), level, pos.getZ());
+
+        for (int idx = 0; idx < sample; idx++) {
+            score += this.clear(pos) ? 1 : 0;
+            pos = pos.add(this.dx, 0, this.dz);
+        }
+
+        return score;
+    }
+
+    //endregion
+
     //region Utilities and validation
 
     /**
@@ -847,10 +863,31 @@ public class BounceFly extends Module {
      * @return block position on the highway level
      */
     private BlockPos block(double px, double pz) {
+        return this.block(px, this.level, pz);
+    }
+
+    /**
+     * Creates a block position at a specific level.
+     *
+     * @param px world X coordinate
+     * @param py world Y coordinate
+     * @param pz world Z coordinate
+     * @return block position
+     */
+    private BlockPos block(double px, int py, double pz) {
         return new BlockPos(
-            (int) Math.round(px), this.level,
-            (int) Math.round(pz)
+            (int) Math.round(px), py, (int) Math.round(pz)
         );
+    }
+
+    /**
+     * Checks whether a trail position is clear and supported.
+     *
+     * @param pos trail position
+     * @return true when the position is valid
+     */
+    private boolean clear(BlockPos pos) {
+        return !this.column(pos) && this.solid(pos.down());
     }
 
     /**
