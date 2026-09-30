@@ -14,11 +14,11 @@ import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.BlockState;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import java.util.*;
 
 public class Scaffolding extends Module {
-    private static final double edge = 0.95;
     private static final double extend = 1.25;
     private static final double step = 0.25;
     private static final double reach = 2.0;
@@ -166,10 +166,25 @@ public class Scaffolding extends Module {
      */
     private void update() {
         int level = this.layer();
-        if (this.level == level) return;
+        if (this.level == level) {
+            return;
+        }
 
         this.level = level;
         this.queue.clear();
+    }
+
+    /**
+     * Removes invalid queued positions and expired placement marks.
+     */
+    private void clean() {
+        this.queue.removeIf(pos -> !this.valid(pos));
+
+        this.marks.entrySet().removeIf(entry -> {
+            BlockPos pos = entry.getKey();
+            return !this.open(pos) || this.far(pos)
+                || this.tick - entry.getValue() > life;
+        });
     }
 
     /**
@@ -201,7 +216,7 @@ public class Scaffolding extends Module {
     private void add(BlockPos pos, boolean first) {
         pos = pos.toImmutable();
 
-        if (!this.open(pos) ||
+        if (!this.valid(pos) ||
             this.queue.contains(pos) ||
             this.marks.containsKey(pos)) return;
 
@@ -222,19 +237,6 @@ public class Scaffolding extends Module {
         return null;
     }
 
-    /**
-     * Removes invalid queued positions and expired placement marks.
-     */
-    private void clean() {
-        this.queue.removeIf(pos -> !this.valid(pos));
-
-        this.marks.entrySet().removeIf(entry -> {
-            BlockPos pos = entry.getKey();
-            return !this.open(pos) || this.far(pos) ||
-                this.tick - entry.getValue() > life;
-        });
-    }
-
     //endregion
 
     //region Placement control
@@ -246,32 +248,49 @@ public class Scaffolding extends Module {
      */
     private int pace() {
         return this.dynamic.get()
-            && this.close() ? 1 : this.delay.get();
+            && this.edge() ? 1 : this.delay.get();
     }
 
     /**
-     * Checks whether the player is close to an open block on the scaffold layer.
+     * Checks whether the player reaches an open scaffold block.
      *
-     * @return true when an open block is within edge distance
+     * @return true when part of the player is over an open edge
      */
-    private boolean close() {
-        int px = (int) Math.round(this.mc.player.getX());
-        int pz = (int) Math.round(this.mc.player.getZ());
+    private boolean edge() {
+        Box box = this.mc.player.getBoundingBox();
 
-        for (int ox = -1; ox <= 1; ox++) {
-            for (int oz = -1; oz <= 1; oz++) {
-                this.scan.set(px + ox, this.level, pz + oz);
+        int minx = (int) Math.floor(box.minX);
+        int maxx = (int) Math.floor(Math.nextDown(box.maxX));
+        int minz = (int) Math.floor(box.minZ);
+        int maxz = (int) Math.floor(Math.nextDown(box.maxZ));
 
-                BlockState state = this.mc.world.getBlockState(this.scan);
-                if (!state.isAir()) continue;
-
-                double dx = this.scan.getX() + 0.5 - this.mc.player.getX();
-                double dz = this.scan.getZ() + 0.5 - this.mc.player.getZ();
-                if (dx * dx + dz * dz < edge * edge) return true;
+        for (int px = minx; px <= maxx; px++) {
+            for (int pz = minz; pz <= maxz; pz++) {
+                this.scan.set(px, this.level, pz);
+                if (this.open(this.scan)) return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * Checks whether two blocks above a scaffold position are clear.
+     *
+     * @param pos scaffold position to check
+     * @return true when the player has enough vertical space
+     */
+    private boolean space(BlockPos pos) {
+        for (int level = 1; level <= 2; level++) {
+            this.scan.set(pos.getX(), pos.getY() + level, pos.getZ());
+
+            BlockState state = this.mc.world.getBlockState(this.scan);
+            if (!state.getCollisionShape(this.mc.world, this.scan).isEmpty()) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     //endregion
@@ -349,13 +368,13 @@ public class Scaffolding extends Module {
     }
 
     /**
-     * Checks whether a position is open and within reach.
+     * Checks whether a position can be used as a scaffold candidate.
      *
      * @param pos position to check
-     * @return true when the position is valid
+     * @return true when the position is open, clear and within reach
      */
     private boolean valid(BlockPos pos) {
-        return this.open(pos) && !this.far(pos);
+        return this.open(pos) && this.space(pos) && !this.far(pos);
     }
 
     //endregion
