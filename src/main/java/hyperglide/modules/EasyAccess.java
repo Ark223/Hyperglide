@@ -3,6 +3,7 @@ package hyperglide.modules;
 import hyperglide.Hyperglide;
 import hyperglide.utilities.API;
 import hyperglide.utilities.Client;
+import hyperglide.utilities.Packets;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
@@ -17,6 +18,8 @@ import net.minecraft.entity.passive.AbstractDonkeyEntity;
 import net.minecraft.entity.passive.MerchantEntity;
 import net.minecraft.entity.vehicle.VehicleInventory;
 import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
+import net.minecraft.network.packet.c2s.play.PlayerInteractEntityC2SPacket;
+import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.EntityHitResult;
@@ -25,7 +28,6 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.RaycastContext;
 import java.util.Optional;
 
 public class EasyAccess extends Module {
@@ -43,7 +45,7 @@ public class EasyAccess extends Module {
     );
 
     private boolean lock;
-    private boolean block;
+    private boolean cancel;
     private boolean own;
 
     public EasyAccess() {
@@ -58,7 +60,7 @@ public class EasyAccess extends Module {
     @Override
     public void onActivate() {
         this.lock = this.mc.options.useKey.isPressed();
-        this.block = false;
+        this.cancel = false;
         this.own = false;
     }
 
@@ -68,7 +70,7 @@ public class EasyAccess extends Module {
     @Override
     public void onDeactivate() {
         this.lock = false;
-        this.block = false;
+        this.cancel = false;
         this.own = false;
     }
 
@@ -85,30 +87,28 @@ public class EasyAccess extends Module {
 
         if (!this.mc.options.useKey.isPressed()) {
             this.lock = false;
-            this.block = false;
+            this.cancel = false;
             return;
         }
 
         if (this.lock) return;
 
         this.lock = true;
-        this.block = false;
+        this.cancel = false;
 
         if (this.visible()) return;
 
         Target target = this.target();
         if (target == null) return;
 
-        this.block = true;
+        this.cancel = true;
         this.own = true;
 
         try {
             if (target.entity != null) {
                 this.entity(target.entity);
             } else {
-                this.mc.interactionManager.interactBlock(
-                    this.mc.player, Hand.MAIN_HAND, target.block
-                );
+                this.block(target.block);
             }
         } finally {
             this.own = false;
@@ -124,8 +124,10 @@ public class EasyAccess extends Module {
      */
     @EventHandler
     private void onPacket(PacketEvent.Send event) {
-        if (this.block && !this.own &&
-            event.packet instanceof PlayerInteractBlockC2SPacket) {
+        if (!this.cancel || this.own) return;
+
+        if (event.packet instanceof PlayerInteractBlockC2SPacket ||
+            event.packet instanceof PlayerInteractEntityC2SPacket) {
             event.cancel();
         }
     }
@@ -135,7 +137,7 @@ public class EasyAccess extends Module {
     //region Target selection
 
     /**
-     * Checks whether the current crosshair target is an accessible container.
+     * Checks whether the crosshair target is an accessible container.
      *
      * @return true when the player is directly targeting a container
      */
@@ -155,7 +157,7 @@ public class EasyAccess extends Module {
     /**
      * Finds the closest hidden container in the view direction.
      *
-     * @return closest hidden container target, or null when none is available
+     * @return closest container target, or null when none is available
      */
     private Target target() {
         double reach = this.range.get();
@@ -164,11 +166,30 @@ public class EasyAccess extends Module {
         Vec3d look = this.mc.player.getRotationVec(1.0F);
         Vec3d end = eye.add(look.multiply(reach));
 
+        Target block = this.blocks(eye, end, reach);
+        Target entity = this.entities(eye, end, reach);
+
+        if (block == null) return entity;
+        if (entity == null) return block;
+
+        return block.distance <= entity.distance ? block : entity;
+    }
+
+    /**
+     * Finds the closest hidden block container in the view direction.
+     *
+     * @param eye player eye position
+     * @param end end of the interaction ray
+     * @param reach maximum interaction range
+     * @return closest block target, or null when none is available
+     */
+    private Target blocks(Vec3d eye, Vec3d end, double reach) {
         BlockPos center = BlockPos.ofFloored(eye);
         int radius = (int) Math.ceil(reach);
 
         Target best = null;
         double distance = Double.MAX_VALUE;
+        double limit = reach * reach;
 
         for (BlockPos scan : BlockPos.iterateOutwards(
             center, radius, radius, radius
@@ -176,17 +197,13 @@ public class EasyAccess extends Module {
             BlockPos pos = scan.toImmutable();
             if (!this.container(pos)) continue;
 
-            Optional<Vec3d> result = new Box(pos)
-                .expand(edge).raycast(eye, end);
-
+            Box box = new Box(pos).expand(edge);
+            Optional<Vec3d> result = box.raycast(eye, end);
             if (result.isEmpty()) continue;
 
             Vec3d point = result.get();
             double current = eye.squaredDistanceTo(point);
-
-            if (current > reach * reach ||
-                this.visible(pos, eye, point) ||
-                current >= distance) {
+            if (current > limit || current >= distance) {
                 continue;
             }
 
@@ -194,29 +211,7 @@ public class EasyAccess extends Module {
                 point, this.side(pos, eye), pos, false
             );
 
-            best = new Target(hit, null);
-            distance = current;
-        }
-
-        for (Entity entity : this.mc.world.getEntities()) {
-            if (!this.container(entity)) continue;
-
-            Optional<Vec3d> result =
-                entity.getBoundingBox()
-                .expand(edge).raycast(eye, end);
-
-            if (result.isEmpty()) continue;
-
-            Vec3d point = result.get();
-            double current = eye.squaredDistanceTo(point);
-
-            if (current > reach * reach ||
-                this.visible(eye, point) ||
-                current >= distance) {
-                continue;
-            }
-
-            best = new Target(null, entity);
+            best = new Target(hit, null, current);
             distance = current;
         }
 
@@ -224,111 +219,37 @@ public class EasyAccess extends Module {
     }
 
     /**
-     * Checks whether a block container is directly visible.
-     *
-     * @param pos container block position
-     * @param eye player eye position
-     * @param point target point on the container
-     * @return true when the raycast reaches the block
-     */
-    private boolean visible(BlockPos pos, Vec3d eye, Vec3d point) {
-        Vec3d dir = point.subtract(eye);
-
-        if (dir.lengthSquared() > 0) {
-            point = point.add(dir.normalize().multiply(edge));
-        }
-
-        BlockHitResult hit = this.mc.world.raycast(
-            new RaycastContext(eye, point,
-                RaycastContext.ShapeType.OUTLINE,
-                RaycastContext.FluidHandling.NONE,
-                this.mc.player
-            )
-        );
-
-        return hit.getType() == HitResult.Type.BLOCK
-            && hit.getBlockPos().equals(pos);
-    }
-
-    /**
-     * Checks whether an entity container is directly visible.
+     * Finds the closest hidden entity container in the view direction.
      *
      * @param eye player eye position
-     * @param point target point on the entity
-     * @return true when no block obstructs the target
+     * @param end end of the interaction ray
+     * @param reach maximum interaction range
+     * @return closest entity target, or null when none is available
      */
-    private boolean visible(Vec3d eye, Vec3d point) {
-        Vec3d dir = point.subtract(eye);
+    private Target entities(Vec3d eye, Vec3d end, double reach) {
+        Target best = null;
+        double distance = Double.MAX_VALUE;
+        double limit = reach * reach;
 
-        if (dir.lengthSquared() > 0) {
-            point = point.subtract(dir.normalize().multiply(edge));
+        for (Entity entity : this.mc.world.getEntities()) {
+            if (!this.container(entity)) continue;
+
+            Box box = entity.getBoundingBox().expand(edge);
+            Optional<Vec3d> result = box.raycast(eye, end);
+            if (result.isEmpty()) continue;
+
+            Vec3d point = result.get();
+            double current = eye.squaredDistanceTo(point);
+            if (current > limit || current >= distance) {
+                continue;
+            }
+
+            EntityHitResult hit = new EntityHitResult(entity, point);
+            best = new Target(null, hit, current);
+            distance = current;
         }
 
-        BlockHitResult hit = this.mc.world.raycast(
-            new RaycastContext(eye, point,
-                RaycastContext.ShapeType.OUTLINE,
-                RaycastContext.FluidHandling.NONE,
-                this.mc.player
-            )
-        );
-
-        return hit.getType() == HitResult.Type.MISS;
-    }
-
-    //endregion
-
-    //region Container interaction
-
-    /**
-     * Checks whether an entity is a supported container or merchant.
-     *
-     * @param entity entity to check
-     * @return true when the entity is supported
-     */
-    private boolean container(Entity entity) {
-        if (!entity.isAlive() || entity.isSpectator()) return false;
-
-        if (entity instanceof VehicleInventory) return true;
-        if (entity instanceof MerchantEntity) return true;
-
-        return entity instanceof AbstractDonkeyEntity donkey
-            && donkey.isTame() && donkey.hasChest();
-    }
-
-    /**
-     * Interacts with a supported container entity.
-     *
-     * @param entity entity to interact with
-     */
-    private void entity(Entity entity) {
-        if (!(entity instanceof AbstractDonkeyEntity)) {
-            this.mc.interactionManager.interactEntity(
-                this.mc.player, entity, Hand.MAIN_HAND
-            );
-            return;
-        }
-
-        boolean sneak = this.mc.player.isSneaking();
-        if (!sneak) API.sneak(this.mc.player, true);
-
-        this.mc.interactionManager.interactEntity(
-            this.mc.player, entity, Hand.MAIN_HAND
-        );
-
-        if (!sneak) API.sneak(this.mc.player, false);
-    }
-
-    /**
-     * Checks whether a block position contains a supported container.
-     *
-     * @param pos block position to check
-     * @return true when the block provides container interaction
-     */
-    private boolean container(BlockPos pos) {
-        BlockState state = this.mc.world.getBlockState(pos);
-
-        return state.isOf(Blocks.ENDER_CHEST)
-            || state.createScreenHandlerFactory(this.mc.world, pos) != null;
+        return best;
     }
 
     /**
@@ -362,15 +283,90 @@ public class EasyAccess extends Module {
 
     //endregion
 
+    //region Container interaction
+
+    /**
+     * Checks whether an entity is a supported container or merchant.
+     *
+     * @param entity entity to check
+     * @return true when the entity is supported
+     */
+    private boolean container(Entity entity) {
+        if (!entity.isAlive() || entity.isSpectator()) {
+            return false;
+        }
+
+        if (entity instanceof VehicleInventory) return true;
+        if (entity instanceof MerchantEntity) return true;
+
+        return entity instanceof AbstractDonkeyEntity donkey
+            && donkey.isTame() && donkey.hasChest();
+    }
+
+    /**
+     * Interacts with a supported block container.
+     *
+     * @param hit block interaction target
+     */
+    private void block(BlockHitResult hit) {
+        Packets.block(Hand.MAIN_HAND, hit);
+    }
+
+    /**
+     * Interacts with a supported container entity.
+     *
+     * @param hit entity interaction target
+     */
+    private void entity(EntityHitResult hit) {
+        Entity entity = hit.getEntity();
+
+        boolean sneak = !this.mc.player.isSneaking()
+            && entity instanceof AbstractDonkeyEntity;
+
+        if (sneak) API.sneak(this.mc.player, true);
+
+        try {
+            ActionResult result =
+                this.mc.interactionManager.interactEntityAtLocation(
+                    this.mc.player, entity, hit, Hand.MAIN_HAND
+                );
+
+            if (!result.isAccepted()) {
+                this.mc.interactionManager.interactEntity(
+                    this.mc.player, entity, Hand.MAIN_HAND
+                );
+            }
+        } finally {
+            if (sneak) API.sneak(this.mc.player, false);
+        }
+    }
+
+    /**
+     * Checks whether a block position contains a supported container.
+     *
+     * @param pos block position to check
+     * @return true when the block provides container interaction
+     */
+    private boolean container(BlockPos pos) {
+        BlockState state = this.mc.world.getBlockState(pos);
+
+        return state.isOf(Blocks.ENDER_CHEST)
+            || state.createScreenHandlerFactory(this.mc.world, pos) != null;
+    }
+
+    //endregion
+
     //region Data structures
 
     /**
-     * Stores the selected hidden container target.
+     * Stores a hidden container target and its squared distance.
      *
      * @param block block interaction target, or null
      * @param entity entity interaction target, or null
+     * @param distance squared distance from the player
      */
-    private record Target(BlockHitResult block, Entity entity) {}
+    private record Target(BlockHitResult block,
+        EntityHitResult entity, double distance) {}
 
     //endregion
 }
