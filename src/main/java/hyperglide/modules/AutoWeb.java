@@ -275,6 +275,9 @@ public class AutoWeb extends Module {
     private boolean valid(BlockPos pos) {
         if (!Placement.open(pos)) return false;
 
+        Box box = this.mc.player.getBoundingBox();
+        if (new Box(pos).intersects(box)) return false;
+
         Vec3d center = Vec3d.ofCenter(pos);
         Vec3d eye = this.mc.player.getEyePos();
 
