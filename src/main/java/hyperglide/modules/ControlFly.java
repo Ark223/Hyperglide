@@ -108,12 +108,11 @@ public class ControlFly extends Module {
     );
 
     private final Boost boost = new Boost();
+    private final Flight flight = Flight.get();
     private final Takeoff input = new Takeoff();
     private final Motion motion = new Motion();
     private final Turn turn = new Turn();
     private final View view = new View();
-
-    private final Flight flight = Flight.get();
 
     private int jump;
 

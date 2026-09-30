@@ -22,7 +22,7 @@ public abstract class DataTrackerMixin {
     private DataTracked trackedEntity;
 
     /**
-     * Preserves local gliding flag while scheduling the server-side restart.
+     * Preserves local gliding state while spoofing handles server rejection.
      *
      * @param entries incoming data updates
      * @return adjusted data updates

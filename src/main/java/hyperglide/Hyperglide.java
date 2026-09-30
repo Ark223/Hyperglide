@@ -1,7 +1,6 @@
 package hyperglide;
 
 import com.mojang.logging.LogUtils;
-
 import hyperglide.hud.AvgSpeed;
 import hyperglide.hud.TruePing;
 import hyperglide.modules.*;

@@ -2,8 +2,14 @@ package hyperglide.utilities;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.entity.data.DataTracker;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
+import net.minecraft.network.packet.s2c.play.EntityTrackerUpdateS2CPacket;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.util.PlayerInput;
+import java.util.ArrayDeque;
+import java.util.List;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -11,21 +17,37 @@ import java.util.function.BooleanSupplier;
  */
 public final class Flight {
     private final MinecraftClient client = MinecraftClient.getInstance();
+    private final ArrayDeque<Integer> pongs = new ArrayDeque<>();
 
     private static final Flight instance = new Flight();
 
-    private static final int grace = 3;
+    private static final int flags = 0;
     private static final int chest = 6;
     private static final int gliding = 7;
 
-    private boolean active;
+    private static final int air = 2;
+    private static final int grace = 3;
+    private static final int hold = 12;
+
     private boolean enabled;
-    private boolean liquid;
+    private boolean active;
+    private boolean bounce;
+
     private boolean restart;
     private boolean restore;
-
-    private int dry;
     private int slot = -1;
+
+    private boolean holding;
+    private boolean ground;
+
+    private int held;
+    private int airborne;
+    private int last = -air;
+    private int swap = -air;
+
+    private boolean liquid;
+    private int dry;
+
     private BooleanSupplier request;
 
     private Flight() {}
@@ -51,6 +73,18 @@ public final class Flight {
 
         this.enabled = enabled;
         if (!enabled) this.clear();
+    }
+
+    /**
+     * Enables spoof management for bounce mode.
+     *
+     * @param bounce whether bounce mode is active
+     */
+    public void bounce(boolean bounce) {
+        if (this.bounce == bounce) return;
+
+        if (this.active) this.clear();
+        this.bounce = bounce;
     }
 
     /**
@@ -148,9 +182,7 @@ public final class Flight {
 
         if (!this.prepare()) return false;
 
-        this.slot = Elytra.hotbar();
-        if (this.slot < 0) return false;
-
+        this.prime();
         this.active = true;
         this.restart = false;
         this.restore = false;
@@ -172,8 +204,9 @@ public final class Flight {
             return false;
         }
 
+        this.prime();
         this.active = true;
-        this.restart = true;
+        this.restart = !this.bounce;
         this.restore = false;
 
         if (this.begin()) return true;
@@ -189,7 +222,6 @@ public final class Flight {
         this.liquid();
 
         if (!this.active) return;
-
         if (!this.enabled || !Client.ready()) {
             this.clear();
             return;
@@ -200,12 +232,17 @@ public final class Flight {
             return;
         }
 
-        this.sprint();
-
         if (!this.continuing()) {
             this.clear();
             return;
         }
+
+        if (this.bounce) {
+            this.cycle();
+            return;
+        }
+
+        this.sprint();
 
         if (this.restart && !this.restore) {
             this.begin();
@@ -216,7 +253,8 @@ public final class Flight {
      * Restores the chestplate after a temporary elytra restart.
      */
     public void finish() {
-        if (!this.restore || !Client.ready() ||
+        if (this.bounce || !this.restore ||
+            !Client.loaded() || !Client.ready() ||
             !this.client.player.isGliding()) {
             return;
         }
@@ -242,6 +280,8 @@ public final class Flight {
             return Elytra.equipped();
         }
 
+        this.release();
+
         if (Elytra.equipped()) {
             this.reset();
             return true;
@@ -253,7 +293,9 @@ public final class Flight {
         this.inventory();
         Inventory.swap(chest, slot);
 
-        if (!Elytra.equipped()) return false;
+        if (!Elytra.equipped()) {
+            return false;
+        }
 
         this.reset();
         return true;
@@ -295,55 +337,6 @@ public final class Flight {
 
         this.liquid = false;
         this.dry = 0;
-    }
-
-    //endregion
-
-    //region Requests and synchronization
-
-    /**
-     * Runs an action now or remembers it for the next elytra window.
-     *
-     * @param action action to run
-     * @return true when the action ran or was remembered
-     */
-    public boolean request(BooleanSupplier action) {
-        if (action == null) return false;
-        if (!this.active()) return action.getAsBoolean();
-
-        if (this.request == null) {
-            this.request = action;
-        }
-
-        return true;
-    }
-
-    /**
-     * Remembers a firework request for the next spoofed elytra window.
-     *
-     * @return true when the request was accepted
-     */
-    public boolean request() {
-        return this.request(Elytra::firework);
-    }
-
-    /**
-     * Keeps the local gliding flag when the server clears it.
-     *
-     * @param flags incoming entity flags
-     * @return adjusted entity flags
-     */
-    public byte sync(byte flags) {
-        boolean flying = (flags & (1 << gliding)) != 0;
-        if (!this.active() || flying) return flags;
-
-        if (!this.continuing()) {
-            this.clear();
-            return flags;
-        }
-
-        if (!this.restore) this.restart = true;
-        return (byte) (flags | (1 << gliding));
     }
 
     //endregion
@@ -390,27 +383,44 @@ public final class Flight {
     }
 
     /**
-     * Performs one temporary elytra restart.
+     * Performs one temporary elytra deployment.
      *
-     * @return true when the restart packet was sent
+     * @return true when the deployment was sent
      */
     private boolean begin() {
-        if (!this.prepared() || !this.continuing()) {
+        if (!this.prepared() || !this.continuing() ||
+            this.client.player.isOnGround()) {
             return false;
         }
 
-        int slot = Elytra.hotbar();
-        if (slot < 0) return false;
+        int slot = this.gear();
+        if (slot < 0 || !Hotbar.stack(slot).isOf(Items.ELYTRA)) {
+            return false;
+        }
 
         this.slot = slot;
 
-        this.inventory();
+        if (!this.bounce) this.inventory();
         Inventory.swap(chest, slot);
 
-        this.jump(false);
-        Elytra.start();
-        this.jump(true);
+        if (!Elytra.equipped()) return false;
 
+        if (!this.bounce) this.jump(false);
+        Elytra.start();
+
+        if (this.bounce) {
+            this.client.player.startGliding();
+            this.flush();
+
+            Inventory.swap(chest, slot);
+
+            this.last = this.client.player.age;
+            this.ground = false;
+            this.airborne = 0;
+            return true;
+        }
+
+        this.jump(true);
         Packets.pong(Integer.MIN_VALUE);
 
         this.restart = false;
@@ -422,7 +432,244 @@ public final class Flight {
 
     //endregion
 
+    //region Bounce control
+
+    /**
+     * Prepares bounce state before spoofing starts.
+     */
+    private void prime() {
+        if (!this.bounce) return;
+
+        this.ground = false;
+        this.airborne = 0;
+    }
+
+    /**
+     * Updates active spoof state and redeploys after a bounce.
+     */
+    private void cycle() {
+        int slot = this.gear();
+        if (slot < 0) {
+            this.clear();
+            return;
+        }
+
+        this.motion();
+
+        if (Elytra.equipped() && this.chest(slot) &&
+            this.client.player.age - this.swap >= air) {
+            this.swap = this.client.player.age;
+            Inventory.swap(chest, slot);
+        }
+
+        if (this.holding) {
+            this.preserve();
+            if (this.holding) return;
+        }
+
+        if (this.airborne >= air &&
+            !this.client.player.isOnGround() &&
+            !this.client.player.isGliding() &&
+            this.client.player.age - this.last >= air) {
+            this.begin();
+        }
+    }
+
+    /**
+     * Updates the temporary glide hold used by bounce spoofing.
+     */
+    private void preserve() {
+        this.held++;
+
+        boolean bounced = this.ground && this.airborne >= air;
+        if (bounced || this.held >= hold) this.release();
+    }
+
+    /**
+     * Tracks ground contact and airborne ticks between hops.
+     */
+    private void motion() {
+        if (this.client.player.isOnGround()) {
+            this.ground = true;
+            this.airborne = 0;
+        } else {
+            this.airborne++;
+        }
+    }
+
+    /**
+     * Returns the hotbar slot reserved for spoofed equipment.
+     *
+     * @return reserved hotbar slot, or -1 when unavailable
+     */
+    private int gear() {
+        if (this.slot >= 0 && this.slot < 9) {
+            ItemStack stack = Hotbar.stack(this.slot);
+            if (stack.isOf(Items.ELYTRA) || Elytra.chestplate(stack)) {
+                return this.slot;
+            }
+        }
+
+        if (Elytra.equipped()) {
+            this.slot = Hotbar.find(Elytra::chestplate);
+        } else {
+            this.slot = Elytra.hotbar();
+        }
+
+        return this.slot;
+    }
+
+    /**
+     * Checks whether the reserved hotbar slot currently holds chest armor.
+     *
+     * @param slot reserved hotbar slot
+     * @return true when a chestplate is waiting in the reserved slot
+     */
+    private boolean chest(int slot) {
+        return slot >= 0 && Elytra.chestplate(Hotbar.stack(slot));
+    }
+
+    //endregion
+
+    //region Requests and synchronization
+
+    /**
+     * Runs an action now or remembers it for the next elytra window.
+     *
+     * @param action action to run
+     * @return true when the action ran or was remembered
+     */
+    public boolean request(BooleanSupplier action) {
+        if (action == null) return false;
+        if (!this.active()) return action.getAsBoolean();
+
+        if (this.request == null) this.request = action;
+        return true;
+    }
+
+    /**
+     * Remembers a firework request for the next spoofed elytra window.
+     *
+     * @return true when the request was accepted
+     */
+    public boolean request() {
+        return this.request(Elytra::firework);
+    }
+
+    /**
+     * Holds a server ping while a rejected glide is preserved.
+     *
+     * @param parameter ping parameter to acknowledge later
+     * @return true when the normal pong should be suppressed
+     */
+    public synchronized boolean ping(int parameter) {
+        if (!this.active() || !this.holding) {
+            return false;
+        }
+
+        this.pongs.addLast(parameter);
+        return true;
+    }
+
+    /**
+     * Preserves a rejected bounce glide before vanilla applies the update.
+     *
+     * @param packet incoming tracker update
+     */
+    public void track(EntityTrackerUpdateS2CPacket packet) {
+        if (!this.bounce || !this.active() ||
+            this.client.player == null ||
+            !this.client.player.isGliding() ||
+            packet.id() != this.client.player.getId()) {
+            return;
+        }
+
+        List<DataTracker.SerializedEntry<?>> entries = packet.trackedValues();
+
+        for (int idx = 0; idx < entries.size(); idx++) {
+            DataTracker.SerializedEntry<?> entry = entries.get(idx);
+
+            if (entry.id() != flags ||
+                !(entry.value() instanceof Byte value)) {
+                continue;
+            }
+
+            if ((value & (1 << gliding)) != 0) return;
+            byte next = (byte) (value | (1 << gliding));
+
+            try {
+                entries.set(idx, this.entry(entry, next));
+            } catch (UnsupportedOperationException ignored) {
+                return;
+            }
+
+            this.held = 0;
+            this.holding = true;
+            return;
+        }
+    }
+
+    /**
+     * Keeps the local gliding flag when the server clears it.
+     *
+     * @param flags incoming entity flags
+     * @return adjusted entity flags
+     */
+    public byte sync(byte flags) {
+        boolean flying = (flags & (1 << gliding)) != 0;
+        if (!this.active() || flying) return flags;
+
+        if (!this.continuing()) {
+            this.clear();
+            return flags;
+        }
+
+        if (this.bounce) return flags;
+
+        if (!this.client.player.isGliding()) {
+            this.clear();
+            return flags;
+        }
+
+        if (!this.restore) this.restart = true;
+        return (byte) (flags | (1 << gliding));
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private DataTracker.SerializedEntry<?> entry(
+        DataTracker.SerializedEntry<?> entry, byte value) {
+
+        return new DataTracker.SerializedEntry(
+            entry.id(), entry.handler(), value
+        );
+    }
+
+    //endregion
+
     //region Packet ordering
+
+    /**
+     * Releases held pongs and ends a preserved fake glide.
+     */
+    private synchronized void release() {
+        boolean held = this.holding;
+
+        this.held = 0;
+        this.holding = false;
+
+        while (!this.pongs.isEmpty()) {
+            if (this.client.getNetworkHandler() == null) {
+                this.pongs.clear();
+                break;
+            }
+            Packets.pong(this.pongs.removeFirst());
+        }
+
+        if (held && Client.ready() &&
+            this.client.player.isGliding()) {
+            this.client.player.stopGliding();
+        }
+    }
 
     /**
      * Runs a pending action while the elytra is temporarily equipped.
@@ -483,9 +730,9 @@ public final class Flight {
     private boolean continuing() {
         return Client.ready()
             && !Player.liquid()
-            && !this.client.player.isOnGround()
             && !this.client.player.hasVehicle()
             && !this.client.player.getAbilities().flying
+            && (this.bounce || !this.client.player.isOnGround())
             && !this.client.player.hasStatusEffect(StatusEffects.LEVITATION);
     }
 
@@ -493,11 +740,17 @@ public final class Flight {
      * Ends spoofing and restores the chestplate when necessary.
      */
     private void clear() {
-        if (this.restore && Client.ready() &&
+        this.release();
+
+        if (this.bounce && Client.ready() &&
+            Elytra.equipped() && this.chest(this.slot)) {
+            Inventory.swap(chest, this.slot);
+        } else if (this.restore && Client.ready() &&
             Elytra.equipped() && this.slot >= 0) {
             this.inventory();
             Inventory.swap(chest, this.slot);
         }
+
         this.reset();
     }
 
@@ -506,11 +759,20 @@ public final class Flight {
      */
     private void reset() {
         this.active = false;
+        this.holding = false;
         this.restart = false;
         this.restore = false;
 
+        this.held = 0;
+        this.airborne = 0;
+        this.ground = false;
+
         this.slot = -1;
+        this.last = -air;
+        this.swap = -air;
+
         this.request = null;
+        this.pongs.clear();
     }
 
     //endregion

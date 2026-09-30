@@ -223,7 +223,7 @@ public class ElytraTweaks extends Module {
     @Override
     public void onActivate() {
         this.reset();
-        this.flight.enabled(this.spoof.get() && !this.bounce());
+        this.flight.enabled(this.spoof.get());
     }
 
     /**
@@ -247,7 +247,7 @@ public class ElytraTweaks extends Module {
     private void onTick(TickEvent.Pre event) {
         if (!Client.ready()) return;
 
-        this.flight.enabled(this.spoof.get() && !this.bounce());
+        this.flight.enabled(this.spoof.get());
 
         if (Baritone.elytra()) {
             this.flight.normal();
