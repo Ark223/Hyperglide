@@ -134,7 +134,7 @@ public class BounceFly extends Module {
 
     public BounceFly() {
         super(Hyperglide.CATEGORY, "bounce-fly",
-            "Uses elytra bouncing for fast highway travel."
+            "Enables elytra bouncing for fast highway travel."
         );
     }
 
