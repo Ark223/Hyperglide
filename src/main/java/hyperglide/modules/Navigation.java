@@ -12,8 +12,11 @@ import hyperglide.utilities.Player;
 import meteordevelopment.meteorclient.events.meteor.MouseScrollEvent;
 import meteordevelopment.meteorclient.events.render.Render2DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
+import meteordevelopment.meteorclient.gui.GuiTheme;
 import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
+import meteordevelopment.meteorclient.gui.widgets.WWidget;
 import meteordevelopment.meteorclient.gui.widgets.input.WTextBox;
+import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.systems.modules.Module;
@@ -25,6 +28,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec2f;
 import org.lwjgl.glfw.GLFW;
+import java.util.List;
 import java.util.Locale;
 
 public class Navigation extends Module {
@@ -62,10 +66,19 @@ public class Navigation extends Module {
         .build()
     );
 
-    private final Setting<Boolean> streamer = this.general.add(new BoolSetting.Builder()
-        .name("streamer-mode")
+    private final Setting<Boolean> stream = this.general.add(new BoolSetting.Builder()
+        .name("stream-mode")
         .description("Censors destination coordinates.")
         .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<Integer> radius = this.general.add(new IntSetting.Builder()
+        .name("clip-radius")
+        .description("Cuts highways within this radius.")
+        .defaultValue(0)
+        .min(0)
+        .sliderMax(100000)
         .build()
     );
 
@@ -183,7 +196,8 @@ public class Navigation extends Module {
     );
 
     private BlockPos point = new BlockPos(0, 0, 0);
-    private final Search search = new Search();
+    private List<Highways.Road> roads = Highways.roads();
+    private Search search = new Search(this.roads);
 
     private float mx;
     private float my;
@@ -211,6 +225,19 @@ public class Navigation extends Module {
     }
 
     /**
+     * Adds the map reload button to the module settings.
+     *
+     * @param theme current GUI theme
+     * @return reload button
+     */
+    @Override
+    public WWidget getWidget(GuiTheme theme) {
+        WButton button = theme.button("Reload Map");
+        button.action = this::reload;
+        return button;
+    }
+
+    /**
      * Initializes the route and map zoom.
      */
     @Override
@@ -226,7 +253,7 @@ public class Navigation extends Module {
 
         this.timer = 0;
         this.parse(this.goal.get());
-        this.calculate();
+        this.reload();
     }
 
     //region Event handlers
@@ -262,7 +289,9 @@ public class Navigation extends Module {
         }
 
         Vec2f mouse = Gui.mouse();
-        if (!this.hovered(mouse.x, mouse.y)) return;
+        if (!this.hovered(mouse.x, mouse.y)) {
+            return;
+        }
 
         double scale = this.scale();
 
@@ -292,7 +321,9 @@ public class Navigation extends Module {
     @EventHandler
     private void onRender2D(Render2DEvent event) {
         if (!this.render.get() || !Client.nether() ||
-            this.mc.player == null || Gui.vanilla()) return;
+            this.mc.player == null || Gui.vanilla()) {
+            return;
+        }
 
         int left = (int) this.left();
         int top = (int) this.top();
@@ -313,7 +344,7 @@ public class Navigation extends Module {
         renderer.begin(event.drawContext);
 
         if (hovered) {
-            if (this.streamer.get()) {
+            if (this.stream.get()) {
                 if (highway != null) {
                     this.box(renderer,
                         new String[] {highway.name()},
@@ -324,9 +355,9 @@ public class Navigation extends Module {
                 BlockPos point = this.world(mouse, view, left, top);
                 String position = "X: " + point.getX() + " Z: " + point.getZ();
 
-                this.box(renderer, highway == null
-                    ? new String[] {position}
-                    : new String[] {highway.name(), position},
+                this.box(renderer, highway == null ?
+                    new String[] {position} :
+                    new String[] {highway.name(), position},
                     left * gui, top * gui, true, gui
                 );
             }
@@ -370,7 +401,7 @@ public class Navigation extends Module {
         context.fill(left, top, left + size, top + size, background.getPacked());
         context.enableScissor(left + 1, top + 1, left + size - 1, top + size - 1);
 
-        for (Highways.Road highway : Highways.roads()) {
+        for (Highways.Road highway : this.roads) {
             for (Segment segment : highway.segments()) {
                 this.draw(context, segment.start(), segment.end(),
                     view, left, top, road, this.thickness.get()
@@ -746,7 +777,7 @@ public class Navigation extends Module {
         Highways.Road result = null;
         float closest = Math.max(4.0F, this.thickness.get() + 2.0F);
 
-        for (Highways.Road road : Highways.roads()) {
+        for (Highways.Road road : this.roads) {
             for (Segment segment : road.segments()) {
                 Vec2f first = this.screen(segment.start(), view, left, top);
                 Vec2f second = this.screen(segment.end(), view, left, top);
@@ -937,6 +968,18 @@ public class Navigation extends Module {
     //region Destination control
 
     /**
+     * Rebuilds the highway network using the menu settings.
+     */
+    private void reload() {
+        float radius = this.radius.get();
+        if (this.convert.get()) radius /= 8.0F;
+
+        this.roads = Highways.roads(radius);
+        this.search = new Search(this.roads);
+        this.calculate();
+    }
+
+    /**
      * Recalculates the fastest route from the current position.
      */
     private void calculate() {
@@ -1047,8 +1090,8 @@ public class Navigation extends Module {
             double tx, double ty, String text, Color color) {
 
             Navigation module = Modules.get().get(Navigation.class);
-            Boolean streamer = module != null && module.streamer.get();
-            String value = streamer ? "*".repeat(text.length()) : text;
+            boolean stream = module != null && module.stream.get();
+            String value = stream ? "*".repeat(text.length()) : text;
 
             renderer.text(value, tx, ty, color, false);
         }

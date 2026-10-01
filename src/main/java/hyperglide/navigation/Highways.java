@@ -50,6 +50,17 @@ public final class Highways {
         return roads;
     }
 
+    /**
+     * Returns the highway network with segments removed.
+     *
+     * @param radius radius to remove from the network
+     * @return modified highway road list
+     */
+    public static List<Road> roads(float radius) {
+        if (radius <= 0.0F) return roads;
+        return cut(roads, radius);
+    }
+
     //region Highway generation
 
     /**
@@ -253,6 +264,31 @@ public final class Highways {
             new Segment(new Vec2f(-grid, offset), new Vec2f(-radius, offset)),
             new Segment(new Vec2f(radius, offset), new Vec2f(grid, offset))
         );
+    }
+
+    /**
+     * Removes segment parts that fall inside the given radius.
+     *
+     * @param roads roads to modify
+     * @param radius radius around the origin
+     * @return modified road list
+     */
+    private static List<Road> cut(List<Road> roads, float radius) {
+        List<Road> result = new ArrayList<>();
+
+        for (Road road : roads) {
+            List<Segment> segments = new ArrayList<>();
+
+            for (Segment segment : road.segments()) {
+                segments.addAll(Clipper.cut(segment, radius));
+            }
+
+            if (!segments.isEmpty()) {
+                result.add(new Road(road.name(), road.kind(), segments));
+            }
+        }
+
+        return List.copyOf(result);
     }
 
     /**

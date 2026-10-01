@@ -12,7 +12,23 @@ import java.util.PriorityQueue;
 public final class Search {
     private static final float epsilon = 0.05F;
 
-    private static final Graph graph = new Graph(Highways.roads());
+    private final Graph graph;
+
+    /**
+     * Builds a search over the complete highway network.
+     */
+    public Search() {
+        this(Highways.roads());
+    }
+
+    /**
+     * Builds a search over the supplied highway network.
+     *
+     * @param roads roads available for routing
+     */
+    public Search(List<Highways.Road> roads) {
+        this.graph = new Graph(roads);
+    }
 
     /**
      * Calculates the fastest route between two positions.
