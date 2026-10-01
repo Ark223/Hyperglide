@@ -15,9 +15,7 @@ public abstract class ClientPlayerMixin {
      * @param speed vanilla item use speed multiplier
      * @return movement speed multiplier used while bouncing
      */
-    @ModifyReturnValue(
-        method = "getActiveItemSpeedMultiplier", at = @At("RETURN")
-    )
+    @ModifyReturnValue(method = "getActiveItemSpeedMultiplier", at = @At("RETURN"))
     private float hyperglide$slow(float speed) {
         BounceFly module = Modules.get().get(BounceFly.class);
         return module != null && module.enabled() ? 1.0F : speed;

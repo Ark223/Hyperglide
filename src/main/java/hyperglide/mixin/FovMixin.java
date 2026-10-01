@@ -24,6 +24,7 @@ public abstract class FovMixin {
 
         AbstractClientPlayerEntity player =
             (AbstractClientPlayerEntity) (Object) this;
+
         if (!player.isSprinting()) return scale;
 
         NoSprintFov module = Modules.get().get(NoSprintFov.class);

@@ -27,8 +27,7 @@ public abstract class ItemOverlayMixin {
      */
     @Inject(method = "drawItem(Lnet/minecraft/entity/LivingEntity;" +
         "Lnet/minecraft/world/World;Lnet/minecraft/item/ItemStack;" +
-        "IIII)V",
-        at = @At("TAIL")
+        "IIII)V", at = @At("TAIL")
     )
     private void onDrawItem(
         LivingEntity entity, World world, ItemStack stack,

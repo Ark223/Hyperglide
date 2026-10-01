@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(ClientPlayerInteractionManager.class)
 public abstract class MiningTweaksMixin {
     /**
-     * Redirects block attacks to Mining Tweaks.
+     * Prevents vanilla block attacks from interfering with Mining Tweaks.
      *
      * @param pos block position
      * @param side block side
@@ -27,7 +27,7 @@ public abstract class MiningTweaksMixin {
     }
 
     /**
-     * Redirects block breaking updates to Mining Tweaks.
+     * Prevents vanilla breaking updates from interfering with Mining Tweaks.
      *
      * @param pos block position
      * @param side block side
@@ -39,24 +39,25 @@ public abstract class MiningTweaksMixin {
     }
 
     /**
-     * Forwards block breaking to Mining Tweaks.
+     * Forwards block breaking to Mining Tweaks and skips vanilla mining.
      *
      * @param pos block position
      * @param side block side
      * @param info injection callback
      */
     @Unique
-    private void hyperglide$mine(BlockPos pos, Direction side,
-        CallbackInfoReturnable<Boolean> info) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        MiningTweaks module = Modules.get().get(MiningTweaks.class);
+    private void hyperglide$mine(BlockPos pos,
+        Direction side, CallbackInfoReturnable<Boolean> info) {
 
-        if (module == null || !module.isActive() ||
-            client.player == null || client.player.isCreative()) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || client.player.isCreative()) {
             return;
         }
 
-        if (module.bypass(pos)) return;
+        MiningTweaks module = Modules.get().get(MiningTweaks.class);
+        if (module == null || !module.isActive() || module.bypass(pos)) {
+            return;
+        }
 
         module.mine(pos, side);
         info.setReturnValue(true);

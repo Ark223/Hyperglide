@@ -3,7 +3,6 @@ package hyperglide.modules;
 import hyperglide.Hyperglide;
 import hyperglide.utilities.API;
 import hyperglide.utilities.Client;
-import hyperglide.utilities.Packets;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
@@ -83,15 +82,15 @@ public class EasyAccess extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (!Client.interaction()) return;
-
         if (!this.mc.options.useKey.isPressed()) {
             this.lock = false;
             this.cancel = false;
             return;
         }
 
-        if (this.lock) return;
+        if (!Client.interaction() || this.lock) {
+            return;
+        }
 
         this.lock = true;
         this.cancel = false;
@@ -208,7 +207,7 @@ public class EasyAccess extends Module {
             }
 
             BlockHitResult hit = new BlockHitResult(
-                point, this.side(pos, eye), pos, false
+                point, Direction.UP, pos, false
             );
 
             best = new Target(hit, null, current);
@@ -252,41 +251,12 @@ public class EasyAccess extends Module {
         return best;
     }
 
-    /**
-     * Finds the block face facing most directly toward the player.
-     *
-     * @param pos block position
-     * @param eye player eye position
-     * @return closest block face
-     */
-    private Direction side(BlockPos pos, Vec3d eye) {
-        Vec3d center = Vec3d.ofCenter(pos);
-        Vec3d dir = eye.subtract(center);
-
-        Direction best = Direction.UP;
-        double value = -Double.MAX_VALUE;
-
-        for (Direction side : Direction.values()) {
-            double current =
-                dir.x * side.getOffsetX() +
-                dir.y * side.getOffsetY() +
-                dir.z * side.getOffsetZ();
-
-            if (current > value) {
-                best = side;
-                value = current;
-            }
-        }
-
-        return best;
-    }
-
     //endregion
 
     //region Container interaction
 
     /**
-     * Checks whether an entity is a supported container or merchant.
+     * Checks whether an entity is a container or merchant.
      *
      * @param entity entity to check
      * @return true when the entity is supported
@@ -309,7 +279,9 @@ public class EasyAccess extends Module {
      * @param hit block interaction target
      */
     private void block(BlockHitResult hit) {
-        Packets.block(Hand.MAIN_HAND, hit);
+        this.mc.interactionManager.interactBlock(
+            this.mc.player, Hand.MAIN_HAND, hit
+        );
     }
 
     /**
@@ -322,7 +294,6 @@ public class EasyAccess extends Module {
 
         boolean sneak = !this.mc.player.isSneaking()
             && entity instanceof AbstractDonkeyEntity;
-
         if (sneak) API.sneak(this.mc.player, true);
 
         try {
@@ -365,8 +336,9 @@ public class EasyAccess extends Module {
      * @param entity entity interaction target, or null
      * @param distance squared distance from the player
      */
-    private record Target(BlockHitResult block,
-        EntityHitResult entity, double distance) {}
+    private record Target(
+        BlockHitResult block, EntityHitResult entity, double distance
+    ) {}
 
     //endregion
 }
