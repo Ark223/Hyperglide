@@ -26,6 +26,15 @@ public final class API {
     private API() {}
 
     /**
+     * Checks whether bounce spoofing is supported.
+     *
+     * @return true when bounce spoofing may be used
+     */
+    public static boolean bounce() {
+        return true;
+    }
+
+    /**
      * Returns the name stored in a game profile.
      *
      * @param profile game profile

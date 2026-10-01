@@ -83,7 +83,12 @@ public final class Flight {
     public void bounce(boolean bounce) {
         if (this.bounce == bounce) return;
 
-        if (this.active) this.clear();
+        if (bounce && !API.bounce()) {
+            this.normal();
+        } else if (this.active) {
+            this.clear();
+        }
+
         this.bounce = bounce;
     }
 
@@ -94,6 +99,7 @@ public final class Flight {
      */
     public boolean spoof() {
         return this.enabled && !Baritone.elytra()
+            && (!this.bounce || API.bounce())
             && !this.liquid && !Player.liquid();
     }
 

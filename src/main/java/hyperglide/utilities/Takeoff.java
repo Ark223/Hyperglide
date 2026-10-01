@@ -51,6 +51,11 @@ public final class Takeoff {
                 return;
             }
 
+            if (this.flight.spoof() &&
+                !this.flight.prepare()) {
+                return;
+            }
+
             this.pressed = true;
             return;
         }

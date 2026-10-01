@@ -27,9 +27,7 @@ public abstract class DataTrackerMixin {
      * @param entries incoming data updates
      * @return adjusted data updates
      */
-    @ModifyVariable(
-        method = "writeUpdatedEntries", at = @At("HEAD"), argsOnly = true
-    )
+    @ModifyVariable(method = "writeUpdatedEntries", at = @At("HEAD"), argsOnly = true)
     private List<DataTracker.SerializedEntry<?>> hyperglide$entries(
         List<DataTracker.SerializedEntry<?>> entries) {
 
