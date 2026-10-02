@@ -23,7 +23,34 @@ import net.minecraft.world.World;
  * Provides compatibility helpers for shared code.
  */
 public final class API {
+    private static final int points = 128;
+
+    private static final double[] cos = new double[points];
+    private static final double[] sin = new double[points];
+    private static final double[] angle = new double[points];
+
+    private static final double chord = 2.0 * Math.sin(Math.PI / points);
+
     private API() {}
+
+    /**
+     * Precomputes circle points and line angles.
+     */
+    static {
+        for (int idx = 0; idx < points; idx++) {
+            double value = 2.0 * Math.PI * idx / points;
+            cos[idx] = Math.cos(value);
+            sin[idx] = Math.sin(value);
+        }
+
+        for (int idx = 0; idx < points; idx++) {
+            int next = (idx + 1) & (points - 1);
+            angle[idx] = Math.atan2(
+                sin[next] - sin[idx],
+                cos[next] - cos[idx]
+            );
+        }
+    }
 
     /**
      * Checks whether bounce spoofing is supported.
@@ -145,6 +172,30 @@ public final class API {
 
         context.fill(0, 0, (int) Math.ceil(length), width, color);
         matrices.pop();
+    }
+
+    /**
+     * Draws a 2D circle using the specified position and radius.
+     *
+     * @param context active draw context
+     * @param px circle center X
+     * @param py circle center Y
+     * @param radius circle radius
+     * @param width line thickness
+     * @param color circle color
+     */
+    public static void circle(DrawContext context, double px,
+        double py, double radius, int width, int color) {
+
+        if (radius <= 0.0) return;
+        double length = chord * radius;
+
+        for (int idx = 0; idx < points; idx++) {
+            double dx = px + cos[idx] * radius;
+            double dy = py + sin[idx] * radius;
+
+            line(context, dx, dy, length, angle[idx], width, color);
+        }
     }
 
     /**

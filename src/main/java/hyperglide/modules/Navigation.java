@@ -187,6 +187,14 @@ public class Navigation extends Module {
         .build()
     );
 
+    private final Setting<SettingColor> area = this.colors.add(new ColorSetting.Builder()
+        .name("clip-area")
+        .description("Clipped area color.")
+        .defaultValue(new SettingColor(64, 160, 255, 255))
+        .visible(this.render::get)
+        .build()
+    );
+
     private final Setting<SettingColor> outline = this.colors.add(new ColorSetting.Builder()
         .name("map-outline")
         .description("Map outline color.")
@@ -409,6 +417,14 @@ public class Navigation extends Module {
             }
         }
 
+        float radius = this.clip();
+        if (radius > 0.0F) {
+            Vec2f origin = this.screen(Vec2f.ZERO, view, left, top);
+            API.circle(context, origin.x, origin.y, radius / view.scale,
+                this.thickness.get(), this.area.get().getPacked()
+            );
+        }
+
         if (this.route != null) {
             Color path = this.path.get();
             for (Route.Leg leg : this.route.legs()) {
@@ -541,7 +557,8 @@ public class Navigation extends Module {
         float py = (float) (top + size * 0.5F);
 
         Vec2f world = point.add(new Vec2f(-px, -py));
-        world = world.multiply((float) view.scale).add(view.center);
+        world = world.multiply((float) view.scale);
+        world = world.add(view.center);
 
         int scale = this.convert.get() ? 8 : 1;
         return new BlockPos(
@@ -968,13 +985,20 @@ public class Navigation extends Module {
     //region Destination control
 
     /**
+     * Returns the clip radius in nether coordinates.
+     *
+     * @return effective clip radius
+     */
+    private float clip() {
+        float radius = this.radius.get();
+        return this.convert.get() ? radius / 8.0F : radius;
+    }
+
+    /**
      * Rebuilds the highway network using the menu settings.
      */
     private void reload() {
-        float radius = this.radius.get();
-        if (this.convert.get()) radius /= 8.0F;
-
-        this.roads = Highways.roads(radius);
+        this.roads = Highways.roads(this.clip());
         this.search = new Search(this.roads);
         this.calculate();
     }

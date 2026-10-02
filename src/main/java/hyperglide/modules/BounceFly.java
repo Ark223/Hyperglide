@@ -28,7 +28,7 @@ import java.util.Deque;
 
 public class BounceFly extends Module {
     private static final double range = 5.0;
-    private static final double stop = 4.0;
+    private static final double stop = 8.0;
     private static final int grid = 10;
 
     private static final int reach = 2;

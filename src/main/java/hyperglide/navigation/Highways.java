@@ -64,7 +64,7 @@ public final class Highways {
     //region Highway generation
 
     /**
-     * Builds the known Nether highway network.
+     * Builds the known nether highway network.
      *
      * @return generated highway road list
      */

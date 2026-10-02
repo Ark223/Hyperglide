@@ -678,7 +678,7 @@ public final class Flight {
     }
 
     /**
-     * Runs a pending action while the elytra is temporarily equipped.
+     * Runs a pending action while the elytra is equipped.
      */
     private void flush() {
         if (this.request == null) return;
@@ -689,7 +689,7 @@ public final class Flight {
     }
 
     /**
-     * Sends the neutral input Grim expects before an inventory action.
+     * Sends the neutral input before an inventory action.
      */
     private void inventory() {
         this.sprint();
