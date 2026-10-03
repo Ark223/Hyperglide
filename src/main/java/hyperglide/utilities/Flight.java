@@ -7,6 +7,7 @@ import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
 import net.minecraft.network.packet.s2c.play.EntityTrackerUpdateS2CPacket;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.item.consume.UseAction;
 import net.minecraft.util.PlayerInput;
 import java.util.ArrayDeque;
 import java.util.List;
@@ -33,10 +34,11 @@ public final class Flight {
     private boolean active;
     private boolean bounce;
 
+    private int slot = -1;
     private boolean restart;
     private boolean restore;
-    private int slot = -1;
 
+    private boolean consuming;
     private boolean holding;
     private boolean ground;
 
@@ -45,8 +47,8 @@ public final class Flight {
     private int last = -air;
     private int swap = -air;
 
-    private boolean liquid;
     private int dry;
+    private boolean liquid;
 
     private BooleanSupplier request;
 
@@ -182,16 +184,19 @@ public final class Flight {
         if (this.active) return true;
 
         if (!Client.interaction() || !Inventory.ready() ||
-            !this.client.player.isGliding()) {
+            !this.client.player.isGliding() || !this.prepare()) {
             return false;
         }
 
-        if (!this.prepare()) return false;
-
         this.prime();
+
         this.active = true;
         this.restart = false;
         this.restore = false;
+
+        if (this.bounce) {
+            this.hand(this.gear(), true);
+        }
 
         return true;
     }
@@ -211,10 +216,12 @@ public final class Flight {
         }
 
         this.prime();
+
         this.active = true;
         this.restart = !this.bounce;
         this.restore = false;
 
+        if (this.bounce) this.hand(this.gear(), true);
         if (this.begin()) return true;
 
         this.clear();
@@ -272,12 +279,12 @@ public final class Flight {
             Inventory.swap(chest, this.slot);
         }
 
-        this.restore = false;
         this.slot = -1;
+        this.restore = false;
     }
 
     /**
-     * Restores normal elytra equipment for Baritone flight.
+     * Restores elytra equipment for normal flight.
      *
      * @return true when an elytra is equipped
      */
@@ -446,6 +453,7 @@ public final class Flight {
     private void prime() {
         if (!this.bounce) return;
 
+        this.consuming = false;
         this.ground = false;
         this.airborne = 0;
     }
@@ -468,6 +476,8 @@ public final class Flight {
             Inventory.swap(chest, slot);
         }
 
+        this.hand(slot, false);
+
         if (this.holding) {
             this.preserve();
             if (this.holding) return;
@@ -479,6 +489,41 @@ public final class Flight {
             this.client.player.age - this.last >= air) {
             this.begin();
         }
+    }
+
+    /**
+     * Keeps the elytra selected while allowing to consume.
+     *
+     * @param slot reserved elytra hotbar slot
+     * @param force whether to take control of the main hand
+     */
+    private void hand(int slot, boolean force) {
+        if (slot < 0 || slot >= 9 ||
+            !Hotbar.stack(slot).isOf(Items.ELYTRA)) {
+            return;
+        }
+
+        int current = Hotbar.selected();
+        if (!force && Player.consuming()) {
+            this.consuming = true;
+            return;
+        }
+
+        if (!force && this.consuming) {
+            if (current != slot) Hotbar.select(slot);
+
+            this.consuming = false;
+            return;
+        }
+
+        if (!force && current != slot) {
+            UseAction action = Hotbar.stack(current).getUseAction();
+            if (action == UseAction.EAT || action == UseAction.DRINK) {
+                return;
+            }
+        }
+
+        if (current != slot) Hotbar.select(slot);
     }
 
     /**
@@ -526,7 +571,7 @@ public final class Flight {
     }
 
     /**
-     * Checks whether the reserved hotbar slot currently holds chest armor.
+     * Checks whether the reserved slot currently holds chest armor.
      *
      * @param slot reserved hotbar slot
      * @return true when a chestplate is waiting in the reserved slot
@@ -765,15 +810,17 @@ public final class Flight {
      */
     private void reset() {
         this.active = false;
-        this.holding = false;
+
+        this.slot = -1;
         this.restart = false;
         this.restore = false;
 
-        this.held = 0;
-        this.airborne = 0;
+        this.consuming = false;
+        this.holding = false;
         this.ground = false;
 
-        this.slot = -1;
+        this.held = 0;
+        this.airborne = 0;
         this.last = -air;
         this.swap = -air;
 
