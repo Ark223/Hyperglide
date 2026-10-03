@@ -22,7 +22,7 @@ import org.joml.Matrix3x2fStack;
  * Provides compatibility helpers for shared code.
  */
 public final class API {
-    private static final int points = 128;
+    private static final int points = 32;
 
     private static final double[] cos = new double[points];
     private static final double[] sin = new double[points];
@@ -36,19 +36,8 @@ public final class API {
      * Precomputes circle points and line angles.
      */
     static {
-        for (int idx = 0; idx < points; idx++) {
-            double value = 2.0 * Math.PI * idx / points;
-            cos[idx] = Math.cos(value);
-            sin[idx] = Math.sin(value);
-        }
-
-        for (int idx = 0; idx < points; idx++) {
-            int next = (idx + 1) & (points - 1);
-            angle[idx] = Math.atan2(
-                sin[next] - sin[idx],
-                cos[next] - cos[idx]
-            );
-        }
+        points();
+        angles();
     }
 
     /**
@@ -190,7 +179,6 @@ public final class API {
         for (int idx = 0; idx < points; idx++) {
             double dx = px + cos[idx] * radius;
             double dy = py + sin[idx] * radius;
-
             line(context, dx, dy, length, angle[idx], width, color);
         }
     }
@@ -232,5 +220,29 @@ public final class API {
     public static void border(DrawContext context,
         int px, int py, int width, int height, int color) {
         context.drawStrokedRectangle(px, py, width, height, color);
+    }
+
+    /**
+     * Precomputes points around the circle center.
+     */
+    private static void points() {
+        for (int idx = 0; idx < points; idx++) {
+            double value = 2.0 * Math.PI * idx / points;
+            cos[idx] = Math.cos(value);
+            sin[idx] = Math.sin(value);
+        }
+    }
+
+    /**
+     * Precomputes line angles between circle points.
+     */
+    private static void angles() {
+        for (int idx = 0; idx < points; idx++) {
+            int next = (idx + 1) & (points - 1);
+
+            double dx = sin[next] - sin[idx];
+            double dy = cos[next] - cos[idx];
+            angle[idx] = Math.atan2(dx, dy);
+        }
     }
 }

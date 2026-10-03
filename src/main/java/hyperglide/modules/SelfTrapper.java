@@ -82,8 +82,8 @@ public class SelfTrapper extends Module {
         .build()
     );
 
-    private final Setting<Integer> cooldown = this.control.add(new IntSetting.Builder()
-        .name("retry-cooldown")
+    private final Setting<Integer> timeout = this.control.add(new IntSetting.Builder()
+        .name("retry-timeout")
         .description("Delay in ticks before retrying a failed placement.")
         .defaultValue(3)
         .min(1)
@@ -639,7 +639,7 @@ public class SelfTrapper extends Module {
         if (!Placement.open(pos)) return;
         if (!this.wanted.contains(pos)) return;
 
-        int timer = this.tick + this.cooldown.get();
+        int timer = this.tick + this.timeout.get();
         this.waiting.put(pos.toImmutable(), timer);
     }
 

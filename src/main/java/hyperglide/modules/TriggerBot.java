@@ -43,7 +43,7 @@ public class TriggerBot extends Module {
     );
 
     private final Setting<Integer> delay = this.general.add(new IntSetting.Builder()
-        .name("attack-delay")
+        .name("hit-delay")
         .description("Additional ticks to wait before attacking.")
         .defaultValue(0)
         .min(0)
