@@ -228,7 +228,7 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Returns the current takeoff jump input.
+     * Returns whether takeoff is holding jump.
      *
      * @return forced jump state
      */

@@ -39,7 +39,7 @@ import net.minecraft.world.RaycastContext;
 public class ElytraTweaks extends Module {
     private static final double epsilon = 1.0E-6;
 
-    private static final int settle = 3;
+    private static final int settle = 4;
     private static final int delay = 5;
     private static final int chest = 6;
 
@@ -235,7 +235,7 @@ public class ElytraTweaks extends Module {
     @Override
     public void onActivate() {
         this.reset();
-        this.flight.enabled(this.spoof.get());
+        this.flight.enabled(this.spoofing());
     }
 
     /**
@@ -317,7 +317,7 @@ public class ElytraTweaks extends Module {
      * Keeps spoof mode synchronized while flying.
      */
     private void flight() {
-        this.flight.enabled(this.spoof.get());
+        this.flight.enabled(this.spoofing());
 
         if (Baritone.elytra()) {
             this.flight.normal();
@@ -333,7 +333,7 @@ public class ElytraTweaks extends Module {
     }
 
     /**
-     * Keeps required keys pressed and uses a queued rocket.
+     * Keeps required inputs active and uses a queued rocket.
      */
     private void controls() {
         if (this.sneak) {
@@ -403,7 +403,7 @@ public class ElytraTweaks extends Module {
     }
 
     /**
-     * Returns the current takeoff jump input.
+     * Returns whether takeoff is holding jump.
      *
      * @return forced jump state
      */
@@ -421,12 +421,21 @@ public class ElytraTweaks extends Module {
     }
 
     /**
-     * Checks whether normal elytra swapping is already handled.
+     * Checks whether elytra equipment is already handled.
      *
-     * @return true when spoofing may be used or an elytra is equipped
+     * @return true when spoofing is on or an elytra is equipped
      */
     private boolean managed() {
         return this.flight.spoof() || Elytra.equipped();
+    }
+
+    /**
+     * Checks whether spoof mode may currently run.
+     *
+     * @return true when spoofing is enabled
+     */
+    private boolean spoofing() {
+        return this.spoof.get() && !this.bounce();
     }
 
     /**
@@ -520,6 +529,12 @@ public class ElytraTweaks extends Module {
      */
     private void spoof(boolean enabled) {
         if (!this.isActive()) return;
+
+        if (this.bounce()) {
+            this.flight.enabled(false);
+            this.resume = 0;
+            return;
+        }
 
         boolean flying = this.flight.active() ||
             Client.ready() && this.mc.player.isGliding();

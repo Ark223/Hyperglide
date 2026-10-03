@@ -20,7 +20,6 @@
     "KeyBindingMixin",
     "LivingEntityMixin",
     "MiningTweaksMixin",
-    "NetworkHandlerMixin",
     "PlayerListAccessor",
     "SoundMixin"
   ],

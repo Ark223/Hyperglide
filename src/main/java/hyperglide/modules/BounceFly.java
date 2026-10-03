@@ -3,8 +3,7 @@ package hyperglide.modules;
 import hyperglide.Hyperglide;
 import hyperglide.utilities.Baritone;
 import hyperglide.utilities.Client;
-import hyperglide.utilities.Flight;
-import meteordevelopment.meteorclient.events.packets.PacketEvent;
+import hyperglide.utilities.Elytra;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
@@ -15,7 +14,6 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.BlockState;
-import net.minecraft.network.packet.s2c.play.EntityTrackerUpdateS2CPacket;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
@@ -109,7 +107,6 @@ public class BounceFly extends Module {
     );
 
     private final Deque<BlockPos> blocks = new ArrayDeque<>();
-    private final Flight flight = Flight.get();
 
     private MiningTweaks mining;
     private BlockPos focus;
@@ -144,7 +141,6 @@ public class BounceFly extends Module {
     @Override
     public void onActivate() {
         if (!Client.ready()) return;
-        this.flight.bounce(true);
 
         this.face();
         this.center();
@@ -169,7 +165,6 @@ public class BounceFly extends Module {
      */
     @Override
     public void onDeactivate() {
-        this.flight.bounce(false);
         this.release();
 
         if (this.pass) Baritone.stop();
@@ -193,10 +188,9 @@ public class BounceFly extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (!Client.ready()) return;
-
-        if (!this.pass) this.flight.bounce(true);
-        if (!this.available()) return;
+        if (!Client.ready() || !this.available()) {
+            return;
+        }
 
         if (!Baritone.pathing()) this.rotate();
         Vec3d vel = this.mc.player.getVelocity();
@@ -217,18 +211,6 @@ public class BounceFly extends Module {
         this.stuck();
     }
 
-    /**
-     * Prevents updates from clearing the spoofed gliding state.
-     *
-     * @param event incoming packet event
-     */
-    @EventHandler
-    private void packet(PacketEvent.Receive event) {
-        if (event.packet instanceof EntityTrackerUpdateS2CPacket packet) {
-            this.flight.track(packet);
-        }
-    }
-
     //endregion
 
     //region State management
@@ -240,7 +222,7 @@ public class BounceFly extends Module {
      */
     public boolean enabled() {
         return this.isActive() && this.mc.player != null
-            && !this.pass && this.flight.available();
+            && !this.pass && Elytra.equipped();
     }
 
     /**
@@ -312,12 +294,12 @@ public class BounceFly extends Module {
     }
 
     /**
-     * Validates flight equipment and clears bounce state.
+     * Validates equipped elytra and clears bounce state.
      *
-     * @return true when bounce flight can continue
+     * @return true when an elytra is equipped
      */
     private boolean equipped() {
-        if (this.flight.available()) {
+        if (Elytra.equipped()) {
             return true;
         }
 
@@ -329,8 +311,8 @@ public class BounceFly extends Module {
     }
 
     /**
-     * Updates bounce input and starts flight when needed.
-     *
+     * Updates jump input for the current bounce state.
+     * 
      * @param velocity current player velocity
      */
     private void launch(Vec3d velocity) {
@@ -345,18 +327,6 @@ public class BounceFly extends Module {
         if (this.mc.player.isGliding()) {
             this.launch = false;
             this.jump = 0;
-            return;
-        }
-
-        if (this.flight.spoof()) {
-            this.launch = false;
-
-            if (this.flight.active()) return;
-            if (!this.started && ++this.jump < delay) {
-                return;
-            }
-
-            if (this.flight.start()) this.jump = 0;
             return;
         }
 
@@ -412,9 +382,7 @@ public class BounceFly extends Module {
                 Baritone.stop();
                 this.reset();
                 this.clear();
-
                 this.pass = false;
-                this.flight.bounce(true);
             }
             return false;
         }
@@ -439,7 +407,6 @@ public class BounceFly extends Module {
 
             this.pass = false;
             this.started = true;
-            this.flight.bounce(true);
         }
 
         return false;
@@ -505,8 +472,6 @@ public class BounceFly extends Module {
         this.reset();
         this.setup();
 
-        this.flight.bounce(false);
-
         this.pass = true;
         this.goal = goal;
         this.focus = null;
@@ -564,8 +529,6 @@ public class BounceFly extends Module {
         this.release();
         this.reset();
         this.clear();
-
-        this.flight.bounce(false);
 
         this.pass = true;
         this.started = false;
