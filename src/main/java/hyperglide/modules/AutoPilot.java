@@ -959,7 +959,7 @@ public class AutoPilot extends Module {
         int minz = MathHelper.floor(box.minZ);
         int maxz = MathHelper.floor(Math.nextDown(box.maxZ));
 
-        int py = this.mc.player.getBlockPos().down().getY();
+        int py = this.mc.player.getBlockPos().down(2).getY();
         List<BlockPos> blocks = new ArrayList<>(4);
 
         for (int px = minx; px <= maxx; px++) {
