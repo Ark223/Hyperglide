@@ -511,15 +511,22 @@ public class BounceFly extends Module {
     }
 
     /**
-     * Starts recovery pathing toward a safe highway position.
+     * Starts recovery toward a safe highway position.
      */
     private void path() {
         this.level = this.level();
-        this.path(this.trace());
+        BlockPos goal = this.trace();
+
+        if (this.mining != null && this.avoid.get() &&
+            this.dig.get() && !this.blocks.isEmpty()) {
+            this.mine(goal);
+        } else {
+            this.path(goal);
+        }
     }
 
     /**
-     * Starts Baritone pathing slightly beyond the selected goal.
+     * Starts Baritone pathing beyond the selected goal.
      *
      * @param pos pathing goal
      */
@@ -550,15 +557,21 @@ public class BounceFly extends Module {
      * @return recovery pathing goal
      */
     private BlockPos trace() {
+        this.blocks.clear();
+
         BlockPos start = this.base();
         BlockPos pos = start, goal;
 
         for (int idx = 0; idx < span; idx++) {
             goal = pos.add(this.dx * reach, 0, this.dz * reach);
-            if (this.clear(goal)) {
-                return pos;
-            } else {
+
+            boolean mine = this.mining != null && this.dig.get();
+            if (mine && this.avoid.get()) this.step(goal);
+
+            if (!this.clear(goal)) {
                 pos = pos.add(this.dx, 0, this.dz);
+            } else {
+                return pos;
             }
         }
 
