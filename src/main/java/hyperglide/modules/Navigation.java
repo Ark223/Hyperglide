@@ -12,11 +12,8 @@ import hyperglide.utilities.Player;
 import meteordevelopment.meteorclient.events.meteor.MouseScrollEvent;
 import meteordevelopment.meteorclient.events.render.Render2DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
-import meteordevelopment.meteorclient.gui.GuiTheme;
 import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
-import meteordevelopment.meteorclient.gui.widgets.WWidget;
 import meteordevelopment.meteorclient.gui.widgets.input.WTextBox;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.systems.modules.Module;
@@ -32,6 +29,9 @@ import java.util.List;
 import java.util.Locale;
 
 public class Navigation extends Module {
+    private static final int rebuild = 20;
+    private static final int recalc = 10;
+
     private static final double border = 3750000.0;
     private static final double limit = 5000000.0;
 
@@ -62,7 +62,10 @@ public class Navigation extends Module {
         .name("eight-to-one")
         .description("Uses overworld coordinates as input.")
         .defaultValue(false)
-        .onChanged(value -> this.change(this.goal.get()))
+        .onChanged(value -> {
+            this.change(this.goal.get());
+            this.queue();
+        })
         .build()
     );
 
@@ -75,10 +78,11 @@ public class Navigation extends Module {
 
     private final Setting<Integer> radius = this.general.add(new IntSetting.Builder()
         .name("clip-radius")
-        .description("Cuts highways within this radius.")
+        .description("Excludes highways within this radius.")
         .defaultValue(0)
         .min(0)
         .sliderMax(100000)
+        .onChanged(value -> this.queue())
         .build()
     );
 
@@ -203,17 +207,21 @@ public class Navigation extends Module {
         .build()
     );
 
+    private final List<Highways.Road> roads = Highways.roads();
+
     private BlockPos point = new BlockPos(0, 0, 0);
-    private List<Highways.Road> roads = Highways.roads();
     private Search search = new Search(this.roads);
+
+    private int timer;
+    private int pending;
+    private Route route;
 
     private float mx;
     private float my;
-    private int timer;
-    private Route route;
 
     private int drag = -1;
     private boolean middle;
+
     private double zoom = 1.0;
     private Vec2f offset = Vec2f.ZERO;
 
@@ -233,19 +241,6 @@ public class Navigation extends Module {
     }
 
     /**
-     * Adds the map reload button to the module settings.
-     *
-     * @param theme current GUI theme
-     * @return reload button
-     */
-    @Override
-    public WWidget getWidget(GuiTheme theme) {
-        WButton button = theme.button("Reload Map");
-        button.action = this::reload;
-        return button;
-    }
-
-    /**
      * Initializes the route and map zoom.
      */
     @Override
@@ -260,6 +255,8 @@ public class Navigation extends Module {
         this.my = 0.0F;
 
         this.timer = 0;
+        this.pending = 0;
+
         this.parse(this.goal.get());
         this.reload();
     }
@@ -278,7 +275,13 @@ public class Navigation extends Module {
             return;
         }
 
-        if (++this.timer < 10) return;
+        if (this.pending > 0 && --this.pending == 0) {
+            this.reload();
+        }
+
+        if (++this.timer < recalc) {
+            return;
+        }
 
         this.timer = 0;
         this.calculate();
@@ -995,11 +998,18 @@ public class Navigation extends Module {
     }
 
     /**
-     * Rebuilds the highway network using the menu settings.
+     * Delays rebuilding until the clip radius stops changing.
+     */
+    private void queue() {
+        if (this.isActive()) this.pending = rebuild;
+    }
+
+    /**
+     * Rebuilds the routing network using the current clip radius.
      */
     private void reload() {
-        this.roads = Highways.roads(this.clip());
-        this.search = new Search(this.roads);
+        this.search = new Search(Highways.roads(this.clip()));
+        this.pending = 0;
         this.calculate();
     }
 
