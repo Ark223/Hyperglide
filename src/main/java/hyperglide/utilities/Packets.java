@@ -135,6 +135,16 @@ public final class Packets {
     }
 
     /**
+     * Sends and applies the supplied player input.
+     *
+     * @param input player input
+     */
+    public static void sync(PlayerInput input) {
+        input(input);
+        client.player.input.playerInput = input;
+    }
+
+    /**
      * Returns the local player's current input state.
      *
      * @return current player input
@@ -148,7 +158,7 @@ public final class Packets {
      *
      * @param jump jump input
      * @param sprint sprint input
-     * @return copied player input
+     * @return adjusted player input
      */
     public static PlayerInput state(boolean jump, boolean sprint) {
         PlayerInput input = state();
@@ -183,10 +193,24 @@ public final class Packets {
     }
 
     /**
+     * Copies the current input while pressing forward key.
+     *
+     * @return adjusted player input
+     */
+    public static PlayerInput forward() {
+        PlayerInput input = state();
+
+        return new PlayerInput(
+            true, false, input.left(), input.right(),
+            input.jump(), input.sneak(), input.sprint()
+        );
+    }
+
+    /**
      * Copies the current input while replacing the sneak state.
      *
      * @param sneak sneak input
-     * @return copied player input
+     * @return adjusted player input
      */
     public static PlayerInput sneak(boolean sneak) {
         PlayerInput input = state();

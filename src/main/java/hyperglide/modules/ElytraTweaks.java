@@ -7,6 +7,7 @@ import hyperglide.utilities.Elytra;
 import hyperglide.utilities.Flight;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Inventory;
+import hyperglide.utilities.Packets;
 import hyperglide.utilities.Player;
 import hyperglide.utilities.Takeoff;
 import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
@@ -347,9 +348,16 @@ public class ElytraTweaks extends Module {
         this.handoff();
         this.input.pulse();
 
-        if (this.boost && this.mc.player.isGliding()) {
+        if (!this.boost) return;
+
+        if (this.mc.player.isGliding()) {
             this.boost = false;
             this.rocket();
+            return;
+        }
+
+        if (!this.input.active() && this.sync <= 0) {
+            this.boost = false;
         }
     }
 
@@ -1007,7 +1015,10 @@ public class ElytraTweaks extends Module {
      * @return true when the rocket interaction was accepted
      */
     private boolean firework() {
-        return Elytra.firework();
+        if (!Elytra.firework()) return false;
+
+        Packets.sync(Packets.forward());
+        return true;
     }
 
     /**

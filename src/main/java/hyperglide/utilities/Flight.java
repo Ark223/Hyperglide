@@ -464,10 +464,7 @@ public final class Flight {
      * @param pressed requested jump state
      */
     private void jump(boolean pressed) {
-        PlayerInput input = Packets.state(pressed, false);
-        Packets.input(input);
-
-        this.client.player.input.playerInput = input;
+        Packets.sync(Packets.state(pressed, false));
     }
 
     //endregion

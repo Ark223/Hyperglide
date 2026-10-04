@@ -7,7 +7,6 @@ import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
-import net.minecraft.screen.PlayerScreenHandler;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -106,7 +105,7 @@ public final class Elytra {
     }
 
     /**
-     * Uses a firework without changing the selected hotbar slot.
+     * Uses a firework from the hotbar or offhand.
      *
      * @param yaw interaction yaw
      * @param pitch interaction pitch
@@ -117,31 +116,34 @@ public final class Elytra {
             return false;
         }
 
-        if (client.player.getMainHandStack().isOf(Items.FIREWORK_ROCKET)) {
-            Packets.item(Hand.MAIN_HAND, yaw, pitch);
-            return true;
-        }
+        int slot = Hotbar.first(
+            stack -> stack.isOf(Items.FIREWORK_ROCKET)
+        );
 
-        if (client.player.getOffHandStack().isOf(Items.FIREWORK_ROCKET)) {
-            Packets.item(Hand.OFF_HAND, yaw, pitch);
-            return true;
-        }
+        if (slot >= 0) {
+            int selected = Hotbar.selected();
+            if (selected != slot) Hotbar.select(slot);
 
-        int slot = Hotbar.find(Items.FIREWORK_ROCKET);
-        if (slot < 0) return false;
+            try {
+                ItemStack stack = client.player.getMainHandStack();
+                if (!stack.isOf(Items.FIREWORK_ROCKET)) {
+                    return false;
+                }
 
-        Inventory.swap(PlayerScreenHandler.OFFHAND_ID, slot);
-
-        try {
-            if (!client.player.getOffHandStack().isOf(Items.FIREWORK_ROCKET)) {
-                return false;
+                Packets.item(Hand.MAIN_HAND, yaw, pitch);
+                return true;
+            } finally {
+                if (selected != slot) Hotbar.select(selected);
             }
+        }
 
+        ItemStack stack = client.player.getOffHandStack();
+        if (stack.isOf(Items.FIREWORK_ROCKET)) {
             Packets.item(Hand.OFF_HAND, yaw, pitch);
             return true;
-        } finally {
-            Inventory.swap(PlayerScreenHandler.OFFHAND_ID, slot);
         }
+
+        return false;
     }
 
     /**
