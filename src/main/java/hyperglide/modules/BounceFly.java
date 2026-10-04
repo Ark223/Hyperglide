@@ -628,12 +628,12 @@ public class BounceFly extends Module {
     }
 
     /**
-     * Records breakable blocks from a trail column.
+     * Saves the breakable blocks from a trail column.
      *
      * @param pos lower block of the column
      */
     private void collect(BlockPos pos) {
-        for (int py = 0; py <= 1; py++) {
+        for (int py = 0; py <= 2; py++) {
             BlockPos block = pos.up(py);
             if (!this.solid(block) || this.blocks.contains(block)) {
                 continue;
@@ -893,13 +893,14 @@ public class BounceFly extends Module {
     }
 
     /**
-     * Checks a two-block-high trail column for collision.
+     * Checks a three-block-high trail column for collision.
      *
      * @param pos lower block of the column
-     * @return true when either block can collide
+     * @return true when any block can collide
      */
     private boolean column(BlockPos pos) {
-        return this.solid(pos) || this.solid(pos.up());
+        if (this.solid(pos)) return true;
+        return this.solid(pos.up()) || this.solid(pos.up(2));
     }
 
     /**
