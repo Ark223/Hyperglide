@@ -31,7 +31,7 @@ public class AutoPilot extends Module {
     private static final double approach = 128.0;
     private static final double proximity = 3.0;
 
-    private static final int halt = 20;
+    private static final int halt = 25;
     private static final int lava = 3;
     private static final int level = 120;
 
