@@ -843,7 +843,7 @@ public class BounceFly extends Module {
      * @return detected highway level
      */
     private int level() {
-        return this.trail(high) > this.trail(low) ? high : low;
+        return this.trail(high) >= this.trail(low) ? high : low;
     }
 
     /**
