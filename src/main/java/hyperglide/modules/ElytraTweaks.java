@@ -1015,10 +1015,8 @@ public class ElytraTweaks extends Module {
      * @return true when the rocket interaction was accepted
      */
     private boolean firework() {
-        if (!Elytra.firework()) return false;
-
         Packets.sync(Packets.forward());
-        return true;
+        return Elytra.firework();
     }
 
     /**
