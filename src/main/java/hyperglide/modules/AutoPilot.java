@@ -6,9 +6,10 @@ import hyperglide.utilities.Client;
 import hyperglide.utilities.Elytra;
 import hyperglide.utilities.Flight;
 import hyperglide.utilities.Hotbar;
-import hyperglide.utilities.Player;
 import hyperglide.utilities.Placement;
+import hyperglide.utilities.Player;
 import hyperglide.navigation.Route;
+import hyperglide.navigation.Route.Leg;
 import hyperglide.navigation.Segment;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -40,7 +41,7 @@ public class AutoPilot extends Module {
     private static final int depth = 24;
 
     private static final int floor = 32;
-    private static final int search = 32;
+    private static final int search = 64;
     private static final int retry = 10;
     private static final int settle = 5;
 
@@ -62,12 +63,14 @@ public class AutoPilot extends Module {
     private boolean join;
     private boolean enabled;
     private boolean emergency;
+    private boolean raised;
 
     /**
      * Defines the current travel stage.
      */
     private enum State {
         Idle,
+        Seek,
         Flight,
         Land,
         Entry,
@@ -95,8 +98,8 @@ public class AutoPilot extends Module {
             return;
         }
 
-        Baritone.settings(1.43, 0.4, false);
         this.reset();
+        Baritone.settings(1.43, 0.4, false);
 
         this.mining = Modules.get().get(MiningTweaks.class);
 
@@ -137,7 +140,7 @@ public class AutoPilot extends Module {
     private void tick(TickEvent.Pre event) {
         if (!this.valid()) return;
 
-        if (!this.flight.available()) {
+        if (!Elytra.equipped() && Elytra.hotbar() < 0) {
             this.error("Elytra flight is unavailable.");
             this.toggle();
             return;
@@ -155,6 +158,7 @@ public class AutoPilot extends Module {
 
         switch (this.state) {
             case Idle -> this.idle();
+            case Seek -> this.seek();
             case Flight -> this.flight();
             case Land -> this.land();
             case Entry -> this.entry();
@@ -205,6 +209,7 @@ public class AutoPilot extends Module {
         this.join = false;
         this.enabled = false;
         this.emergency = false;
+        this.raised = false;
     }
 
     /**
@@ -287,7 +292,9 @@ public class AutoPilot extends Module {
      * @return route leg index, or -1 when unavailable
      */
     private int progress() {
-        int size = this.route.legs().size();
+        List<Leg> legs = this.route.legs();
+
+        int size = legs.size();
         if (size == 0) return -1;
 
         int start = Math.max(0, this.leg);
@@ -298,7 +305,7 @@ public class AutoPilot extends Module {
         int best = -1;
 
         for (int index = start; index < size; index++) {
-            Route.Leg leg = this.route.legs().get(index);
+            Route.Leg leg = legs.get(index);
             Vec2f point = this.project(leg, position);
 
             float current = position.distanceSquared(point);
@@ -309,6 +316,24 @@ public class AutoPilot extends Module {
         }
 
         return best;
+    }
+
+    /**
+     * Checks whether the player is aligned with a highway leg.
+     *
+     * @param leg highway route leg
+     * @return true when at highway level and within proximity
+     */
+    private boolean aligned(Route.Leg leg) {
+        if (this.mc.player.getY() < level - 1.0) {
+            return false;
+        }
+
+        Vec2f position = Player.position();
+        Vec2f point = this.project(leg, position);
+
+        float distance = position.distanceSquared(point);
+        return distance <= proximity * proximity;
     }
 
     /**
@@ -350,27 +375,9 @@ public class AutoPilot extends Module {
         );
     }
 
-    /**
-     * Checks whether the player is aligned with a highway leg.
-     *
-     * @param leg highway route leg
-     * @return true when at highway level and within proximity
-     */
-    private boolean aligned(Route.Leg leg) {
-        if (this.mc.player.getY() < level - 1.0) {
-            return false;
-        }
-
-        Vec2f position = Player.position();
-        Vec2f point = this.project(leg, position);
-
-        float distance = position.distanceSquared(point);
-        return distance <= proximity * proximity;
-    }
-
     //endregion
 
-    //region Standard travel
+    //region Initial launch
 
     /**
      * Selects the closest route leg and resumes travel.
@@ -386,66 +393,169 @@ public class AutoPilot extends Module {
         if (progress < 0) return;
 
         this.leg = progress;
+        if (this.access()) return;
+
+        if (!this.open()) {
+            if (this.timer > 0 && --this.timer > 0) {
+                return;
+            }
+
+            this.point = this.space(true);
+            if (this.point == null) {
+                this.timer = retry;
+                return;
+            }
+
+            this.timer = settle;
+            this.state = State.Seek;
+            return;
+        }
+
+        this.timer = 0;
         this.flight();
     }
+
+    /**
+     * Moves to a clear launch area before starting elytra travel.
+     */
+    private void seek() {
+        if (this.point == null) {
+            this.state = State.Idle;
+            return;
+        }
+
+        if (this.reach(this.point, lava)) {
+            this.fill();
+        }
+
+        if (this.goal == null ||
+            !this.goal.equals(this.point)) {
+
+            if (this.pathing()) this.abort();
+            this.walk(this.point, true);
+            return;
+        }
+
+        if (this.pathing()) return;
+        this.prepare();
+    }
+
+    /**
+     * Prepares the selected clear space for launch.
+     */
+    private void prepare() {
+        if (!this.mc.player.isOnGround() || this.open()) {
+            this.launch();
+            return;
+        }
+
+        if (!this.close(this.point, 1.5)) {
+            this.goal = null;
+            this.timer = settle;
+            return;
+        }
+
+        if (this.timer > 0) {
+            this.timer--;
+            return;
+        }
+
+        if (!this.raised) {
+            this.launch();
+            return;
+        }
+
+        this.toward(this.point);
+
+        if (this.mining != null) {
+            BlockPos pos = this.point.down();
+            this.mining.mine(pos, Direction.UP);
+        }
+    }
+
+    /**
+     * Resumes normal route flight after finding clear launch space.
+     */
+    private void launch() {
+        this.abort();
+
+        this.point = null;
+        this.blocks = null;
+        this.timer = 0;
+        this.raised = false;
+
+        this.state = State.Flight;
+    }
+
+    //endregion
+
+    //region Standard travel
 
     /**
      * Follows standard route legs with Baritone Elytra.
      */
     private void flight() {
-        if (this.goal != null) {
-            if (this.join && this.landing()) {
-                this.cancel();
+        if (this.goal == null || this.resume()) {
+            this.follow();
+        }
+    }
 
-                this.blocks = null;
-                this.timer = this.rocket() ? 3 : 0;
-                this.mc.player.setPitch(-90.0F);
+    /**
+     * Waits for the flight to finish before choosing another leg.
+     *
+     * @return true when travel can continue
+     */
+    private boolean resume() {
+        if (this.join && this.landing()) {
+            this.cancel();
+            this.glide();
 
-                this.state = State.Land;
-                return;
-            }
+            this.blocks = null;
+            this.timer = this.rocket() ? 3 : 0;
+            this.mc.player.setPitch(-90.0F);
 
-            if (this.pathing() || !this.mc.player.isOnGround()) {
-                return;
-            }
-
-            this.goal = null;
-            this.join = false;
-
-            if (this.close(this.target, approach)) {
-                this.finish();
-                return;
-            }
-
-            int progress = this.progress();
-            if (progress < 0) return;
-
-            this.leg = progress;
+            this.state = State.Land;
+            return false;
         }
 
-        if (this.leg < 0 || this.leg >= this.route.legs().size()) {
+        if (this.pathing() ||
+            !this.mc.player.isOnGround()) {
+            return false;
+        }
+
+        this.goal = null;
+        this.join = false;
+
+        if (this.close(this.target, approach)) {
+            this.finish();
+            return false;
+        }
+
+        int progress = this.progress();
+        if (progress < 0) return false;
+
+        this.leg = progress;
+        return true;
+    }
+
+    /**
+     * Moves toward the current route leg or enters its highway.
+     */
+    private void follow() {
+        List<Leg> legs = this.route.legs();
+        if (this.leg >= legs.size() ||
+            this.leg < 0 || this.access()) {
             return;
         }
 
-        Route.Leg leg = this.route.legs().get(this.leg);
+        Route.Leg leg = legs.get(this.leg);
         boolean highway = leg.type() == Route.Type.Highway;
 
-        if (highway && this.aligned(leg)) {
-            this.start(this.leg);
-            return;
-        }
-
         int next = this.leg + 1;
-        boolean joining = highway || next < this.route.legs().size() &&
-            this.route.legs().get(next).type() == Route.Type.Highway;
+        boolean joining = highway || next < legs.size() &&
+            legs.get(next).type() == Route.Type.Highway;
 
         Vec2f point = highway ? this.entry(leg) : leg.end();
-        if (joining && this.mc.player.isOnGround() &&
-            this.close(point, approach)) {
-            this.state = State.Entry;
-            return;
-        }
-
         if (this.fly(this.waypoint(point), joining)) {
             this.state = State.Flight;
         }
@@ -477,7 +587,7 @@ public class AutoPilot extends Module {
     }
 
     /**
-     * Completes travel when the player is close enough to the target.
+     * Completes travel when the player is close to the target.
      *
      * @return true when the route is complete
      */
@@ -496,10 +606,45 @@ public class AutoPilot extends Module {
     //region Highway entry
 
     /**
+     * Uses the highway directly when it is already within reach.
+     *
+     * @return true when highway entry has taken over
+     */
+    private boolean access() {
+        List<Leg> legs = this.route.legs();
+        if (this.leg < 0 || this.leg >= legs.size()) {
+            return false;
+        }
+
+        Route.Leg leg = legs.get(this.leg);
+        boolean highway = leg.type() == Route.Type.Highway;
+
+        if (highway && this.aligned(leg)) {
+            this.start(this.leg);
+            return true;
+        }
+
+        int next = this.leg + 1;
+        boolean joining = highway || next < legs.size() &&
+            legs.get(next).type() == Route.Type.Highway;
+
+        if (!joining || !this.mc.player.isOnGround()) {
+            return false;
+        }
+
+        Vec2f point = highway ? this.entry(leg) : leg.end();
+        if (!this.close(point, approach)) return false;
+
+        this.state = State.Entry;
+        return true;
+    }
+
+    /**
      * Finishes the normal flight and creates a landing block.
      */
     private void land() {
         this.mc.player.setPitch(-90.0F);
+        this.glide();
 
         if (this.timer > 0) {
             this.timer--;
@@ -507,34 +652,21 @@ public class AutoPilot extends Module {
         }
 
         if (this.blocks == null) {
-            if (!this.mc.player.verticalCollision ||
-                this.mc.player.isOnGround()) {
+            if (this.mc.player.isOnGround() ||
+                !this.mc.player.verticalCollision) {
                 return;
             }
-
             this.blocks = this.platform();
         }
 
         if (!this.support()) return;
-        if (!this.mc.player.isOnGround()) return;
 
-        this.mc.player.stopGliding();
+        if (this.mc.player.isOnGround()) {
+            this.mc.player.stopGliding();
 
-        this.blocks = null;
-        this.state = State.Entry;
-    }
-
-    /**
-     * Requests a firework for the current flight.
-     *
-     * @return true when the request was accepted
-     */
-    private boolean rocket() {
-        if (this.mc.interactionManager == null) {
-            return false;
+            this.blocks = null;
+            this.state = State.Entry;
         }
-
-        return this.flight.request(Elytra::firework);
     }
 
     /**
@@ -549,15 +681,16 @@ public class AutoPilot extends Module {
         if (!this.refresh()) return;
 
         int next = this.leg;
-        Route.Leg road = this.route.legs().get(next);
+        List<Leg> legs = this.route.legs();
+        Route.Leg road = legs.get(next);
 
         if (road.type() != Route.Type.Highway) {
-            if (++next >= this.route.legs().size()) {
+            if (++next >= legs.size()) {
                 this.state = State.Flight;
                 return;
             }
 
-            road = this.route.legs().get(next);
+            road = legs.get(next);
             if (road.type() != Route.Type.Highway) {
                 this.state = State.Flight;
                 return;
@@ -565,11 +698,28 @@ public class AutoPilot extends Module {
         }
 
         if (!this.aligned(road)) {
-            this.walk(this.waypoint(this.entry(road)), true);
+            Vec2f entry = this.entry(road);
+            this.walk(this.waypoint(entry), true);
             return;
         }
 
         this.start(next);
+    }
+
+    /**
+     * Keeps flight active during the upward landing climb.
+     */
+    private void glide() {
+        if (this.blocks != null ||
+            !Elytra.equipped() ||
+            this.mc.player.isOnGround() ||
+            this.mc.player.isGliding() ||
+            this.mc.player.verticalCollision) {
+            return;
+        }
+
+        Elytra.start();
+        this.mc.player.startGliding();
     }
 
     //endregion
@@ -582,12 +732,15 @@ public class AutoPilot extends Module {
      * @param leg highway route leg index
      */
     private void start(int leg) {
-        if (leg < 0 || leg >= this.route.legs().size()) {
+        List<Leg> legs = this.route.legs();
+        if (leg < 0 || leg >= legs.size()) {
             return;
         }
 
-        Route.Leg road = this.route.legs().get(leg);
-        if (road.type() != Route.Type.Highway) return;
+        Route.Leg road = legs.get(leg);
+        if (road.type() != Route.Type.Highway) {
+            return;
+        }
 
         this.leg = leg;
 
@@ -606,64 +759,42 @@ public class AutoPilot extends Module {
      * Follows the current highway leg to its endpoint.
      */
     private void highway() {
-        if (this.leg < 0 || this.leg >= this.route.legs().size()) {
+        List<Leg> legs = this.route.legs();
+        if (this.leg < 0 || this.leg >= legs.size()) {
             return;
         }
 
-        Route.Leg road = this.route.legs().get(this.leg);
-        if (road.type() != Route.Type.Highway) return;
-
-        int next = this.leg + 1;
-        boolean exiting = next < this.route.legs().size() &&
-            this.route.legs().get(next).type() != Route.Type.Highway;
-
-        if (exiting && this.point == null && this.timer > 0) {
-            if (--this.timer > 0) return;
+        Route.Leg road = legs.get(this.leg);
+        if (road.type() != Route.Type.Highway) {
+            return;
         }
 
-        if (this.timer <= 0) {
-            BounceFly bounce = Modules.get().get(BounceFly.class);
-            if (bounce != null && !bounce.isActive()) {
-                this.rotate(road.end());
-                bounce.toggle();
-            }
+        int next = this.leg + 1;
+        boolean exiting = next < legs.size() &&
+            legs.get(next).type() != Route.Type.Highway;
 
-            if (!this.aligned(road) ||
-                !this.close(road.end(), proximity)) {
-                return;
-            }
-
-            if (exiting && this.point == null) {
-                this.point = this.space();
-                if (this.point == null) {
-                    this.timer = retry;
-                    return;
-                }
-            }
-
-            this.bounce(false);
-            this.cancel();
-
-            this.timer = halt;
+        if (this.delay(exiting) || this.timer <= 0 &&
+            !this.arrive(road, exiting)) {
+            return;
         }
 
         this.stop();
-        if (--this.timer > 0) return;
-
-        this.cross();
+        if (--this.timer <= 0) this.cross();
     }
 
     /**
      * Advances after reaching a highway endpoint.
      */
     private void cross() {
+        List<Leg> legs = this.route.legs();
+
         int next = this.leg + 1;
-        if (next >= this.route.legs().size()) {
+        if (next >= legs.size()) {
             this.state = State.Done;
             return;
         }
 
-        Route.Leg following = this.route.legs().get(next);
+        Route.Leg following = legs.get(next);
         if (following.type() == Route.Type.Highway) {
             Vec2f entry = this.entry(following);
             this.walk(this.waypoint(entry), true);
@@ -681,58 +812,181 @@ public class AutoPilot extends Module {
         this.state = State.Exit;
     }
 
+    /**
+     * Prepares the transition after reaching a highway endpoint.
+     *
+     * @param road current highway leg
+     * @param exiting whether the route leaves the highway next
+     * @return true when the player can stop for the transition
+     */
+    private boolean arrive(Route.Leg road, boolean exiting) {
+        BounceFly bounce = Modules.get().get(BounceFly.class);
+        if (bounce != null && !bounce.isActive()) {
+            this.rotate(road.end());
+            bounce.toggle();
+        }
+
+        if (!this.aligned(road) ||
+            !this.close(road.end(), proximity)) {
+            return false;
+        }
+
+        if (exiting && this.point == null) {
+            this.point = this.space(false);
+            if (this.point == null) {
+                this.timer = retry;
+                return false;
+            }
+        }
+
+        this.bounce(false);
+        this.cancel();
+
+        this.timer = halt;
+        return true;
+    }
+
+    /**
+     * Waits before searching again for a highway exit.
+     *
+     * @param exiting whether the route leaves the highway next
+     * @return true while the retry delay is still active
+     */
+    private boolean delay(boolean exiting) {
+        return exiting && this.point == null
+            && this.timer > 0 && --this.timer > 0;
+    }
+
     //endregion
 
     //region Clear space search
 
     /**
+     * Adjusts a clear space point for launch or exit use.
+     *
+     * @param point clear space point
+     * @param start whether selecting a launch point
+     * @return adjusted point to traverse to
+     */
+    private BlockPos adjust(BlockPos point, boolean start) {
+        if (!start) return point.up();
+
+        this.raised = !this.solid(point.down());
+        return this.raised ? point.up() : point;
+    }
+
+    /**
      * Finds the nearest clear space below the player.
      *
-     * @return closest point in a clear space, or null when unavailable
+     * @param start whether the first box starts from player
+     * @return closest point in a clear space, or null
      */
-    private BlockPos space() {
+    private BlockPos space(boolean start) {
         BlockPos origin = this.mc.player.getBlockPos();
+        if (start) this.raised = false;
 
-        int limit = origin.getY() - floor - height + 1;
+        int limit = origin.getY() - floor;
+        limit -= start ? 0 : height - 1;
         if (limit < 0) return null;
 
+        int base = start ? height / 2 : -(height - 1) / 2;
         int reach = Math.max(width / 2, depth / 2);
-        int upper = (height - 1) / 2;
 
-        double distance = Double.MAX_VALUE;
         BlockPos best = null;
+        double distance = Double.MAX_VALUE;
 
         for (int range = 0; range <= search; range++) {
-            for (int px = -range; px <= range; px++) {
-                for (int pz = -range; pz <= range; pz++) {
-                    if (Math.max(Math.abs(px), Math.abs(pz)) != range) {
+            BlockPos point = this.scan(
+                origin, range, base, limit, distance
+            );
+
+            if (point != null) {
+                best = this.adjust(point, start);
+                distance = point.getSquaredDistance(origin);
+            }
+
+            if (best != null) {
+                int next = Math.max(0, range + 1 - reach);
+                if (distance <= (double) next * next) break;
+            }
+        }
+
+        return best != null ? best.toImmutable() : null;
+    }
+
+    /**
+     * Searches one horizontal ring for the nearest clear space.
+     *
+     * @param origin player position
+     * @param range horizontal search range
+     * @param base initial vertical center offset
+     * @param limit lowest vertical search offset
+     * @param distance nearest distance already found
+     * @return a closer usable point, or null when none is found
+     */
+    private BlockPos scan(BlockPos origin, int range,
+        int base, int limit, double distance) {
+
+        BlockPos best = null;
+
+        for (int px = -range; px <= range; px++) {
+            for (int pz = -range; pz <= range; pz++) {
+                if (Math.max(Math.abs(px), Math.abs(pz)) != range) {
+                    continue;
+                }
+
+                for (int offset = 0; offset <= limit; offset++) {
+                    int py = base - offset;
+
+                    BlockPos center = origin.add(px, py, pz);
+                    BlockPos point = this.closest(center, origin);
+
+                    double current = point.getSquaredDistance(origin);
+                    if (current >= distance || !this.clear(center)) {
                         continue;
                     }
 
-                    for (int offset = 0; offset <= limit; offset++) {
-                        int py = -upper - offset;
-
-                        BlockPos center = origin.add(px, py, pz);
-                        BlockPos point = this.closest(center, origin);
-
-                        double current = point.getSquaredDistance(origin);
-                        if (current >= distance || !this.clear(center)) {
-                            continue;
-                        }
-
-                        best = point.add(0, 1, 0);
-                        distance = current;
-                    }
+                    best = point;
+                    distance = current;
                 }
             }
-
-            if (best == null) continue;
-
-            double next = Math.max(0.0, range + 1 - reach);
-            if (distance <= next * next) break;
         }
 
-        return best == null ? null : best.toImmutable();
+        return best;
+    }
+
+    /**
+     * Finds the closest point inside a tested box.
+     *
+     * @param center center of the tested box
+     * @param origin reference position
+     * @return box point closest to the reference position
+     */
+    private BlockPos closest(BlockPos center, BlockPos origin) {
+        int minx = center.getX() - width / 2;
+        int miny = center.getY() - height / 2;
+        int minz = center.getZ() - depth / 2;
+
+        int maxx = minx + width - 1;
+        int maxy = miny + height - 1;
+        int maxz = minz + depth - 1;
+
+        return new BlockPos(
+            MathHelper.clamp(origin.getX(), minx, maxx),
+            MathHelper.clamp(origin.getY(), miny, maxy),
+            MathHelper.clamp(origin.getZ(), minz, maxz)
+        );
+    }
+
+    /**
+     * Checks whether the launch box above the player is clear.
+     *
+     * @return true when flight can start from the current position
+     */
+    private boolean open() {
+        BlockPos origin = this.mc.player.getBlockPos();
+        BlockPos center = origin.up(height / 2);
+        return this.clear(center);
     }
 
     /**
@@ -755,9 +1009,23 @@ public class AutoPilot extends Module {
             return false;
         }
 
-        if (!this.loaded(minx, minz, maxx, maxz)) {
-            return false;
-        }
+        if (!this.loaded(minx, minz, maxx, maxz)) return false;
+        return this.empty(minx, miny, minz, maxx, maxy, maxz);
+    }
+
+    /**
+     * Checks whether a space contains only air or flowing lava.
+     *
+     * @param minx minimum box X
+     * @param miny minimum box Y
+     * @param minz minimum box Z
+     * @param maxx maximum box X
+     * @param maxy maximum box Y
+     * @param maxz maximum box Z
+     * @return true when no solid block occupies the space
+     */
+    private boolean empty(int minx, int miny,
+        int minz, int maxx, int maxy, int maxz) {
 
         BlockPos.Mutable pos = new BlockPos.Mutable();
 
@@ -791,33 +1059,12 @@ public class AutoPilot extends Module {
     private boolean loaded(int minx, int minz, int maxx, int maxz) {
         for (int px = minx >> 4; px <= maxx >> 4; px++) {
             for (int pz = minz >> 4; pz <= maxz >> 4; pz++) {
-                if (!this.mc.world.isChunkLoaded(px, pz)) return false;
+                if (!this.mc.world.isChunkLoaded(px, pz)) {
+                    return false;
+                }
             }
         }
         return true;
-    }
-
-    /**
-     * Finds the closest point inside a tested box.
-     *
-     * @param center center of the tested box
-     * @param origin reference position
-     * @return box point closest to the reference position
-     */
-    private BlockPos closest(BlockPos center, BlockPos origin) {
-        int minx = center.getX() - width / 2;
-        int miny = center.getY() - height / 2;
-        int minz = center.getZ() - depth / 2;
-
-        int maxx = minx + width - 1;
-        int maxy = miny + height - 1;
-        int maxz = minz + depth - 1;
-
-        int px = Math.max(minx, Math.min(origin.getX(), maxx));
-        int py = Math.max(miny, Math.min(origin.getY(), maxy));
-        int pz = Math.max(minz, Math.min(origin.getZ(), maxz));
-
-        return new BlockPos(px, py, pz);
     }
 
     //endregion
@@ -853,13 +1100,15 @@ public class AutoPilot extends Module {
             return;
         }
 
+        this.blocks = this.column();
+
         this.abort();
         this.timer = settle;
         this.state = State.Drop;
     }
 
     /**
-     * Mines the selected exit block while moving toward it until falling.
+     * Mines the selected exit block while moving toward it.
      */
     private void drop() {
         if (this.point == null) return;
@@ -869,35 +1118,67 @@ public class AutoPilot extends Module {
             return;
         }
 
-        if (this.mc.player.isOnGround()) {
-            this.toward(this.point);
-
-            if (this.mining != null) {
-                BlockPos pos = this.point.down();
-                this.mining.mine(pos, Direction.UP);
-            }
-
+        if (this.blocks == null || this.blocks.isEmpty()) {
+            this.depart();
             return;
         }
 
-        this.depart();
+        this.blocks.removeIf(pos ->
+            this.mc.world.getBlockState(pos).isAir()
+        );
+
+        if (this.blocks.isEmpty()) {
+            this.depart();
+            return;
+        }
+
+        if (this.mc.player.isOnGround()) {
+            this.toward(this.point);
+        }
+
+        if (this.mining != null) {
+            for (BlockPos pos : this.blocks) {
+                this.mining.mine(pos, Direction.UP);
+            }
+        }
     }
 
     /**
-     * Stops exit controls and starts flight toward the next route point.
+     * Collects the solid exit column below the selected point.
+     *
+     * @return contiguous non-air blocks below the exit point
+     */
+    private List<BlockPos> column() {
+        List<BlockPos> blocks = new ArrayList<>();
+
+        int px = this.point.getX();
+        int pz = this.point.getZ();
+
+        for (int py = this.point.getY() - 1;
+            py >= this.mc.world.getBottomY(); py--) {
+
+            BlockPos pos = new BlockPos(px, py, pz);
+            if (this.mc.world.getBlockState(pos).isAir()) {
+                break;
+            }
+
+            blocks.add(pos);
+        }
+
+        return blocks;
+    }
+
+    /**
+     * Stops exit and starts flying to the next route point.
      */
     private void depart() {
-        if (this.leg < 0 || this.leg >= this.route.legs().size()) {
+        List<Leg> legs = this.route.legs();
+        if (this.leg < 0 || this.leg >= legs.size()) {
             return;
         }
 
-        Route.Leg leg = this.route.legs().get(this.leg);
-        Vec2f next = leg.end();
-
-        BlockPos destination = new BlockPos(
-            Math.round(next.x), level,
-            Math.round(next.y)
-        );
+        Route.Leg leg = legs.get(this.leg);
+        BlockPos destination = this.waypoint(leg.end());
 
         this.release();
 
@@ -977,7 +1258,8 @@ public class AutoPilot extends Module {
      * @return true when every required block is present
      */
     private boolean support() {
-        if (this.blocks == null || this.blocks.isEmpty()) {
+        if (this.blocks == null ||
+            this.blocks.isEmpty()) {
             return false;
         }
 
@@ -1027,10 +1309,8 @@ public class AutoPilot extends Module {
 
         try {
             Baritone.fly(pos, exact);
-
             this.goal = pos.toImmutable();
             this.join = exact;
-
             return true;
         } catch (IllegalArgumentException ignored) {
             return false;
@@ -1050,7 +1330,6 @@ public class AutoPilot extends Module {
         }
 
         if (this.pathing()) this.cancel();
-
         Baritone.walk(pos, exact);
 
         this.goal = pos.toImmutable();
@@ -1070,9 +1349,17 @@ public class AutoPilot extends Module {
      */
     private void cancel() {
         Baritone.stop();
-
         this.goal = null;
         this.join = false;
+    }
+
+    /**
+     * Checks whether Baritone is processing or following a path.
+     *
+     * @return true while any owned path is active
+     */
+    private boolean pathing() {
+        return Baritone.elytra() || Baritone.pathing();
     }
 
     /**
@@ -1084,15 +1371,6 @@ public class AutoPilot extends Module {
         BlockPos current = Baritone.destination();
         return current != null && this.goal != null
             && !current.equals(this.goal);
-    }
-
-    /**
-     * Checks whether Baritone is processing or following a path.
-     *
-     * @return true while any owned path is active
-     */
-    private boolean pathing() {
-        return Baritone.elytra() || Baritone.pathing();
     }
 
     //endregion
@@ -1142,13 +1420,18 @@ public class AutoPilot extends Module {
         double px = point.x - this.mc.player.getX();
         double pz = point.y - this.mc.player.getZ();
 
-        float yaw = (float) Math.toDegrees(
-            Math.atan2(-px, pz)
-        );
+        double yaw = Math.atan2(-px, pz);
+        Player.rotate((float) Math.toDegrees(yaw));
+    }
 
-        this.mc.player.setYaw(yaw);
-        this.mc.player.setHeadYaw(yaw);
-        this.mc.player.setBodyYaw(yaw);
+    /**
+     * Requests a firework for the current flight.
+     *
+     * @return true when the request was accepted
+     */
+    private boolean rocket() {
+        return this.mc.interactionManager != null
+            && this.flight.request(Elytra::firework);
     }
 
     /**
@@ -1158,11 +1441,9 @@ public class AutoPilot extends Module {
      */
     private void bounce(boolean active) {
         BounceFly bounce = Modules.get().get(BounceFly.class);
-        if (bounce == null || bounce.isActive() == active) {
-            return;
+        if (bounce != null && bounce.isActive() != active) {
+            bounce.toggle();
         }
-
-        bounce.toggle();
     }
 
     /**
@@ -1240,6 +1521,17 @@ public class AutoPilot extends Module {
         double py = pos.getY() - this.mc.player.getY();
         double pz = pos.getZ() + 0.5 - this.mc.player.getZ();
         return px * px + py * py + pz * pz <= radius * radius;
+    }
+
+    /**
+     * Checks whether a block has a collision shape.
+     *
+     * @param pos block position to check
+     * @return true when the block can collide with the player
+     */
+    private boolean solid(BlockPos pos) {
+        BlockState state = this.mc.world.getBlockState(pos);
+        return !state.getCollisionShape(this.mc.world, pos).isEmpty();
     }
 
     /**
