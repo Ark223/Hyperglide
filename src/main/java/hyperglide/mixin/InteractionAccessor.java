@@ -9,13 +9,11 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 @Mixin(ClientPlayerInteractionManager.class)
 public interface InteractionAccessor {
     /**
-     * Sends a sequenced interaction packet.
+     * Sends an interaction packet through the vanilla sequencing path.
      *
      * @param world client world
      * @param creator packet creator
      */
     @Invoker("sendSequencedPacket")
-    void hyperglide$sendSequencedPacket(
-        ClientWorld world, SequencedPacketCreator creator
-    );
+    void hyperglide$sequence(ClientWorld world, SequencedPacketCreator creator);
 }

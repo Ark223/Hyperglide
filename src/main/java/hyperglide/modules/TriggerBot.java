@@ -104,14 +104,8 @@ public class TriggerBot extends Module {
      */
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!Client.interaction() ||
+        if (!Client.interaction() || Player.consuming() ||
             this.mc.getCameraEntity() == null) {
-            this.target = null;
-            this.timer = 0;
-            return;
-        }
-
-        if (Player.consuming()) {
             this.target = null;
             this.timer = 0;
             return;
@@ -125,15 +119,9 @@ public class TriggerBot extends Module {
             return;
         }
 
-        if (this.timer++ < this.delay.get()) return;
-
-        this.timer = 0;
-
-        this.mc.interactionManager.attackEntity(
-            this.mc.player, this.target
-        );
-
-        this.mc.player.swingHand(Hand.MAIN_HAND);
+        if (this.timer++ >= this.delay.get()) {
+            this.attack();
+        }
     }
 
     /**
@@ -143,16 +131,27 @@ public class TriggerBot extends Module {
      */
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (!this.box.enabled() || !this.valid(this.target)) {
-            return;
+        if (this.box.enabled() && this.valid(this.target)) {
+            this.box.box(event, this.target.getBoundingBox());
         }
-
-        this.box.box(event, this.target.getBoundingBox());
     }
 
     //endregion
 
     //region Entity targeting
+
+    /**
+     * Attacks the current target and resets the attack timer.
+     */
+    private void attack() {
+        this.timer = 0;
+
+        this.mc.interactionManager.attackEntity(
+            this.mc.player, this.target
+        );
+
+        this.mc.player.swingHand(Hand.MAIN_HAND);
+    }
 
     /**
      * Finds the selected entity whose hitbox is under the crosshair.
@@ -172,24 +171,32 @@ public class TriggerBot extends Module {
         box = box.expand(1.0);
 
         EntityHitResult hit = ProjectileUtil.raycast(
-            camera, start, end, box,
-            this::valid, range * range
+            camera, start, end, box, this::valid, range * range
         );
 
-        if (hit == null) return null;
-
-        if (this.wall.get()) {
-            HitResult block = camera.raycast(range, 0.0F, false);
-
-            if (block.getType() != HitResult.Type.MISS
-                && block.squaredDistanceTo(camera) <
-                    hit.squaredDistanceTo(camera)) {
-                return null;
-            }
+        if (hit != null && !this.blocked(camera, hit, range)) {
+            return hit.getEntity();
+        } else {
+            return null;
         }
-
-        return hit.getEntity();
     }
+
+    /**
+     * Checks whether a block is closer than the targeted entity.
+     *
+     * @param camera camera entity
+     * @param hit targeted entity hit
+     * @param range targeting range
+     * @return true when a block obstructs the target
+     */
+    private boolean blocked(Entity camera, EntityHitResult hit, double range) {
+        if (!this.wall.get()) return false;
+
+        HitResult block = camera.raycast(range, 0.0F, false);
+        return block.getType() != HitResult.Type.MISS
+            && block.squaredDistanceTo(camera) < hit.squaredDistanceTo(camera);
+    }
+
     /**
      * Checks whether an entity can be targeted by Trigger Bot.
      *

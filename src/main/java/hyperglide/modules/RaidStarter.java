@@ -67,7 +67,6 @@ public class RaidStarter extends Module {
             if (this.omen() || !this.mc.player.isUsingItem()) {
                 this.stop();
             }
-
             return;
         }
 
@@ -164,7 +163,7 @@ public class RaidStarter extends Module {
     }
 
     /**
-     * Checks whether the client currently has an active raid boss bar.
+     * Checks whether the player currently has an active raid.
      *
      * @return true while a village raid is active
      */
@@ -172,7 +171,7 @@ public class RaidStarter extends Module {
         BossBarAccessor access =
             (BossBarAccessor) this.mc.inGameHud.getBossBarHud();
 
-        for (ClientBossBar bar : access.hyperglide$getBars().values()) {
+        for (ClientBossBar bar : access.hyperglide$bars().values()) {
             if (this.raid(bar.getName())) return true;
         }
 

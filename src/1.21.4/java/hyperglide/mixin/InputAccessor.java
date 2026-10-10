@@ -12,7 +12,7 @@ public interface InputAccessor {
      * @param value forward movement amount
      */
     @Accessor("movementForward")
-    void hyperglide$setForward(float value);
+    void hyperglide$forward(float value);
 
     /**
      * Updates the processed sideways movement value.
@@ -20,5 +20,5 @@ public interface InputAccessor {
      * @param value sideways movement amount
      */
     @Accessor("movementSideways")
-    void hyperglide$setSideways(float value);
+    void hyperglide$sideways(float value);
 }

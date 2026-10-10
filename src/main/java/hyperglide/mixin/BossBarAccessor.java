@@ -15,5 +15,5 @@ public interface BossBarAccessor {
      * @return active boss bars
      */
     @Accessor("bossBars")
-    Map<UUID, ClientBossBar> hyperglide$getBars();
+    Map<UUID, ClientBossBar> hyperglide$bars();
 }

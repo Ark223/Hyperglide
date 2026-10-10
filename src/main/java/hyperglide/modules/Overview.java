@@ -63,8 +63,7 @@ public class Overview extends Module {
      */
     @Override
     public void onActivate() {
-        this.cache.clear();
-        this.drawing = false;
+        this.reset();
     }
 
     /**
@@ -72,6 +71,13 @@ public class Overview extends Module {
      */
     @Override
     public void onDeactivate() {
+        this.reset();
+    }
+
+    /**
+     * Clears cached content and rendering state.
+     */
+    private void reset() {
         this.cache.clear();
         this.drawing = false;
     }
@@ -89,16 +95,8 @@ public class Overview extends Module {
             return;
         }
 
-        Object data = this.data(stack);
-        if (data == null) return;
-
-        Cached cached = this.cache.get(stack);
-        if (cached == null || !Objects.equals(cached.data, data)) {
-            cached = new Cached(data, this.common(data));
-            this.cache.put(stack, cached);
-        }
-
-        if (cached.stack.isEmpty()) return;
+        ItemStack icon = this.icon(stack);
+        if (icon.isEmpty()) return;
 
         int size = this.size.get();
         float scale = size / 16.0F;
@@ -109,13 +107,32 @@ public class Overview extends Module {
         this.drawing = true;
 
         try {
-            API.item(context, cached.stack, ox, oy, scale);
+            API.item(context, icon, ox, oy, scale);
         } finally {
             this.drawing = false;
         }
     }
 
     //region Content analysis
+
+    /**
+     * Returns the dominant content icon for a container stack.
+     *
+     * @param stack container item stack
+     * @return dominant content item, or an empty stack when unavailable
+     */
+    private ItemStack icon(ItemStack stack) {
+        Object data = this.data(stack);
+        if (data == null) return ItemStack.EMPTY;
+
+        Cached cached = this.cache.get(stack);
+        if (cached == null || !Objects.equals(cached.data, data)) {
+            cached = new Cached(data, this.common(data));
+            this.cache.put(stack, cached);
+        }
+
+        return cached.stack;
+    }
 
     /**
      * Retrieves container or bundle content data from an item stack.
@@ -128,12 +145,11 @@ public class Overview extends Module {
             item.getBlock() instanceof ShulkerBoxBlock) {
             return stack.get(DataComponentTypes.CONTAINER);
         }
-
         return stack.get(DataComponentTypes.BUNDLE_CONTENTS);
     }
 
     /**
-     * Finds the item occupying the greatest number of content slots.
+     * Finds the item occupying the most slots, then the largest count.
      *
      * @param data container or bundle content data
      * @return dominant item stack, or an empty stack when no item exists
@@ -160,12 +176,14 @@ public class Overview extends Module {
             );
 
             count.slots++;
+            count.items += stack.getCount();
         }
 
         Count best = null;
 
         for (Count count : counts.values()) {
-            if (best == null || count.slots > best.slots) {
+            if (best == null || count.slots > best.slots ||
+                count.slots == best.slots && count.items > best.items) {
                 best = count;
             }
         }
@@ -178,11 +196,13 @@ public class Overview extends Module {
     //region Data structures
 
     /**
-     * Tracks occurrences of an item in container contents.
+     * Tracks occurrences and total count of an item.
      */
     private static class Count {
         private final ItemStack stack;
+
         private int slots;
+        private int items;
 
         /**
          * Creates an item occurrence counter.

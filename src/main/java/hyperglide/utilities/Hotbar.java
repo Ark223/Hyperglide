@@ -47,8 +47,7 @@ public final class Hotbar {
      * @param predicate stack condition
      * @return matching hotbar slot, or -1 when unavailable
      */
-    public static int find(
-        int first, int last,
+    public static int find(int first, int last,
         Predicate<ItemStack> predicate) {
 
         int start = Math.min(first, last);

@@ -13,5 +13,5 @@ public interface PlayerListAccessor {
      * @return player list footer, or null when absent
      */
     @Accessor("footer")
-    Text hyperglide$getFooter();
+    Text hyperglide$footer();
 }

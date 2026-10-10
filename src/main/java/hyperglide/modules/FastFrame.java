@@ -102,21 +102,9 @@ public class FastFrame extends Module {
      */
     @EventHandler
     private void onPacket(PacketEvent.Send event) {
-        if (!Client.ready() ||
-            !(event.packet instanceof PlayerInteractBlockC2SPacket packet)) {
-            return;
+        if (event.packet instanceof PlayerInteractBlockC2SPacket packet) {
+            this.track(packet);
         }
-
-        if (!this.held(packet.getHand()) && !this.cached(packet.getHand())) {
-            return;
-        }
-
-        if (this.slot() < 0) return;
-
-        BlockHitResult hit = packet.getBlockHitResult();
-        BlockPos pos = hit.getBlockPos().offset(hit.getSide()).toImmutable();
-
-        this.queue.addLast(new Pending(pos, this.frames(pos), life));
     }
 
     /**
@@ -126,11 +114,38 @@ public class FastFrame extends Module {
      */
     @EventHandler
     private void onPostTick(TickEvent.Post event) {
-        if (!Client.ready() || !Client.interaction()) {
+        if (Client.ready() && Client.interaction()) {
+            this.process();
+        } else {
             this.reset();
+        }
+    }
+
+    //endregion
+
+    //region Frame handling
+
+    /**
+     * Tracks a valid item frame placement.
+     *
+     * @param packet block interaction packet
+     */
+    private void track(PlayerInteractBlockC2SPacket packet) {
+        if (!Client.ready() || !this.held(packet.getHand()) &&
+            !this.cached(packet.getHand()) || this.slot() < 0) {
             return;
         }
 
+        BlockHitResult hit = packet.getBlockHitResult();
+        BlockPos pos = hit.getBlockPos().offset(hit.getSide()).toImmutable();
+
+        this.queue.addLast(new Pending(pos, this.frames(pos), life));
+    }
+
+    /**
+     * Processes pending item frame placements.
+     */
+    private void process() {
         Iterator<Pending> iterator = this.queue.iterator();
 
         while (iterator.hasNext()) {
@@ -159,10 +174,6 @@ public class FastFrame extends Module {
         }
     }
 
-    //endregion
-
-    //region Frame handling
-
     /**
      * Clears pending placements and cached hand state.
      */
@@ -171,6 +182,24 @@ public class FastFrame extends Module {
 
         this.main = false;
         this.off = false;
+    }
+
+    /**
+     * Collects item frames already present near a placement position.
+     *
+     * @param pos expected frame position
+     * @return existing frame entity IDs
+     */
+    private Set<Integer> frames(BlockPos pos) {
+        Set<Integer> frames = new HashSet<>();
+        Box box = new Box(pos).expand(0.5);
+
+        for (ItemFrameEntity frame : this.mc.world.getEntitiesByClass(
+            ItemFrameEntity.class, box, entity -> entity.isAlive())) {
+            frames.add(frame.getId());
+        }
+
+        return frames;
     }
 
     /**
@@ -200,24 +229,6 @@ public class FastFrame extends Module {
         }
 
         return best;
-    }
-
-    /**
-     * Collects item frames already present near a placement position.
-     *
-     * @param pos expected frame position
-     * @return existing frame entity IDs
-     */
-    private Set<Integer> frames(BlockPos pos) {
-        Set<Integer> frames = new HashSet<>();
-        Box box = new Box(pos).expand(0.5);
-
-        for (ItemFrameEntity frame : this.mc.world.getEntitiesByClass(
-            ItemFrameEntity.class, box, entity -> entity.isAlive())) {
-            frames.add(frame.getId());
-        }
-
-        return frames;
     }
 
     /**
@@ -284,7 +295,7 @@ public class FastFrame extends Module {
     //region Utilities and validation
 
     /**
-     * Finds the first usable item inside the configured hotbar range.
+     * Finds the usable item inside the configured hotbar range.
      *
      * @return matching hotbar slot, or -1 when no item is available
      */
@@ -334,6 +345,13 @@ public class FastFrame extends Module {
 
         private int life;
 
+        /**
+         * Creates a pending entry for tracking an update.
+         *
+         * @param pos target block position
+         * @param frames known frame entity ids
+         * @param life remaining lifetime
+         */
         private Pending(BlockPos pos, Set<Integer> frames, int life) {
             this.pos = pos;
             this.frames = frames;

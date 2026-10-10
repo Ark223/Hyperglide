@@ -22,7 +22,7 @@ public abstract class MiningTweaksMixin {
      * @param info injection callback
      */
     @Inject(method = "attackBlock", at = @At("HEAD"), cancellable = true)
-    private void onAttack(BlockPos pos, Direction side, CallbackInfoReturnable<Boolean> info) {
+    private void attack(BlockPos pos, Direction side, CallbackInfoReturnable<Boolean> info) {
         this.hyperglide$mine(pos, side, info);
     }
 
@@ -34,7 +34,7 @@ public abstract class MiningTweaksMixin {
      * @param info injection callback
      */
     @Inject(method = "updateBlockBreakingProgress", at = @At("HEAD"), cancellable = true)
-    private void onUpdate(BlockPos pos, Direction side, CallbackInfoReturnable<Boolean> info) {
+    private void update(BlockPos pos, Direction side, CallbackInfoReturnable<Boolean> info) {
         this.hyperglide$mine(pos, side, info);
     }
 

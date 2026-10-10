@@ -58,7 +58,7 @@ public final class API {
      * @param sideways sideways movement
      */
     public static void move(Input input, float forward, float sideways) {
-        ((InputAccessor) input).hyperglide$setMovement(
+        ((InputAccessor) input).hyperglide$movement(
             new Vec2f(sideways, forward)
         );
     }

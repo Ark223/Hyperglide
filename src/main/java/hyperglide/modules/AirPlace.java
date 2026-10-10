@@ -14,6 +14,7 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
+import net.minecraft.entity.Entity;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.SpawnEggItem;
@@ -89,47 +90,16 @@ public class AirPlace extends Module {
      * @param event post-tick event
      */
     @EventHandler
-    private void onTick(TickEvent.Post event) {
-        if (!Client.ready() || this.mc.getCameraEntity() == null) {
-            this.hit = null;
-            this.wait = 0;
-            return;
-        }
+    private void tick(TickEvent.Post event) {
+        if (!this.ready()) return;
 
         boolean pressed = this.mc.options.useKey.isPressed();
         if (this.wait > 0) this.wait--;
 
         ItemStack stack = this.mc.player.getMainHandStack();
-        if (!this.valid(stack)) {
-            this.hit = null;
-            return;
+        if (this.target(stack) && pressed && this.wait <= 0) {
+            this.click(stack);
         }
-
-        if (this.mc.crosshairTarget != null &&
-            this.mc.crosshairTarget.getType() != HitResult.Type.MISS) {
-            this.hit = null;
-            return;
-        }
-
-        HitResult ray = this.mc.getCameraEntity().raycast(
-            this.range.get(), 0.0F, false
-        );
-
-        if (ray instanceof BlockHitResult block &&
-            Placement.open(block.getBlockPos())) {
-            this.hit = block;
-        } else {
-            this.hit = null;
-        }
-
-        if (!pressed || this.wait > 0 || this.hit == null) {
-            return;
-        }
-
-        this.place(this.hit, stack);
-        this.wait = delay;
-
-        ((ClientAccessor) this.mc).hyperglide$setUse(delay);
     }
 
     /**
@@ -138,20 +108,87 @@ public class AirPlace extends Module {
      * @param event 3D render event
      */
     @EventHandler
-    private void onRender(Render3DEvent event) {
-        if (!this.box.enabled() ||
-            this.hit == null || !Client.ready() ||
-            !this.valid(this.mc.player.getMainHandStack()) ||
-            !Placement.open(this.hit.getBlockPos())) {
-            return;
+    private void render(Render3DEvent event) {
+        if (this.visible()) {
+            this.box.box(event, this.hit.getBlockPos());
+        }
+    }
+
+    //endregion
+
+    //region Target control
+
+    /**
+     * Updates the current air-place target.
+     *
+     * @param stack selected item stack
+     * @return true when a valid target is available
+     */
+    private boolean target(ItemStack stack) {
+        this.hit = null;
+        if (!this.valid(stack)) return false;
+
+        if (this.mc.crosshairTarget != null &&
+            this.mc.crosshairTarget.getType() != HitResult.Type.MISS) {
+            return false;
         }
 
-        this.box.box(event, this.hit.getBlockPos());
+        HitResult ray = this.mc.getCameraEntity().raycast(
+            this.range.get(), 0.0F, false
+        );
+
+        if (!(ray instanceof BlockHitResult block) ||
+            !Placement.open(block.getBlockPos())) {
+            return false;
+        }
+
+        this.hit = block;
+        return true;
+    }
+
+    /**
+     * Checks whether Air Place can update its target.
+     *
+     * @return true when the client is ready
+     */
+    private boolean ready() {
+        Entity entity = this.mc.getCameraEntity();
+        if (Client.ready() && entity != null) {
+            return true;
+        }
+
+        this.hit = null;
+        this.wait = 0;
+        return false;
+    }
+
+    /**
+     * Checks whether the current target should be rendered.
+     *
+     * @return true when the target is still valid
+     */
+    private boolean visible() {
+        return this.box.enabled() &&
+            this.hit != null && Client.ready() &&
+            this.valid(this.mc.player.getMainHandStack()) &&
+            Placement.open(this.hit.getBlockPos());
     }
 
     //endregion
 
     //region Block placement
+
+    /**
+     * Places the selected item at the current target.
+     *
+     * @param stack selected item stack
+     */
+    private void click(ItemStack stack) {
+        this.place(this.hit, stack);
+        this.wait = delay;
+
+        ((ClientAccessor) this.mc).hyperglide$use(delay);
+    }
 
     /**
      * Places a block from the hotbar at a specific position.
@@ -225,7 +262,6 @@ public class AirPlace extends Module {
     //endregion
 
     //region Utilities and validation
-
 
     /**
      * Checks whether an item can be placed using Air Place.

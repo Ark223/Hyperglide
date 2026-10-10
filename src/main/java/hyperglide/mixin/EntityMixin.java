@@ -19,7 +19,7 @@ public abstract class EntityMixin {
      * @param info injection callback
      */
     @Inject(method = "changeLookDirection(DD)V", at = @At("HEAD"), cancellable = true)
-    private void hyperglide$changeLookDirection(double px, double py, CallbackInfo info) {
+    private void hyperglide$look(double px, double py, CallbackInfo info) {
         MinecraftClient client = MinecraftClient.getInstance();
         if ((Object) this != client.player) return;
 

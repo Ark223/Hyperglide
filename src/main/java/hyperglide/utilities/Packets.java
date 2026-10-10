@@ -33,7 +33,7 @@ public final class Packets {
      */
     public static void action(Action action, BlockPos pos, Direction side) {
         ((InteractionAccessor) client.interactionManager)
-            .hyperglide$sendSequencedPacket(client.world, sequence ->
+            .hyperglide$sequence(client.world, sequence ->
                 new PlayerActionC2SPacket(action, pos, side, sequence)
             );
     }
@@ -59,7 +59,7 @@ public final class Packets {
      */
     public static void block(Hand hand, BlockHitResult hit) {
         ((InteractionAccessor) client.interactionManager)
-            .hyperglide$sendSequencedPacket(client.world, sequence ->
+            .hyperglide$sequence(client.world, sequence ->
                 new PlayerInteractBlockC2SPacket(hand, hit, sequence)
             );
     }
@@ -86,7 +86,7 @@ public final class Packets {
      */
     public static void item(Hand hand, float yaw, float pitch) {
         ((InteractionAccessor) client.interactionManager)
-            .hyperglide$sendSequencedPacket(client.world, sequence ->
+            .hyperglide$sequence(client.world, sequence ->
                 new PlayerInteractItemC2SPacket(hand, sequence, yaw, pitch)
             );
     }

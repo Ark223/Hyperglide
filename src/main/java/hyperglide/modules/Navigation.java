@@ -23,6 +23,7 @@ import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec2f;
 import org.lwjgl.glfw.GLFW;
 import java.util.List;
@@ -508,8 +509,8 @@ public class Navigation extends Module {
         float max = (float) Math.max(0.0, limit - half);
 
         return new Vec2f(
-            Math.max(-max, Math.min(max, point.x)),
-            Math.max(-max, Math.min(max, point.y))
+            MathHelper.clamp(point.x, -max, max),
+            MathHelper.clamp(point.y, -max, max)
         );
     }
 
@@ -554,6 +555,7 @@ public class Navigation extends Module {
      * @return world block position
      */
     private BlockPos world(Vec2f point, View view, double left, double top) {
+        int scale = this.convert.get() ? 8 : 1;
         float size = this.size.get();
 
         float px = (float) (left + size * 0.5F);
@@ -563,7 +565,6 @@ public class Navigation extends Module {
         world = world.multiply((float) view.scale);
         world = world.add(view.center);
 
-        int scale = this.convert.get() ? 8 : 1;
         return new BlockPos(
             Math.round(world.x) * scale, 0,
             Math.round(world.y) * scale
@@ -713,12 +714,13 @@ public class Navigation extends Module {
         if (screen.x < left || screen.x > left + size ||
             screen.y < top || screen.y > top + size) return;
 
-        Vec2f ox = new Vec2f(this.thickness.get() + 2, 0.0F);
-        Vec2f oy = new Vec2f(0.0F, this.thickness.get() + 2);
+        int radius = this.thickness.get() + 2;
 
         context.fill(
-            Math.round(screen.x - ox.x), Math.round(screen.y - oy.y),
-            Math.round(screen.x + ox.x), Math.round(screen.y + oy.y),
+            Math.round(screen.x - radius),
+            Math.round(screen.y - radius),
+            Math.round(screen.x + radius),
+            Math.round(screen.y + radius),
             color.getPacked()
         );
     }
@@ -739,6 +741,62 @@ public class Navigation extends Module {
     //endregion
 
     //region Info rendering
+
+    /**
+     * Returns the highway currently under the mouse.
+     *
+     * @param mouse mouse position
+     * @param view current map view
+     * @param left map left position
+     * @param top map top position
+     * @return hovered highway, or null when none
+     */
+    private Highways.Road road(Vec2f mouse, View view, double left, double top) {
+        if (this.mc.currentScreen == null) return null;
+
+        Highways.Road result = null;
+        float closest = Math.max(4.0F, this.thickness.get() + 2.0F);
+
+        for (Highways.Road road : this.roads) {
+            for (Segment segment : road.segments()) {
+                Vec2f first = this.screen(segment.start(), view, left, top);
+                Vec2f second = this.screen(segment.end(), view, left, top);
+
+                float distance = this.distance(mouse, first, second);
+                if (distance > closest) continue;
+
+                closest = distance;
+                result = road;
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Calculates screen distance from a point to a segment.
+     *
+     * @param point screen point
+     * @param first segment starting position
+     * @param second segment ending position
+     * @return shortest screen distance
+     */
+    private float distance(Vec2f point, Vec2f first, Vec2f second) {
+        Vec2f vector = second.add(first.negate());
+        float length = vector.lengthSquared();
+
+        if (length == 0.0F) {
+            return (float) Math.sqrt(point.distanceSquared(first));
+        }
+
+        Vec2f offset = point.add(first.negate());
+        float ratio = MathHelper.clamp(
+            offset.dot(vector) / length, 0.0F, 1.0F
+        );
+
+        Vec2f closest = first.add(vector.multiply(ratio));
+        return (float) Math.sqrt(point.distanceSquared(closest));
+    }
 
     /**
      * Draws centered information above or below the map.
@@ -783,37 +841,6 @@ public class Navigation extends Module {
     }
 
     /**
-     * Returns the highway currently under the mouse.
-     *
-     * @param mouse mouse position
-     * @param view current map view
-     * @param left map left position
-     * @param top map top position
-     * @return hovered highway, or null when none
-     */
-    private Highways.Road road(Vec2f mouse, View view, double left, double top) {
-        if (this.mc.currentScreen == null) return null;
-
-        Highways.Road result = null;
-        float closest = Math.max(4.0F, this.thickness.get() + 2.0F);
-
-        for (Highways.Road road : this.roads) {
-            for (Segment segment : road.segments()) {
-                Vec2f first = this.screen(segment.start(), view, left, top);
-                Vec2f second = this.screen(segment.end(), view, left, top);
-
-                float distance = this.distance(mouse, first, second);
-                if (distance > closest) continue;
-
-                closest = distance;
-                result = road;
-            }
-        }
-
-        return result;
-    }
-
-    /**
      * Formats seconds using compact hour, minute and second units.
      *
      * @param seconds seconds to format
@@ -833,31 +860,6 @@ public class Navigation extends Module {
         }
 
         return value + remaining + "s";
-    }
-
-    /**
-     * Calculates screen distance from a point to a segment.
-     *
-     * @param point screen point
-     * @param first segment starting position
-     * @param second segment ending position
-     * @return shortest screen distance
-     */
-    private float distance(Vec2f point, Vec2f first, Vec2f second) {
-        Vec2f vector = second.add(first.negate());
-        float length = vector.lengthSquared();
-
-        if (length == 0.0F) {
-            return (float) Math.sqrt(point.distanceSquared(first));
-        }
-
-        Vec2f offset = point.add(first.negate());
-        float ratio = Math.max(0.0F,
-            Math.min(1.0F, offset.dot(vector) / length)
-        );
-
-        Vec2f closest = first.add(vector.multiply(ratio));
-        return (float) Math.sqrt(point.distanceSquared(closest));
     }
 
     //endregion
@@ -988,66 +990,6 @@ public class Navigation extends Module {
     //region Destination control
 
     /**
-     * Returns the clip radius in nether coordinates.
-     *
-     * @return effective clip radius
-     */
-    private float clip() {
-        float radius = this.radius.get();
-        return this.convert.get() ? radius / 8.0F : radius;
-    }
-
-    /**
-     * Delays rebuilding until the clip radius stops changing.
-     */
-    private void queue() {
-        if (this.isActive()) this.pending = rebuild;
-    }
-
-    /**
-     * Rebuilds the routing network using the current clip radius.
-     */
-    private void reload() {
-        this.search = new Search(Highways.roads(this.clip()));
-        this.pending = 0;
-        this.calculate();
-    }
-
-    /**
-     * Recalculates the fastest route from the current position.
-     */
-    private void calculate() {
-        if (!Client.nether() || this.mc.player == null) {
-            this.route = null;
-            return;
-        }
-
-        this.route = this.search.find(
-            Player.position(), this.target(), this.speed(), standard
-        );
-    }
-
-    /**
-     * Returns the highway speed used for route calculations.
-     *
-     * @return configured Bounce Fly highway speed
-     */
-    private float speed() {
-        BounceFly bounce = Modules.get().get(BounceFly.class);
-        boolean faster = bounce != null && bounce.accelerated();
-        return faster ? accelerated : highway;
-    }
-
-    /**
-     * Returns the configured destination.
-     *
-     * @return configured destination
-     */
-    private Vec2f target() {
-        return new Vec2f(this.point.getX(), this.point.getZ());
-    }
-
-    /**
      * Applies a destination change and restarts Auto Pilot when active.
      *
      * @param value typed destination value
@@ -1100,6 +1042,66 @@ public class Navigation extends Module {
             this.calculate();
 
         } catch (NumberFormatException ignored) {}
+    }
+
+    /**
+     * Delays rebuilding until the clip radius stops changing.
+     */
+    private void queue() {
+        if (this.isActive()) this.pending = rebuild;
+    }
+
+    /**
+     * Rebuilds the routing network using the current clip radius.
+     */
+    private void reload() {
+        this.search = new Search(Highways.roads(this.clip()));
+        this.pending = 0;
+        this.calculate();
+    }
+
+    /**
+     * Recalculates the fastest route from the current position.
+     */
+    private void calculate() {
+        if (!Client.nether() || this.mc.player == null) {
+            this.route = null;
+            return;
+        }
+
+        this.route = this.search.find(
+            Player.position(), this.target(), this.speed(), standard
+        );
+    }
+
+    /**
+     * Returns the clip radius in nether coordinates.
+     *
+     * @return effective clip radius
+     */
+    private float clip() {
+        float radius = this.radius.get();
+        return this.convert.get() ? radius / 8.0F : radius;
+    }
+
+    /**
+     * Returns the configured destination.
+     *
+     * @return configured destination
+     */
+    private Vec2f target() {
+        return new Vec2f(this.point.getX(), this.point.getZ());
+    }
+
+    /**
+     * Returns the highway speed used for route calculations.
+     *
+     * @return configured Bounce Fly highway speed
+     */
+    private float speed() {
+        BounceFly bounce = Modules.get().get(BounceFly.class);
+        boolean faster = bounce != null && bounce.accelerated();
+        return faster ? accelerated : highway;
     }
 
     //endregion

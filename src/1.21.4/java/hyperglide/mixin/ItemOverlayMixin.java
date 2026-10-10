@@ -29,8 +29,7 @@ public abstract class ItemOverlayMixin {
         "Lnet/minecraft/world/World;Lnet/minecraft/item/ItemStack;" +
         "IIII)V", at = @At("TAIL")
     )
-    private void onDrawItem(
-        LivingEntity entity, World world, ItemStack stack,
+    private void draw(LivingEntity entity, World world, ItemStack stack,
         int px, int py, int seed, int depth, CallbackInfo info) {
 
         Overview module = Modules.get().get(Overview.class);

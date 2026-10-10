@@ -218,7 +218,9 @@ public final class Search {
         for (Link current : list) {
             if (current.end.equals(link.end) &&
                 current.road == link.road && current.type == link.type &&
-                Math.abs(current.distance - link.distance) <= epsilon) return;
+                Math.abs(current.distance - link.distance) <= epsilon) {
+                return;
+            }
         }
 
         list.add(link);

@@ -12,5 +12,5 @@ public interface ClientAccessor {
      * @param value cooldown in ticks
      */
     @Accessor("itemUseCooldown")
-    void hyperglide$setUse(int value);
+    void hyperglide$use(int value);
 }

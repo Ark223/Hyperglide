@@ -4,6 +4,7 @@ import hyperglide.Hyperglide;
 import hyperglide.utilities.Baritone;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Elytra;
+import hyperglide.utilities.Player;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
@@ -25,6 +26,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 
 public class BounceFly extends Module {
+    private static final double ticks = 20.0;
     private static final double range = 5.0;
     private static final double stop = 8.0;
     private static final int grid = 10;
@@ -73,7 +75,7 @@ public class BounceFly extends Module {
         .build()
     );
 
-    private final Setting<Boolean> obstacle = this.general.add(new BoolSetting.Builder()
+    private final Setting<Boolean> passer = this.general.add(new BoolSetting.Builder()
         .name("obstacle-passer")
         .description("Uses Baritone to pass through detected obstacles.")
         .defaultValue(true)
@@ -84,25 +86,25 @@ public class BounceFly extends Module {
         .name("avoid-collisions")
         .description("Uses raycasts to detect obstacles along the highway.")
         .defaultValue(true)
-        .visible(this.obstacle::get)
+        .visible(this.passer::get)
         .build()
     );
 
-    private final Setting<Boolean> dig = this.general.add(new BoolSetting.Builder()
+    private final Setting<Boolean> digger = this.general.add(new BoolSetting.Builder()
         .name("mine-obstacles")
         .description("Clears obstacles on the path before resuming travel.")
         .defaultValue(false)
-        .visible(() -> this.obstacle.get() && this.avoid.get())
+        .visible(() -> this.passer.get() && this.avoid.get())
         .build()
     );
 
-    private final Setting<Integer> ticks = this.general.add(new IntSetting.Builder()
+    private final Setting<Integer> collision = this.general.add(new IntSetting.Builder()
         .name("collision-ticks")
         .description("How many movement ticks ahead to scan for obstacles.")
         .defaultValue(8)
         .min(5)
         .sliderMax(10)
-        .visible(() -> this.obstacle.get() && this.avoid.get())
+        .visible(() -> this.passer.get() && this.avoid.get())
         .build()
     );
 
@@ -112,13 +114,10 @@ public class BounceFly extends Module {
     private BlockPos focus;
     private BlockPos goal;
 
-    private int px;
-    private int pz;
-    private int dx;
-    private int dz;
-
-    private double nx;
-    private double nz;
+    private int px, pz;
+    private int dx, dz;
+    private double nx, nz;
+    private double yaw;
 
     private int slow;
     private int jump;
@@ -377,7 +376,7 @@ public class BounceFly extends Module {
      * @return true while obstacle handling is active
      */
     private boolean pathing() {
-        if (!this.obstacle.get()) {
+        if (!this.passer.get()) {
             if (this.pass) {
                 Baritone.stop();
                 this.reset();
@@ -418,7 +417,7 @@ public class BounceFly extends Module {
      * @return true when obstacle handling was started
      */
     private boolean blocked() {
-        if (!this.obstacle.get() || !this.avoid.get()) {
+        if (!this.passer.get() || !this.avoid.get()) {
             return false;
         }
 
@@ -430,7 +429,7 @@ public class BounceFly extends Module {
         this.level = this.level();
         BlockPos goal = this.trace(hit);
 
-        if (this.mining != null && this.dig.get() &&
+        if (this.mining != null && this.digger.get() &&
             !this.blocks.isEmpty()) {
             this.mine(goal);
         } else {
@@ -444,10 +443,10 @@ public class BounceFly extends Module {
      * Detects slow movement and starts recovery pathing.
      */
     private void stuck() {
-        Vec3d vel = this.mc.player.getVelocity();
-        double speed = vel.horizontalLength() * 20.0;
+        Vec3d motion = this.mc.player.getVelocity();
+        double speed = motion.horizontalLength() * ticks;
 
-        if (!this.obstacle.get() || speed >= stop) {
+        if (!this.passer.get() || speed >= stop) {
             this.slow = 0;
             return;
         }
@@ -461,6 +460,43 @@ public class BounceFly extends Module {
     //endregion
 
     //region Obstacle pathing
+
+    /**
+     * Starts recovery toward a safe highway position.
+     */
+    private void path() {
+        this.level = this.level();
+        BlockPos goal = this.trace();
+
+        if (this.mining != null && this.avoid.get() &&
+            this.digger.get() && !this.blocks.isEmpty()) {
+            this.mine(goal);
+        } else {
+            this.path(goal);
+        }
+    }
+
+    /**
+     * Starts Baritone pathing beyond the selected goal.
+     *
+     * @param pos pathing goal
+     */
+    private void path(BlockPos pos) {
+        this.level = this.level();
+
+        this.release();
+        this.reset();
+        this.clear();
+
+        this.pass = true;
+        this.started = false;
+
+        int px = this.dx * reach;
+        int pz = this.dz * reach;
+
+        pos = this.block(pos.getX(), pos.getZ());
+        Baritone.walk(pos.add(px, 0, pz));
+    }
 
     /**
      * Starts obstacle mining before pathing onward.
@@ -510,43 +546,6 @@ public class BounceFly extends Module {
         }
     }
 
-    /**
-     * Starts recovery toward a safe highway position.
-     */
-    private void path() {
-        this.level = this.level();
-        BlockPos goal = this.trace();
-
-        if (this.mining != null && this.avoid.get() &&
-            this.dig.get() && !this.blocks.isEmpty()) {
-            this.mine(goal);
-        } else {
-            this.path(goal);
-        }
-    }
-
-    /**
-     * Starts Baritone pathing beyond the selected goal.
-     *
-     * @param pos pathing goal
-     */
-    private void path(BlockPos pos) {
-        this.level = this.level();
-
-        this.release();
-        this.reset();
-        this.clear();
-
-        this.pass = true;
-        this.started = false;
-
-        int px = this.dx * reach;
-        int pz = this.dz * reach;
-
-        pos = this.block(pos.getX(), pos.getZ());
-        Baritone.walk(pos.add(px, 0, pz));
-    }
-
     //endregion
 
     //region Obstacle scanning
@@ -565,7 +564,7 @@ public class BounceFly extends Module {
         for (int idx = 0; idx < span; idx++) {
             goal = pos.add(this.dx * reach, 0, this.dz * reach);
 
-            boolean mine = this.mining != null && this.dig.get();
+            boolean mine = this.mining != null && this.digger.get();
             if (mine && this.avoid.get()) this.step(goal);
 
             if (!this.clear(goal)) {
@@ -622,7 +621,7 @@ public class BounceFly extends Module {
      */
     private boolean step(BlockPos pos) {
         boolean blocked = this.column(pos);
-        if (this.dig.get()) this.collect(pos);
+        if (this.digger.get()) this.collect(pos);
 
         if (this.dx != 0 && this.dz != 0) {
             BlockPos px = pos.add(this.dx, 0, 0);
@@ -631,7 +630,7 @@ public class BounceFly extends Module {
             blocked |= this.column(px);
             blocked |= this.column(pz);
 
-            if (this.dig.get()) {
+            if (this.digger.get()) {
                 this.collect(px);
                 this.collect(pz);
             }
@@ -676,7 +675,7 @@ public class BounceFly extends Module {
         Vec3d vel = this.mc.player.getVelocity();
 
         double scan = vel.horizontalLength();
-        scan = Math.max(1.0, scan * this.ticks.get());
+        scan = Math.max(1.0, scan * this.collision.get());
 
         double level = Math.floor(this.mc.player.getY());
 
@@ -735,14 +734,16 @@ public class BounceFly extends Module {
      */
     private void face() {
         float yaw = this.mc.player.getYaw();
-
         float sector = (yaw + 22.5F) / 45.0F;
+
         int face = MathHelper.floor(sector) & 7;
+        double len = Math.hypot(this.dx, this.dz);
+
+        this.yaw = face > 4 ? face - 8 : face;
+        this.yaw *= 45.0;
 
         this.dx = dxs[face];
         this.dz = dzs[face];
-
-        double len = Math.hypot(this.dx, this.dz);
 
         this.nx = this.dx / len;
         this.nz = this.dz / len;
@@ -772,13 +773,7 @@ public class BounceFly extends Module {
      * Rotates the player toward the stored highway direction.
      */
     private void rotate() {
-        float yaw = (float) Math.toDegrees(
-            Math.atan2(-this.dx, this.dz)
-        );
-
-        this.mc.player.setYaw(yaw);
-        this.mc.player.setHeadYaw(yaw);
-        this.mc.player.setBodyYaw(yaw);
+        Player.rotate((float) this.yaw);
     }
 
     /**

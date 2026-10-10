@@ -41,8 +41,7 @@ public abstract class SoundMixin {
     @Inject(method = "play(Lnet/minecraft/client/sound/SoundInstance;I)V",
         at = @At("HEAD"), cancellable = true
     )
-    private void hyperglide$playDelayed(
-        SoundInstance sound, int delay, CallbackInfo info) {
+    private void hyperglide$delay(SoundInstance sound, int delay, CallbackInfo info) {
         if (hyperglide$mute(sound)) info.cancel();
     }
 

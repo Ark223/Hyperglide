@@ -218,12 +218,11 @@ public class DeepTrace extends Module {
             }
 
             ItemStack stack = item.getStack();
-            if (stack.isEmpty() ||
-                this.blacklist.get().contains(stack.getItem())) {
-                continue;
-            }
+            if (stack.isEmpty()) continue;
 
-            this.draw(event, item);
+            if (!this.blacklist.get().contains(stack.getItem())) {
+                this.draw(event, item);
+            }
         }
     }
 
@@ -234,17 +233,14 @@ public class DeepTrace extends Module {
      */
     private void mobs(Render3DEvent event) {
         if (this.dungeons.isEmpty()) return;
-
         Set<Integer> seen = new HashSet<>();
 
         for (Dungeon dungeon : this.dungeons) {
             for (Entity entity : this.entities(dungeon)) {
-                if (!dungeon.box.contains(API.pos(entity)) ||
-                    !seen.add(entity.getId())) {
-                    continue;
+                if (dungeon.box.contains(API.pos(entity)) &&
+                    seen.add(entity.getId())) {
+                    this.draw(event, entity);
                 }
-
-                this.draw(event, entity);
             }
         }
     }
@@ -263,26 +259,33 @@ public class DeepTrace extends Module {
         int cx = this.mc.player.getBlockX() >> 4;
         int cz = this.mc.player.getBlockZ() >> 4;
 
-        for (int x = cx - range; x <= cx + range; x++) {
-            for (int z = cz - range; z <= cz + range; z++) {
-                WorldChunk chunk = manager.getWorldChunk(x, z, false);
-                if (chunk == null) continue;
-
-                for (BlockEntity entity : chunk.getBlockEntities().values()) {
-                    if (!(entity instanceof MobSpawnerBlockEntity spawner)) {
-                        continue;
-                    }
-
-                    Entity mob = spawner.getLogic().getRenderedEntity(
-                        this.mc.world, spawner.getPos()
-                    );
-
-                    if (mob == null) continue;
-
-                    Box room = this.room(spawner.getPos());
-                    this.dungeons.add(new Dungeon(room, mob.getType()));
-                }
+        for (int tx = cx - range; tx <= cx + range; tx++) {
+            for (int tz = cz - range; tz <= cz + range; tz++) {
+                WorldChunk chunk = manager.getWorldChunk(tx, tz, false);
+                if (chunk != null) this.scan(chunk);
             }
+        }
+    }
+
+    /**
+     * Finds dungeon spawners in a loaded chunk.
+     *
+     * @param chunk chunk to scan
+     */
+    private void scan(WorldChunk chunk) {
+        for (BlockEntity entity : chunk.getBlockEntities().values()) {
+            if (!(entity instanceof MobSpawnerBlockEntity spawner)) {
+                continue;
+            }
+
+            Entity mob = spawner.getLogic().getRenderedEntity(
+                this.mc.world, spawner.getPos()
+            );
+
+            if (mob == null) continue;
+
+            Box room = this.room(spawner.getPos());
+            this.dungeons.add(new Dungeon(room, mob.getType()));
         }
     }
 
@@ -300,17 +303,25 @@ public class DeepTrace extends Module {
             pos.z - entity.getZ()
         );
 
-        Render.box(event, box,
-            this.side.get(), this.line.get(), this.shape.get()
+        Render.box(event, box, this.side.get(),
+            this.line.get(), this.shape.get()
         );
 
-        if (this.tracers.get()) {
-            Vec3d start = RenderUtils.center;
-            Vec3d end = box.getCenter();
-            Render.line(event, start, end, this.line.get());
-        }
-
+        if (this.tracers.get()) this.trace(event, box);
         this.count++;
+    }
+
+    /**
+     * Draws a tracer to a detected entity box.
+     *
+     * @param event 3D render event
+     * @param box rendered entity box
+     */
+    private void trace(Render3DEvent event, Box box) {
+        Vec3d start = RenderUtils.center;
+        Vec3d end = box.getCenter();
+
+        Render.line(event, start, end, this.line.get());
     }
 
     //endregion
@@ -349,14 +360,8 @@ public class DeepTrace extends Module {
      * @return seven by four by seven dungeon interior
      */
     private Box room(BlockPos pos) {
-        return new Box(
-            pos.getX() - radius,
-            pos.getY(),
-            pos.getZ() - radius,
-            pos.getX() + radius + 1,
-            pos.getY() + height,
-            pos.getZ() + radius + 1
-        );
+        Box box = new Box(pos).expand(radius, 0, radius);
+        return box.stretch(0, height - 1, 0);
     }
 
     /**

@@ -22,9 +22,9 @@ public final class Takeoff {
     }
 
     /**
-     * Starts the input sequence with optional ground jumping.
+     * Starts the input with optional ground jumping.
      *
-     * @param ground whether the sequence may start from the ground
+     * @param ground whether the sequence covers ground
      */
     public void start(boolean ground) {
         this.active = true;
@@ -38,45 +38,62 @@ public final class Takeoff {
     public void pulse() {
         if (!this.active) return;
 
-        if (!(Client.loaded() &&
-            this.flight.available()) ||
-            client.player.isGliding()) {
+        if (!this.ready()) {
             this.reset();
             return;
         }
 
         if (client.player.isOnGround()) {
-            if (!this.ground) {
-                this.reset();
-                return;
-            }
-
-            if (this.flight.spoof() &&
-                !this.flight.prepare()) {
-                return;
-            }
-
-            this.pressed = true;
+            this.jump();
             return;
         }
 
         if (this.flight.spoof()) {
-            if (this.flight.active()) {
-                this.pressed = Player.liquid();
-                return;
-            }
-
-            if (this.flight.start()) {
-                if (Player.liquid()) {
-                    this.pressed = true;
-                } else {
-                    this.reset();
-                }
-            }
+            this.spoof();
             return;
         }
 
         this.pressed = !this.pressed;
+    }
+
+    /**
+     * Checks whether the takeoff sequence may continue.
+     *
+     * @return true while takeoff can continue
+     */
+    private boolean ready() {
+        return Client.loaded()
+            && this.flight.available()
+            && !client.player.isGliding();
+    }
+
+    /**
+     * Keeps jump pressed while leaving the ground.
+     */
+    private void jump() {
+        if (!this.ground) {
+            this.reset();
+        } else {
+            this.pressed = true;
+        }
+    }
+
+    /**
+     * Starts or maintains spoofed takeoff.
+     */
+    private void spoof() {
+        if (this.flight.active()) {
+            this.pressed = Player.liquid();
+            return;
+        }
+
+        if (!this.flight.start()) return;
+
+        if (Player.liquid()) {
+            this.pressed = true;
+        } else {
+            this.reset();
+        }
     }
 
     /**

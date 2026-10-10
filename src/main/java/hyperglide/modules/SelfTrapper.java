@@ -151,48 +151,11 @@ public class SelfTrapper extends Module {
         if (!Client.interaction()) return;
 
         this.tick++;
-
-        if (!this.centered) {
-            if (!this.center()) return;
-
-            this.timer = this.delay.get();
-            return;
-        }
+        if (this.align()) return;
 
         this.collect();
-        this.clean();
-        this.verify();
-        this.promote();
-        this.fill();
-
-        int amount = this.amount();
-        if (amount == 0 || ++this.timer < this.pace(amount)) {
-            return;
-        }
-
-        int attempts = 0;
-
-        for (int idx = 0; idx < amount; idx++) {
-            BlockPos pos = this.next();
-            if (pos == null) break;
-
-            int slot = Hotbar.block(this.filter, pos);
-            if (slot == -1) {
-                this.queue.addFirst(pos);
-                break;
-            }
-
-            attempts++;
-
-            if (!Placement.place(pos, slot)) {
-                this.retry(pos);
-                continue;
-            }
-
-            this.pending.put(pos, this.tick + verify);
-        }
-
-        if (attempts > 0) this.timer = 0;
+        this.update();
+        this.place();
     }
 
     /**
@@ -220,19 +183,18 @@ public class SelfTrapper extends Module {
     //region State and centering
 
     /**
-     * Clears all queues, timers and centering state.
+     * Handles the centering phase before trapping begins.
+     *
+     * @return true while centering is still being handled
      */
-    private void reset() {
-        this.wanted.clear();
-        this.queue.clear();
-        this.pending.clear();
-        this.waiting.clear();
+    private boolean align() {
+        if (this.centered) return false;
 
-        this.target = null;
-        this.timer = 0;
-        this.tick = 0;
-        this.centered = false;
-        this.moving = false;
+        if (this.center()) {
+            this.timer = this.delay.get();
+        }
+
+        return true;
     }
 
     /**
@@ -241,14 +203,8 @@ public class SelfTrapper extends Module {
      * @return true when the player fits inside the target block
      */
     private boolean center() {
-        if (this.target == null) {
-            this.target = this.nearest();
-
-            if (this.target == null) {
-                this.error("Unable to find a safe block center.");
-                this.toggle();
-                return false;
-            }
+        if (this.target == null && !this.seek()) {
+            return false;
         }
 
         if (this.arrived()) {
@@ -256,11 +212,34 @@ public class SelfTrapper extends Module {
             return true;
         }
 
+        this.move();
+        return false;
+    }
+
+    /**
+     * Selects the closest safe block center.
+     *
+     * @return true when a target was found
+     */
+    private boolean seek() {
+        this.target = this.nearest();
+        if (this.target != null) return true;
+
+        this.error("Unable to find a safe block center.");
+        this.toggle();
+        return false;
+    }
+
+    /**
+     * Applies movement toward the selected block center.
+     */
+    private void move() {
         double dx = this.target.x - this.mc.player.getX();
         double dz = this.target.z - this.mc.player.getZ();
 
-        Vec3d forward = Vec3d.fromPolar(0.0F, this.mc.player.getYaw());
-        Vec3d right = Vec3d.fromPolar(0.0F, this.mc.player.getYaw() + 90.0F);
+        float yaw = this.mc.player.getYaw();
+        Vec3d forward = Vec3d.fromPolar(0.0F, yaw);
+        Vec3d right = Vec3d.fromPolar(0.0F, yaw + 90.0F);
 
         double front = dx * forward.x + dz * forward.z;
         double side = dx * right.x + dz * right.z;
@@ -277,7 +256,6 @@ public class SelfTrapper extends Module {
         this.mc.player.setSprinting(true);
 
         this.moving = true;
-        return false;
     }
 
     /**
@@ -293,27 +271,30 @@ public class SelfTrapper extends Module {
         int maxx = MathHelper.floor(box.maxX - edge);
         int maxz = MathHelper.floor(box.maxZ - edge);
 
-        Vec3d target = null;
+        double px = this.mc.player.getX();
+        double py = this.mc.player.getY();
+        double pz = this.mc.player.getZ();
+
+        Vec3d best = null;
         double distance = Double.MAX_VALUE;
 
-        for (int px = minx; px <= maxx; px++) {
-            for (int pz = minz; pz <= maxz; pz++) {
-                double centerx = px + 0.5, centerz = pz + 0.5;
-
-                double dx = centerx - this.mc.player.getX();
-                double dz = centerz - this.mc.player.getZ();
+        for (int mx = minx; mx <= maxx; mx++) {
+            for (int mz = minz; mz <= maxz; mz++) {
+                double cx = mx + 0.5, cz = mz + 0.5;
+                double dx = cx - px, dz = cz - pz;
 
                 double current = dx * dx + dz * dz;
-                if (current >= distance ||
-                    !this.supported(box, px, pz) ||
-                    !this.safe(box, centerx, centerz)) continue;
+                if (current >= distance) continue;
 
-                target = new Vec3d(centerx, this.mc.player.getY(), centerz);
+                if (!this.supported(box, mx, mz)) continue;
+                if (!this.safe(box, cx, cz)) continue;
+
+                best = new Vec3d(cx, py, cz);
                 distance = current;
             }
         }
 
-        return target;
+        return best;
     }
 
     /**
@@ -325,35 +306,15 @@ public class SelfTrapper extends Module {
      * @return true when the candidate matches the player's height
      */
     private boolean supported(Box box, int px, int pz) {
-        int py = MathHelper.floor(box.minY - edge);
-        BlockPos pos = new BlockPos(px, py, pz);
+        int level = MathHelper.floor(box.minY - edge);
+        BlockPos pos = new BlockPos(px, level, pz);
 
         BlockState state = this.mc.world.getBlockState(pos);
         VoxelShape shape = state.getCollisionShape(this.mc.world, pos);
-
         if (shape.isEmpty()) return false;
 
-        double top = py + shape.getMax(Axis.Y);
+        double top = level + shape.getMax(Axis.Y);
         return Math.abs(top - box.minY) <= 0.01;
-    }
-
-    /**
-     * Checks whether the player's hitbox fits inside the target block.
-     *
-     * @return true when centering is complete
-     */
-    private boolean arrived() {
-        if (this.target == null) return false;
-
-        Box box = this.mc.player.getBoundingBox();
-
-        double px = Math.max(0.01, 0.5 - (box.maxX - box.minX) / 2.0 - edge);
-        double pz = Math.max(0.01, 0.5 - (box.maxZ - box.minZ) / 2.0 - edge);
-
-        double dx = Math.abs(this.target.x - this.mc.player.getX());
-        double dz = Math.abs(this.target.z - this.mc.player.getZ());
-
-        return dx <= px && dz <= pz;
     }
 
     /**
@@ -365,11 +326,30 @@ public class SelfTrapper extends Module {
      * @return true when the candidate is collision-free
      */
     private boolean safe(Box box, double px, double pz) {
-        double ox = this.mc.player.getX();
-        double oz = this.mc.player.getZ();
+        double ox = px - this.mc.player.getX();
+        double oz = pz - this.mc.player.getZ();
 
-        Box moved = box.offset(px - ox, 0.0, pz - oz);
-        return this.mc.world.isSpaceEmpty(this.mc.player, moved);
+        return this.mc.world.isSpaceEmpty(
+            this.mc.player, box.offset(ox, 0.0, oz)
+        );
+    }
+
+    /**
+     * Checks whether the player's hitbox fits inside the target block.
+     *
+     * @return true when centering is complete
+     */
+    private boolean arrived() {
+        if (this.target == null) return false;
+        Box box = this.mc.player.getBoundingBox();
+
+        double px = 0.5 - (box.maxX - box.minX) / 2.0 - edge;
+        double pz = 0.5 - (box.maxZ - box.minZ) / 2.0 - edge;
+
+        double dx = Math.abs(this.target.x - this.mc.player.getX());
+        double dz = Math.abs(this.target.z - this.mc.player.getZ());
+
+        return dx <= Math.max(0.01, px) && dz <= Math.max(0.01, pz);
     }
 
     /**
@@ -390,9 +370,25 @@ public class SelfTrapper extends Module {
      * Clears forced Baritone movement inputs.
      */
     private void stop() {
-        if (!this.moving) return;
+        if (this.moving) {
+            Baritone.clear();
+            this.moving = false;
+        }
+    }
 
-        Baritone.clear();
+    /**
+     * Clears all queues, timers and centering state.
+     */
+    private void reset() {
+        this.wanted.clear();
+        this.queue.clear();
+        this.pending.clear();
+        this.waiting.clear();
+
+        this.target = null;
+        this.timer = 0;
+        this.tick = 0;
+        this.centered = false;
         this.moving = false;
     }
 
@@ -409,38 +405,72 @@ public class SelfTrapper extends Module {
         Set<BlockPos> set = new HashSet<>();
         Box box = this.mc.player.getBoundingBox();
 
-        int minx = MathHelper.floor(box.minX + edge);
-        int miny = MathHelper.floor(box.minY + edge);
-        int minz = MathHelper.floor(box.minZ + edge);
+        BlockPos min = new BlockPos(
+            MathHelper.floor(box.minX + edge),
+            MathHelper.floor(box.minY + edge),
+            MathHelper.floor(box.minZ + edge)
+        );
 
-        int maxx = MathHelper.floor(box.maxX - edge);
-        int maxy = MathHelper.floor(box.maxY - edge);
-        int maxz = MathHelper.floor(box.maxZ - edge);
+        BlockPos max = new BlockPos(
+            MathHelper.floor(box.maxX - edge),
+            MathHelper.floor(box.maxY - edge),
+            MathHelper.floor(box.maxZ - edge)
+        );
 
+        this.walls(set, box, min, max);
+        this.roof(set, box, min, max);
+        this.order(set);
+    }
+
+    /**
+     * Builds the side walls around the player's hitbox.
+     *
+     * @param set set receiving trap positions
+     * @param box player's bounding box
+     * @param min minimum occupied block position
+     * @param max maximum occupied block position
+     */
+    private void walls(Set<BlockPos> set, Box box, BlockPos min, BlockPos max) {
         int face = MathHelper.floor(this.mc.player.getEyeY());
 
-        for (int py = miny; py <= maxy; py++) {
+        for (int py = min.getY(); py <= max.getY(); py++) {
             if (this.face.get() && py == face) continue;
 
-            for (int px = minx; px <= maxx; px++) {
-                this.add(set, new BlockPos(px, py, minz - 1), box);
-                this.add(set, new BlockPos(px, py, maxz + 1), box);
+            for (int px = min.getX(); px <= max.getX(); px++) {
+                this.add(set, new BlockPos(px, py, min.getZ() - 1), box);
+                this.add(set, new BlockPos(px, py, max.getZ() + 1), box);
             }
 
-            for (int pz = minz; pz <= maxz; pz++) {
-                this.add(set, new BlockPos(minx - 1, py, pz), box);
-                this.add(set, new BlockPos(maxx + 1, py, pz), box);
-            }
-        }
-
-        int roof = maxy + 1;
-
-        for (int px = minx; px <= maxx; px++) {
-            for (int pz = minz; pz <= maxz; pz++) {
-                this.add(set, new BlockPos(px, roof, pz), box);
+            for (int pz = min.getZ(); pz <= max.getZ(); pz++) {
+                this.add(set, new BlockPos(min.getX() - 1, py, pz), box);
+                this.add(set, new BlockPos(max.getX() + 1, py, pz), box);
             }
         }
+    }
 
+    /**
+     * Builds the roof above the player's hitbox.
+     *
+     * @param set set receiving trap positions
+     * @param box player's bounding box
+     * @param min minimum occupied block position
+     * @param max maximum occupied block position
+     */
+    private void roof(Set<BlockPos> set, Box box, BlockPos min, BlockPos max) {
+        int py = max.getY() + 1;
+        for (int px = min.getX(); px <= max.getX(); px++) {
+            for (int pz = min.getZ(); pz <= max.getZ(); pz++) {
+                this.add(set, new BlockPos(px, py, pz), box);
+            }
+        }
+    }
+
+    /**
+     * Sorts trap positions by distance and stable coordinates.
+     *
+     * @param set collected trap positions
+     */
+    private void order(Set<BlockPos> set) {
         List<BlockPos> list = new ArrayList<>(set);
 
         list.sort(Comparator.comparingDouble(
@@ -471,18 +501,24 @@ public class SelfTrapper extends Module {
      * @return squared distance to the position
      */
     private double distance(BlockPos pos) {
-        Vec3d center = this.mc.player.getBoundingBox().getCenter();
-
-        double px = pos.getX() + 0.5 - center.x;
-        double py = pos.getY() + 0.5 - center.y;
-        double pz = pos.getZ() + 0.5 - center.z;
-
-        return px * px + py * py + pz * pz;
+        return Vec3d.ofCenter(pos).squaredDistanceTo(
+            this.mc.player.getBoundingBox().getCenter()
+        );
     }
 
     //endregion
 
     //region Queue management
+
+    /**
+     * Refreshes queued, pending and delayed trap positions.
+     */
+    private void update() {
+        this.clean();
+        this.verify();
+        this.promote();
+        this.fill();
+    }
 
     /**
      * Removes positions that are no longer required or replaceable.
@@ -508,8 +544,8 @@ public class SelfTrapper extends Module {
      * Verifies pending placements and retries failed positions.
      */
     private void verify() {
-        Iterator<Map.Entry<BlockPos, Integer>> iterator =
-            this.pending.entrySet().iterator();
+        Iterator<Map.Entry<BlockPos, Integer>>
+            iterator = this.pending.entrySet().iterator();
 
         while (iterator.hasNext()) {
             Map.Entry<BlockPos, Integer> entry = iterator.next();
@@ -528,8 +564,8 @@ public class SelfTrapper extends Module {
      * Moves expired retry entries back into the active queue.
      */
     private void promote() {
-        Iterator<Map.Entry<BlockPos, Integer>> iterator =
-            this.waiting.entrySet().iterator();
+        Iterator<Map.Entry<BlockPos, Integer>>
+            iterator = this.waiting.entrySet().iterator();
 
         while (iterator.hasNext()) {
             Map.Entry<BlockPos, Integer> entry = iterator.next();
@@ -572,13 +608,57 @@ public class SelfTrapper extends Module {
     //region Placement control
 
     /**
+     * Processes the next placement cycle.
+     */
+    private void place() {
+        int amount = this.amount();
+        if (amount == 0) return;
+
+        if (++this.timer < this.pace(amount)) return;
+        if (this.cycle(amount)) this.timer = 0;
+    }
+
+    /**
+     * Attempts the requested number of queued placements.
+     *
+     * @param amount maximum placements to process
+     * @return true when at least one placement was attempted
+     */
+    private boolean cycle(int amount) {
+        boolean attempted = false;
+
+        for (int idx = 0; idx < amount; idx++) {
+            BlockPos pos = this.next();
+            if (pos == null) break;
+
+            int slot = Hotbar.block(this.filter, pos);
+            if (slot == -1) {
+                this.queue.addFirst(pos);
+                break;
+            }
+
+            attempted = true;
+
+            if (Placement.place(pos, slot)) {
+                this.pending.put(pos, this.tick + verify);
+            } else {
+                this.retry(pos);
+            }
+        }
+
+        return attempted;
+    }
+
+    /**
      * Counts queued blocks available for the next placement cycle.
      *
      * @return the number of blocks available for the next cycle
      */
     private int amount() {
-        int limit = this.batch.get() ? this.count.get() : 1;
         int amount = 0;
+
+        int limit = this.count.get();
+        if (!this.batch.get()) limit = 1;
 
         for (BlockPos pos : this.queue) {
             if (!this.ready(pos)) continue;
@@ -597,11 +677,9 @@ public class SelfTrapper extends Module {
     private int pace(int amount) {
         if (!this.dynamic.get()) return this.delay.get();
 
-        int maximum = this.batch.get() ? this.count.get() : 1;
-
-        return Math.max(1, (int) Math.ceil(
-            this.delay.get() * amount / (double) maximum)
-        );
+        double max = this.batch.get() ? this.count.get() : 1.0;
+        double delay = this.delay.get() * amount / max;
+        return Math.max(1, (int) Math.ceil(delay));
     }
 
     /**
@@ -618,19 +696,6 @@ public class SelfTrapper extends Module {
     }
 
     /**
-     * Checks whether a position can currently be processed.
-     *
-     * @param pos position to check
-     * @return true when the position is required and open
-     */
-    private boolean ready(BlockPos pos) {
-        return this.wanted.contains(pos)
-            && Placement.open(pos)
-            && !this.pending.containsKey(pos)
-            && !this.waiting.containsKey(pos);
-    }
-
-    /**
      * Delays another attempt for a failed block position.
      *
      * @param pos failed block position
@@ -641,6 +706,19 @@ public class SelfTrapper extends Module {
 
         int timer = this.tick + this.timeout.get();
         this.waiting.put(pos.toImmutable(), timer);
+    }
+
+    /**
+     * Checks whether a position can currently be processed.
+     *
+     * @param pos position to check
+     * @return true when the position is required and open
+     */
+    private boolean ready(BlockPos pos) {
+        return this.wanted.contains(pos)
+            && Placement.open(pos)
+            && !this.pending.containsKey(pos)
+            && !this.waiting.containsKey(pos);
     }
 
     //endregion

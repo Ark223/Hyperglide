@@ -17,36 +17,13 @@ public final class Graph {
      * @param roads roads used to build the graph
      */
     public Graph(List<Highways.Road> roads) {
-        List<Node> nodes = new ArrayList<>();
-        List<Edge> edges = new ArrayList<>();
         List<Part> parts = this.parts(roads);
 
-        for (int idx = 0; idx < parts.size(); idx++) {
-            Part first = parts.get(idx);
+        List<Node> nodes = new ArrayList<>();
+        List<Edge> edges = new ArrayList<>();
 
-            for (int next = idx + 1; next < parts.size(); next++) {
-                this.split(first, parts.get(next));
-            }
-        }
-
-        for (Part part : parts) {
-            part.points.sort(Comparator.comparingDouble(
-                part.segment::projection
-            ));
-
-            Node previous = null;
-
-            for (Vec2f point : part.points) {
-                Node current = this.node(nodes, point);
-                if (current == previous) continue;
-
-                if (previous != null) {
-                    edges.add(new Edge(previous, current, part.road));
-                }
-
-                previous = current;
-            }
-        }
+        this.split(parts);
+        this.build(parts, nodes, edges);
 
         this.nodes = List.copyOf(nodes);
         this.edges = List.copyOf(edges);
@@ -88,6 +65,60 @@ public final class Graph {
         }
 
         return parts;
+    }
+
+    /**
+     * Splits graph parts at every intersection or overlap boundary.
+     *
+     * @param parts graph parts to split
+     */
+    private void split(List<Part> parts) {
+        for (int idx = 0; idx < parts.size(); idx++) {
+            Part first = parts.get(idx);
+
+            for (int next = idx + 1; next < parts.size(); next++) {
+                this.split(first, parts.get(next));
+            }
+        }
+    }
+
+    /**
+     * Builds graph nodes and edges from split road parts.
+     *
+     * @param parts graph parts to build
+     * @param nodes destination node list
+     * @param edges destination edge list
+     */
+    private void build(List<Part> parts, List<Node> nodes, List<Edge> edges) {
+        for (Part part : parts) {
+            this.build(part, nodes, edges);
+        }
+    }
+
+    /**
+     * Builds graph nodes and edges from one road part.
+     *
+     * @param part graph part to build
+     * @param nodes destination node list
+     * @param edges destination edge list
+     */
+    private void build(Part part, List<Node> nodes, List<Edge> edges) {
+        Node previous = null;
+
+        part.points.sort(Comparator.comparingDouble(
+            part.segment::projection
+        ));
+
+        for (Vec2f point : part.points) {
+            Node current = this.node(nodes, point);
+            if (current == previous) continue;
+
+            if (previous != null) {
+                edges.add(new Edge(previous, current, part.road));
+            }
+
+            previous = current;
+        }
     }
 
     /**

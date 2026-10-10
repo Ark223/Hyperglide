@@ -13,5 +13,5 @@ public interface InputAccessor {
      * @param value forward and sideways movement
      */
     @Accessor("movementVector")
-    void hyperglide$setMovement(Vec2f value);
+    void hyperglide$movement(Vec2f value);
 }

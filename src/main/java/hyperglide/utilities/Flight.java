@@ -14,9 +14,9 @@ public final class Flight {
 
     private static final Flight instance = new Flight();
 
+    private static final int grace = 3;
     private static final int chest = 6;
     private static final int gliding = 7;
-    private static final int grace = 3;
 
     private boolean enabled;
     private boolean active;
@@ -477,8 +477,7 @@ public final class Flight {
      * @return true while flight may continue
      */
     private boolean continuing() {
-        return Client.ready()
-            && !Player.liquid()
+        return Client.ready() && !Player.liquid()
             && !this.client.player.isOnGround()
             && !this.client.player.hasVehicle()
             && !this.client.player.getAbilities().flying

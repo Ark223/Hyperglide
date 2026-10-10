@@ -60,8 +60,8 @@ public final class API {
      */
     public static void move(Input input, float forward, float sideways) {
         InputAccessor access = (InputAccessor) input;
-        access.hyperglide$setForward(forward);
-        access.hyperglide$setSideways(sideways);
+        access.hyperglide$forward(forward);
+        access.hyperglide$sideways(sideways);
     }
 
     /**

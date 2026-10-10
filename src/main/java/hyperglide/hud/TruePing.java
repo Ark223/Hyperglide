@@ -49,7 +49,7 @@ public class TruePing extends TextHud {
         if (MeteorClient.mc.inGameHud == null) return null;
 
         PlayerListHud hud = MeteorClient.mc.inGameHud.getPlayerListHud();
-        return ((PlayerListAccessor) hud).hyperglide$getFooter();
+        return ((PlayerListAccessor) hud).hyperglide$footer();
     }
 
     /**

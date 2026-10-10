@@ -60,6 +60,49 @@ public class FastPortal extends Module {
      */
     @Override
     public void onActivate() {
+        this.setup();
+    }
+
+    /**
+     * Clears the portal frame and placement state.
+     */
+    @Override
+    public void onDeactivate() {
+        this.portal.clear();
+        this.index = 0;
+        this.timer = 0;
+    }
+
+    //region Event handlers
+
+    /**
+     * Places the next required frame block after the delay.
+     *
+     * @param event pre-tick event
+     */
+    @EventHandler
+    private void onTick(TickEvent.Pre event) {
+        if (Client.loaded()) this.build();
+    }
+
+    /**
+     * Renders the remaining incomplete portal frame positions.
+     *
+     * @param event 3D render event
+     */
+    @EventHandler
+    private void onRender(Render3DEvent event) {
+        if (this.box.enabled()) this.render(event);
+    }
+
+    //endregion
+
+    //region Portal structure
+
+    /**
+     * Prepares and validates the portal frame.
+     */
+    private void setup() {
         if (!Client.loaded()) {
             this.toggle();
             return;
@@ -95,82 +138,6 @@ public class FastPortal extends Module {
             this.toggle();
         }
     }
-
-    /**
-     * Clears the portal frame and placement state.
-     */
-    @Override
-    public void onDeactivate() {
-        this.portal.clear();
-        this.index = 0;
-        this.timer = 0;
-    }
-
-    //region Event handlers
-
-    /**
-     * Places the next required frame block after the delay.
-     *
-     * @param event pre-tick event
-     */
-    @EventHandler
-    private void onTick(TickEvent.Pre event) {
-        if (!Client.loaded()) return;
-
-        this.skip();
-
-        if (this.index >= this.portal.size()) {
-            this.done();
-            return;
-        }
-
-        if (++this.timer < this.delay.get()) return;
-
-        BlockPos pos = this.portal.get(this.index);
-        if (!Placement.open(pos)) {
-            this.error("Portal area became obstructed.");
-            this.toggle();
-            return;
-        }
-
-        int slot = Hotbar.find(Items.OBSIDIAN);
-        if (slot == -1) {
-            this.error("No obsidian found in the hotbar.");
-            this.toggle();
-            return;
-        }
-
-        if (!Placement.place(pos, slot)) return;
-
-        this.index++;
-        this.timer = 0;
-        this.skip();
-
-        if (this.index >= this.portal.size()) {
-            this.done();
-        }
-    }
-
-    /**
-     * Renders the remaining incomplete portal frame positions.
-     *
-     * @param event 3D render event
-     */
-    @EventHandler
-    private void onRender(Render3DEvent event) {
-        if (!this.box.enabled()) return;
-
-        for (int idx = this.index; idx < this.portal.size(); idx++) {
-            BlockPos pos = this.portal.get(idx);
-            if (this.obsidian(pos)) continue;
-
-            this.box.box(event, pos);
-        }
-    }
-
-    //endregion
-
-    //region Portal structure
 
     /**
      * Calculates the portal frame positions in front of the player.
@@ -210,9 +177,67 @@ public class FastPortal extends Module {
         }
     }
 
+    /**
+     * Renders the remaining incomplete portal frame positions.
+     *
+     * @param event 3D render event
+     */
+    private void render(Render3DEvent event) {
+        for (int idx = this.index; idx < this.portal.size(); idx++) {
+            BlockPos pos = this.portal.get(idx);
+            if (!this.obsidian(pos)) this.box.box(event, pos);
+        }
+    }
+
     //endregion
 
     //region Portal interaction
+
+    /**
+     * Advances portal construction and places the next block.
+     */
+    private void build() {
+        this.skip();
+
+        if (this.index >= this.portal.size()) {
+            this.done();
+            return;
+        }
+
+        if (++this.timer >= this.delay.get()) {
+            this.place();
+        }
+    }
+
+    /**
+     * Places the next required obsidian block.
+     */
+    private void place() {
+        BlockPos pos = this.portal.get(this.index);
+
+        if (!Placement.open(pos)) {
+            this.error("Portal area became obstructed.");
+            this.toggle();
+            return;
+        }
+
+        int slot = Hotbar.find(Items.OBSIDIAN);
+        if (slot == -1) {
+            this.error("No obsidian found in the hotbar.");
+            this.toggle();
+            return;
+        }
+
+        if (!Placement.place(pos, slot)) return;
+
+        this.index++;
+        this.timer = 0;
+        this.skip();
+
+        if (this.index >= this.portal.size()) {
+            this.done();
+        }
+    }
 
     /**
      * Attempts to ignite the completed portal using flint and steel.

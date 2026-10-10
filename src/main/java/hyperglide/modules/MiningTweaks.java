@@ -28,13 +28,15 @@ import net.minecraft.world.RaycastContext;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Iterator;
+import java.util.stream.IntStream;
 
 public class MiningTweaks extends Module {
     private static final double threshold = 0.7;
     private static final double reach = 6.0;
 
-    private static final long restart = 300;
     private static final long pause = 275;
+    private static final long restart = 300;
+
     private static final int bursts = 22;
     private static final int height = 1024;
 
@@ -431,8 +433,9 @@ public class MiningTweaks extends Module {
             BlockState state = this.mc.world.getBlockState(retry.request.pos);
             iterator.remove();
 
-            if (!this.breakable(retry.request.pos, state)) continue;
-            this.queue.addFirst(retry.request);
+            if (this.breakable(retry.request.pos, state)) {
+                this.queue.addFirst(retry.request);
+            }
         }
     }
 
@@ -743,14 +746,22 @@ public class MiningTweaks extends Module {
      * @param target target to validate
      */
     private void verify(Target target) {
-        BlockState state = this.mc.world.getBlockState(target.pos);
-
-        if (state.isAir()) {
+        if (this.mc.world.getBlockState(target.pos).isAir()) {
             this.confirm(target);
-            return;
+        } else {
+            this.fail(target);
         }
+    }
 
-        this.fail(target);
+    /**
+     * Records a successful target for instant remine and removes it.
+     *
+     * @param target confirmed target
+     */
+    private void confirm(Target target) {
+        Direction side = this.face(target.pos, target.side);
+        this.last = new Request(target.pos, side, 0);
+        this.remove(target, true);
     }
 
     /**
@@ -781,19 +792,6 @@ public class MiningTweaks extends Module {
         this.waiting.addLast(new Retry(new Request(
             target.pos, side, target.retry + 1), ready)
         );
-    }
-
-    /**
-     * Records a successful target for instant remine and removes it.
-     *
-     * @param target confirmed target
-     */
-    private void confirm(Target target) {
-        this.last = new Request(target.pos,
-            this.face(target.pos, target.side), 0
-        );
-
-        this.remove(target, true);
     }
 
     /**
@@ -878,31 +876,6 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Renders mining progress as a shrinking box.
-     *
-     * @param event active 3D render event
-     * @param target target being rendered
-     * @param side fill color
-     * @param line outline color
-     */
-    private void box(Render3DEvent event, Target target,
-        SettingColor side, SettingColor line) {
-
-        double offset = (1.0 - this.visual(target)) / 2.0;
-
-        Box box = new Box(
-            target.pos.getX() + offset,
-            target.pos.getY() + offset,
-            target.pos.getZ() + offset,
-            target.pos.getX() + 1.0 - offset,
-            target.pos.getY() + 1.0 - offset,
-            target.pos.getZ() + 1.0 - offset
-        );
-
-        Render.box(event, box, side, line, this.shape.get());
-    }
-
-    /**
      * Calculates smooth mining progress between client ticks.
      *
      * @param target target being rendered
@@ -924,63 +897,26 @@ public class MiningTweaks extends Module {
         return Math.min(1.0, work / limit);
     }
 
+    /**
+     * Renders mining progress as a shrinking box.
+     *
+     * @param event active 3D render event
+     * @param target target being rendered
+     * @param side fill color
+     * @param line outline color
+     */
+    private void box(Render3DEvent event, Target target,
+        SettingColor side, SettingColor line) {
+
+        double inset = (1.0 - this.visual(target)) / 2.0;
+        Box box = new Box(target.pos).contract(inset, inset, inset);
+
+        Render.box(event, box, side, line, this.shape.get());
+    }
+
     //endregion
 
     //region Tool and packet handling
-
-    /**
-     * Finds the fastest suitable hotbar tool for a block.
-     *
-     * @param state block state to mine
-     * @param pos block position to mine
-     * @return best hotbar slot
-     */
-    private int best(BlockState state, BlockPos pos) {
-        int selected = Hotbar.selected();
-        int best = selected;
-
-        ItemStack stack = Hotbar.stack(selected);
-        boolean suitable = stack.isSuitableFor(state);
-        boolean required = state.isToolRequired();
-
-        float speed = state.calcBlockBreakingDelta(
-            this.mc.player, this.mc.world, pos
-        );
-
-        try {
-            for (int idx = 0; idx < 9; idx++) {
-                if (idx == selected) continue;
-
-                stack = Hotbar.stack(idx);
-                boolean good = stack.isSuitableFor(state);
-
-                Hotbar.set(idx);
-
-                float value = state.calcBlockBreakingDelta(
-                    this.mc.player, this.mc.world, pos
-                );
-
-                if (required && good != suitable) {
-                    if (!good) continue;
-
-                    best = idx;
-                    speed = value;
-                    suitable = true;
-                    continue;
-                }
-
-                if (value <= speed) continue;
-
-                best = idx;
-                speed = value;
-                suitable = good;
-            }
-        } finally {
-            Hotbar.set(selected);
-        }
-
-        return best;
-    }
 
     /**
      * Refreshes target data and sends a mining action packet.
@@ -998,13 +934,75 @@ public class MiningTweaks extends Module {
     }
 
     /**
+     * Finds the fastest suitable hotbar tool for a block.
+     *
+     * @param state block state to mine
+     * @param pos block position to mine
+     * @return best hotbar slot
+     */
+    private int best(BlockState state, BlockPos pos) {
+        int selected = Hotbar.selected();
+        boolean required = state.isToolRequired();
+
+        try {
+            Tool result = IntStream.range(0, 9)
+                .filter(slot -> slot != selected)
+                .mapToObj(slot -> this.tool(state, pos, slot))
+                .reduce(
+                    this.tool(state, pos, selected),
+                    (best, tool) -> this.better(best, tool, required)
+                );
+            return result.slot();
+        } finally {
+            Hotbar.set(selected);
+        }
+    }
+
+    /**
+     * Evaluates a hotbar tool for the target block.
+     *
+     * @param state block state to mine
+     * @param pos block position to mine
+     * @param slot hotbar slot
+     * @return evaluated tool
+     */
+    private Tool tool(BlockState state, BlockPos pos, int slot) {
+        Hotbar.set(slot);
+
+        ItemStack stack = Hotbar.stack(slot);
+        boolean suitable = stack.isSuitableFor(state);
+
+        float speed = state.calcBlockBreakingDelta(
+            this.mc.player, this.mc.world, pos
+        );
+
+        return new Tool(slot, suitable, speed);
+    }
+
+    /**
+     * Selects the preferred tool between two candidates.
+     *
+     * @param best current best tool
+     * @param tool candidate tool
+     * @param required whether the block requires a suitable tool
+     * @return preferred tool
+     */
+    private Tool better(Tool best, Tool tool, boolean required) {
+        if (required && tool.suitable != best.suitable) {
+            return tool.suitable ? tool : best;
+        }
+        return tool.speed > best.speed ? tool : best;
+    }
+
+    /**
      * Synchronizes a selected hotbar slot with the server.
      *
      * @param slot hotbar slot to select
      */
     private void select(int slot) {
-        if (Hotbar.selected() == slot) return;
-        Hotbar.select(slot);
+        if (Hotbar.selected() != slot) {
+            Hotbar.select(slot);
+        }
     }
 
     /**
@@ -1015,11 +1013,9 @@ public class MiningTweaks extends Module {
      * @param side block face used by the packet
      */
     private void packet(Action action, BlockPos pos, Direction side) {
-        if (!Client.ready() || !Client.interaction()) {
-            return;
+        if (Client.ready() && Client.interaction()) {
+            Packets.action(action, pos, side);
         }
-
-        Packets.action(action, pos, side);
     }
 
     /**
@@ -1045,8 +1041,19 @@ public class MiningTweaks extends Module {
      */
     private Direction face(BlockPos pos, Direction fallback) {
         Vec3d eye = this.mc.player.getEyePos();
+        Direction side = this.visible(pos, eye);
+        return side != null ? side : this.nearest(pos, eye, fallback);
+    }
 
-        Direction best = fallback == null ? Direction.UP : fallback;
+    /**
+     * Finds the nearest face visible from the player's eyes.
+     *
+     * @param pos block position
+     * @param eye player eye position
+     * @return nearest visible face, or null when none is visible
+     */
+    private Direction visible(BlockPos pos, Vec3d eye) {
+        Direction best = null;
         double distance = Double.POSITIVE_INFINITY;
 
         for (Direction side : Direction.values()) {
@@ -1072,9 +1079,20 @@ public class MiningTweaks extends Module {
             best = hit.getSide();
         }
 
-        if (distance < Double.POSITIVE_INFINITY) {
-            return best;
-        }
+        return best;
+    }
+
+    /**
+     * Finds the nearest block face without visibility checks.
+     *
+     * @param pos block position
+     * @param eye player eye position
+     * @param fallback fallback face
+     * @return nearest block face
+     */
+    private Direction nearest(BlockPos pos, Vec3d eye, Direction fallback) {
+        Direction best = fallback == null ? Direction.UP : fallback;
+        double distance = Double.POSITIVE_INFINITY;
 
         for (Direction side : Direction.values()) {
             Vec3d point = this.point(pos, side);
@@ -1107,19 +1125,6 @@ public class MiningTweaks extends Module {
     //endregion
 
     //region Target validation
-
-    /**
-     * Checks whether a block state can be mined.
-     *
-     * @param pos block position
-     * @param state block state to check
-     * @return true when the block is within reach and can be mined
-     */
-    private boolean breakable(BlockPos pos, BlockState state) {
-        return this.reachable(pos) && !state.isAir()
-            && !(state.getBlock() instanceof FluidBlock)
-            && state.getHardness(this.mc.world, pos) >= 0.0F;
-    }
 
     /**
      * Checks whether a block is within a given mining reach.
@@ -1155,17 +1160,32 @@ public class MiningTweaks extends Module {
     }
 
     /**
-     * Checks whether a block is active, queued or waiting for retry.
+     * Checks whether a block can be mined by the player.
+     *
+     * @param pos block position
+     * @param state block state to check
+     * @return true when the block is within reach and can be mined
+     */
+    private boolean breakable(BlockPos pos, BlockState state) {
+        return this.reachable(pos) && !state.isAir()
+            && !(state.getBlock() instanceof FluidBlock)
+            && state.getHardness(this.mc.world, pos) >= 0.0F;
+    }
+
+    /**
+     * Checks whether a block is active or waiting for retry.
      *
      * @param pos block position to check
      * @return true when the block is already tracked
      */
     private boolean tracked(BlockPos pos) {
-        if (this.primary != null && this.primary.pos.equals(pos)) {
+        if (this.primary != null &&
+            this.primary.pos.equals(pos)) {
             return true;
         }
 
-        if (this.secondary != null && this.secondary.pos.equals(pos)) {
+        if (this.secondary != null &&
+            this.secondary.pos.equals(pos)) {
             return true;
         }
 
@@ -1187,6 +1207,15 @@ public class MiningTweaks extends Module {
     //endregion
 
     //region Data structures
+
+    /**
+     * Represents an evaluated hotbar tool.
+     *
+     * @param slot hotbar slot
+     * @param suitable whether the tool is suitable for the block
+     * @param speed block breaking speed
+     */
+    private record Tool(int slot, boolean suitable, float speed) {}
 
     /**
      * Represents a queued mining request.

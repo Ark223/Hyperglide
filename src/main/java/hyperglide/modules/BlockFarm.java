@@ -83,53 +83,11 @@ public class BlockFarm extends Module {
 
     //region Event handlers
 
-    /**
-     * Updates block placement and mining.
-     *
-     * @param event pre-tick event
-     */
     @EventHandler
-    private void onTick(TickEvent.Pre event) {
-        if (!Client.ready() || !Client.interaction() ||
-            !this.prepare() || !this.mc.player.isOnGround()) {
-            return;
-        }
-
-        if (this.pos != null && !this.nearby(this.pos)) {
-            this.clear();
-        }
-
-        if (this.pos == null) {
-            this.pos = this.target();
-        }
-
-        if (this.pos == null) return;
-
-        BlockState state = this.mc.world.getBlockState(this.pos);
-
-        if (!state.isReplaceable()) {
-            if (!this.allowed(state.getBlock())) {
-                return;
-            }
-
-            this.start(state);
-            return;
-        }
-
-        if (!this.support(this.pos)) return;
-
-        if (this.started && !this.mining.armed(this.pos)) {
-            return;
-        }
-
-        int slot = this.slot();
-        if (slot < 0) return;
-
-        BlockState placed = this.state(slot);
-        if (!Placement.place(this.hit(), slot)) return;
-
-        if (this.started) {
-            this.mining.rebreak(this.pos, placed, Direction.UP);
+    private void tick(TickEvent.Pre event) {
+        if (Client.ready() && Client.interaction() &&
+            this.prepare() && this.mc.player.isOnGround()) {
+            this.farm();
         }
     }
 
@@ -156,9 +114,55 @@ public class BlockFarm extends Module {
         this.instant = false;
     }
 
+    /**
+     * Keeps Mining Tweaks active with instant remine enabled.
+     *
+     * @return true when Mining Tweaks is ready
+     */
+    private boolean prepare() {
+        if (this.mining == null) return false;
+
+        if (!this.mining.isActive()) this.mining.toggle();
+        if (!this.mining.instant()) this.mining.instant(true);
+
+        return this.mining.isActive();
+    }
+
+    /**
+     * Restores the Mining Tweaks state from before activation.
+     */
+    private void restore() {
+        if (this.mining == null) return;
+        this.mining.instant(this.instant);
+
+        if (!this.enabled && this.mining.isActive()) {
+            this.mining.toggle();
+        }
+    }
+
     //endregion
 
     //region Farm targeting
+
+    /**
+     * Updates the active farm position.
+     */
+    private void farm() {
+        if (this.pos != null && !this.nearby(this.pos)) {
+            this.clear();
+        }
+
+        if (this.pos == null) this.pos = this.target();
+        if (this.pos == null) return;
+
+        BlockState state = this.mc.world.getBlockState(this.pos);
+
+        if (state.isReplaceable()) {
+            this.place();
+        } else if (this.allowed(state.getBlock())) {
+            this.start(state);
+        }
+    }
 
     /**
      * Selects the open adjacent position closest to the player's view.
@@ -194,6 +198,44 @@ public class BlockFarm extends Module {
         return best;
     }
 
+    //endregion
+
+    //region Block placement
+
+    /**
+     * Places the selected block and resumes instant mining.
+     */
+    private void place() {
+        if (!this.support(this.pos) || this.started &&
+            !this.mining.armed(this.pos)) {
+            return;
+        }
+
+        int slot = this.slot();
+        if (slot < 0) return;
+
+        BlockState state = this.state(slot);
+        if (Placement.place(this.hit(), slot) && this.started) {
+            this.mining.rebreak(this.pos, state, Direction.UP);
+        }
+    }
+
+    /**
+     * Starts mining the block for instant remine.
+     *
+     * @param state current farm block state
+     */
+    private void start(BlockState state) {
+        if (this.started || this.pos == null ||
+            !this.allowed(state.getBlock())) {
+            return;
+        }
+
+        if (this.mining.mine(this.pos, Direction.UP)) {
+            this.started = true;
+        }
+    }
+
     /**
      * Creates the block hit used to place at the farm position.
      *
@@ -207,10 +249,6 @@ public class BlockFarm extends Module {
             Direction.UP, ground, false
         );
     }
-
-    //endregion
-
-    //region Block selection
 
     /**
      * Finds a hotbar slot containing a selected block.
@@ -234,52 +272,6 @@ public class BlockFarm extends Module {
         ItemStack stack = Hotbar.stack(slot);
         BlockItem item = (BlockItem) stack.getItem();
         return item.getBlock().getDefaultState();
-    }
-
-    //endregion
-
-    //region Mining control
-
-    /**
-     * Starts mining the block for instant remine.
-     *
-     * @param state current farm block state
-     */
-    private void start(BlockState state) {
-        if (this.started || this.pos == null ||
-            !this.allowed(state.getBlock())) {
-            return;
-        }
-
-        if (this.mining.mine(this.pos, Direction.UP)) {
-            this.started = true;
-        }
-    }
-
-    /**
-     * Keeps Mining Tweaks active with instant remine enabled.
-     *
-     * @return true when Mining Tweaks is ready
-     */
-    private boolean prepare() {
-        if (this.mining == null) return false;
-
-        if (!this.mining.isActive()) this.mining.toggle();
-        if (!this.mining.instant()) this.mining.instant(true);
-
-        return this.mining.isActive();
-    }
-
-    /**
-     * Restores the Mining Tweaks state from before activation.
-     */
-    private void restore() {
-        if (this.mining == null) return;
-        this.mining.instant(this.instant);
-
-        if (!this.enabled && this.mining.isActive()) {
-            this.mining.toggle();
-        }
     }
 
     //endregion

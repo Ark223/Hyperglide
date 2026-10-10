@@ -72,7 +72,7 @@ public class FD3Crafter extends Module {
     }
 
     /**
-     * Validates the player state and prepares the crafting workflow.
+     * Validates state and prepares the crafting workflow.
      */
     @Override
     public void onActivate() {
@@ -91,48 +91,21 @@ public class FD3Crafter extends Module {
             this.mc.player.closeHandledScreen();
         }
 
-        this.phase = Phase.Clear;
-        this.source = -1;
-        this.target = -1;
-        this.tick = 0;
-
-        this.oldpaper = 0;
-        this.oldpowder = 0;
-        this.start = this.rockets();
-        this.idle = 0;
-
-        this.bulk = false;
-        this.close = false;
-        this.note = null;
-
-        this.mc.setScreen(new InventoryScreen(this.mc.player));
+        this.begin();
     }
 
     /**
-     * Closes the inventory when required and clears runtime state.
+     * Closes the inventory and clears runtime state.
      */
     @Override
     public void onDeactivate() {
-        if (this.close && this.mc.currentScreen instanceof InventoryScreen) {
-            this.mc.setScreen(null);
-        }
-
-        this.phase = null;
-
-        this.source = -1;
-        this.target = -1;
-        this.tick = 0;
-        this.idle = 0;
-
-        this.bulk = false;
-        this.close = false;
-        this.note = null;
+        this.reset();
     }
 
     //region Event handlers
 
     /**
-     * Advances the crafting workflow after the configured delay.
+     * Advances the crafting workflow after the delay.
      *
      * @param event post-tick event
      */
@@ -160,7 +133,49 @@ public class FD3Crafter extends Module {
 
     //endregion
 
-    //region Crafting control
+    //region Workflow control
+
+    /**
+     * Initializes the crafting workflow.
+     */
+    private void begin() {
+        this.phase = Phase.Clear;
+        this.source = -1;
+        this.target = -1;
+        this.tick = 0;
+
+        this.oldpaper = 0;
+        this.oldpowder = 0;
+        this.start = this.rockets();
+        this.idle = 0;
+
+        this.bulk = false;
+        this.close = false;
+        this.note = null;
+
+        this.mc.setScreen(new InventoryScreen(this.mc.player));
+    }
+
+    /**
+     * Clears the crafting workflow state.
+     */
+    private void reset() {
+        if (this.close && this.mc.currentScreen
+            instanceof InventoryScreen) {
+            this.mc.setScreen(null);
+        }
+
+        this.phase = null;
+
+        this.source = -1;
+        this.target = -1;
+        this.tick = 0;
+        this.idle = 0;
+
+        this.bulk = false;
+        this.close = false;
+        this.note = null;
+    }
 
     /**
      * Executes the action assigned to the current crafting phase.
@@ -178,6 +193,10 @@ public class FD3Crafter extends Module {
             case Clean -> this.clean();
         }
     }
+
+    //endregion
+
+    //region Crafting preparation
 
     /**
      * Clears the cursor and crafting grid before crafting begins.
@@ -402,10 +421,6 @@ public class FD3Crafter extends Module {
         Inventory.pick(this.target);
         this.phase = Phase.Work;
     }
-
-    //endregion
-
-    //region Gunpowder handling
 
     /**
      * Distributes the picked gunpowder stack across 3 slots.

@@ -81,39 +81,13 @@ public class EasyAccess extends Module {
      * @param event pre-tick event
      */
     @EventHandler
-    private void onTick(TickEvent.Pre event) {
+    private void tick(TickEvent.Pre event) {
         if (!this.mc.options.useKey.isPressed()) {
             this.lock = false;
             this.cancel = false;
-            return;
+        } else if (Client.interaction() && !this.lock) {
+            this.access();
         }
-
-        if (!Client.interaction() || this.lock) {
-            return;
-        }
-
-        this.lock = true;
-        this.cancel = false;
-
-        if (this.visible()) return;
-
-        Target target = this.target();
-        if (target == null) return;
-
-        this.cancel = true;
-        this.own = true;
-
-        try {
-            if (target.entity != null) {
-                this.entity(target.entity);
-            } else {
-                this.block(target.block);
-            }
-        } finally {
-            this.own = false;
-        }
-
-        this.mc.player.swingHand(Hand.MAIN_HAND);
     }
 
     /**
@@ -254,6 +228,34 @@ public class EasyAccess extends Module {
     //endregion
 
     //region Container interaction
+
+    /**
+     * Opens the closest hidden container.
+     */
+    private void access() {
+        this.lock = true;
+        this.cancel = false;
+
+        if (this.visible()) return;
+
+        Target target = this.target();
+        if (target == null) return;
+
+        this.cancel = true;
+        this.own = true;
+
+        try {
+            if (target.entity != null) {
+                this.entity(target.entity);
+            } else {
+                this.block(target.block);
+            }
+        } finally {
+            this.own = false;
+        }
+
+        this.mc.player.swingHand(Hand.MAIN_HAND);
+    }
 
     /**
      * Checks whether an entity is a container or merchant.

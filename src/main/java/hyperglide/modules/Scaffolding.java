@@ -16,14 +16,16 @@ import net.minecraft.block.BlockState;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
-import java.util.*;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
 
 public class Scaffolding extends Module {
+    private static final int life = 10;
+
     private static final double extend = 1.25;
     private static final double step = 0.25;
     private static final double reach = 2.0;
-
-    private static final int life = 10;
 
     private final SettingGroup general = this.settings.getDefaultGroup();
     private final SettingGroup visuals = this.settings.createGroup("Visuals");
@@ -107,7 +109,9 @@ public class Scaffolding extends Module {
         this.clean();
         this.collect();
 
-        if (++this.timer < this.pace()) return;
+        if (++this.timer < this.pace()) {
+            return;
+        }
 
         BlockPos pos = this.next();
         if (pos == null) return;
@@ -118,7 +122,9 @@ public class Scaffolding extends Module {
             return;
         }
 
-        if (!Placement.place(pos, slot)) return;
+        if (!Placement.place(pos, slot)) {
+            return;
+        }
 
         this.timer = 0;
         this.marks.put(pos, this.tick);
@@ -166,12 +172,10 @@ public class Scaffolding extends Module {
      */
     private void update() {
         int level = this.layer();
-        if (this.level == level) {
-            return;
+        if (this.level != level) {
+            this.level = level;
+            this.queue.clear();
         }
-
-        this.level = level;
-        this.queue.clear();
     }
 
     /**
@@ -191,24 +195,22 @@ public class Scaffolding extends Module {
      * Collects scaffold positions under and ahead of the player.
      */
     private void collect() {
-        this.add(BlockPos.ofFloored(
-            this.mc.player.getX(), this.level,
-            this.mc.player.getZ()
-        ), true);
+        double px = this.mc.player.getX();
+        double pz = this.mc.player.getZ();
+
+        this.add(BlockPos.ofFloored(px, this.level, pz), true);
 
         Vec3d move = this.move();
         if (move.lengthSquared() == 0) return;
 
         for (double idx = step; idx <= extend + 0.001; idx += step) {
-            this.add(BlockPos.ofFloored(
-                this.mc.player.getX() + move.x * idx, this.level,
-                this.mc.player.getZ() + move.z * idx
-            ), false);
+            double sx = px + move.x * idx, sz = pz + move.z * idx;
+            this.add(BlockPos.ofFloored(sx, this.level, sz), false);
         }
     }
 
     /**
-     * Adds a valid untracked position to the queue.
+     * Adds a valid untracked position to the scaffolding queue.
      *
      * @param pos candidate block position
      * @param first whether the position should be queued first
@@ -218,10 +220,15 @@ public class Scaffolding extends Module {
 
         if (!this.valid(pos) ||
             this.queue.contains(pos) ||
-            this.marks.containsKey(pos)) return;
+            this.marks.containsKey(pos)) {
+            return;
+        }
 
-        if (first) this.queue.addFirst(pos);
-        else this.queue.addLast(pos);
+        if (first) {
+            this.queue.addFirst(pos);
+        } else {
+            this.queue.addLast(pos);
+        }
     }
 
     /**
@@ -247,8 +254,7 @@ public class Scaffolding extends Module {
      * @return required delay in ticks
      */
     private int pace() {
-        return this.dynamic.get()
-            && this.edge() ? 1 : this.delay.get();
+        return this.dynamic.get() && this.edge() ? 1 : this.delay.get();
     }
 
     /**
@@ -289,13 +295,28 @@ public class Scaffolding extends Module {
                 return false;
             }
         }
-
         return true;
     }
 
     //endregion
 
     //region Player positioning
+
+    /**
+     * Calculates the block layer directly below the player.
+     *
+     * @return Y coordinate of the scaffold layer
+     */
+    private int layer() {
+        boolean ground = this.mc.player.isOnGround();
+        double offset = ground ? 0.01 : 1.0;
+
+        double px = this.mc.player.getX();
+        double pz = this.mc.player.getZ();
+
+        double py = this.mc.player.getY() - offset;
+        return BlockPos.ofFloored(px, py, pz).getY();
+    }
 
     /**
      * Calculates the normalized movement direction from pressed keys.
@@ -325,36 +346,18 @@ public class Scaffolding extends Module {
         return move.lengthSquared() == 0 ? Vec3d.ZERO : move.normalize();
     }
 
-    /**
-     * Calculates the block layer directly below the player.
-     *
-     * @return Y coordinate of the scaffold layer
-     */
-    private int layer() {
-        boolean ground = this.mc.player.isOnGround();
-        double offset = ground ? 0.01 : 1.0;
-
-        double px = this.mc.player.getX();
-        double pz = this.mc.player.getZ();
-
-        double py = this.mc.player.getY() - offset;
-        return BlockPos.ofFloored(px, py, pz).getY();
-    }
-
     //endregion
 
     //region Utilities and validation
 
     /**
-     * Checks whether a position is outside placement reach.
+     * Checks whether a position can be used as a scaffold candidate.
      *
      * @param pos position to check
-     * @return true when the position is too far from the player
+     * @return true when the position is open, clear and within reach
      */
-    private boolean far(BlockPos pos) {
-        double px = pos.getX() + 0.5 - this.mc.player.getX();
-        double pz = pos.getZ() + 0.5 - this.mc.player.getZ();
-        return px * px + pz * pz > reach * reach;
+    private boolean valid(BlockPos pos) {
+        return this.open(pos) && this.space(pos) && !this.far(pos);
     }
 
     /**
@@ -368,13 +371,15 @@ public class Scaffolding extends Module {
     }
 
     /**
-     * Checks whether a position can be used as a scaffold candidate.
+     * Checks whether a position is outside placement reach.
      *
      * @param pos position to check
-     * @return true when the position is open, clear and within reach
+     * @return true when the position is too far from the player
      */
-    private boolean valid(BlockPos pos) {
-        return this.open(pos) && this.space(pos) && !this.far(pos);
+    private boolean far(BlockPos pos) {
+        double px = pos.getX() + 0.5 - this.mc.player.getX();
+        double pz = pos.getZ() + 0.5 - this.mc.player.getZ();
+        return px * px + pz * pz > reach * reach;
     }
 
     //endregion
