@@ -1,5 +1,11 @@
 package hyperglide;
 
+import baritone.api.BaritoneAPI;
+import baritone.api.IBaritone;
+import baritone.api.IBaritoneProvider;
+import baritone.api.event.events.TickEvent;
+import baritone.api.event.events.type.EventState;
+import baritone.api.event.listener.AbstractGameEventListener;
 import com.mojang.logging.LogUtils;
 import hyperglide.hud.AvgSpeed;
 import hyperglide.hud.TruePing;
@@ -7,18 +13,16 @@ import hyperglide.modules.*;
 import hyperglide.utilities.Baritone;
 import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
-import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.systems.hud.Hud;
 import meteordevelopment.meteorclient.systems.hud.HudGroup;
 import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
-import meteordevelopment.orbit.EventHandler;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import java.util.function.Supplier;
 
-public class Hyperglide extends MeteorAddon {
+public class Hyperglide extends MeteorAddon implements AbstractGameEventListener {
     public static final Logger LOG = LogUtils.getLogger();
     public static final Category CATEGORY = new Category("Hyperglide");
     public static final HudGroup HUD_GROUP = new HudGroup("Hyperglide");
@@ -55,7 +59,9 @@ public class Hyperglide extends MeteorAddon {
     @Override
     public void onInitialize() {
         LOG.info("Initializing Hyperglide");
+
         MeteorClient.EVENT_BUS.subscribe(this);
+        this.register();
 
         Hud.get().register(AvgSpeed.info);
         Hud.get().register(TruePing.info);
@@ -76,10 +82,15 @@ public class Hyperglide extends MeteorAddon {
     /**
      * Assists Baritone to prevent stuttering.
      *
-     * @param event pre-tick event
+     * @param event Baritone tick event
      */
-    @EventHandler
-    private void tick(TickEvent.Post event) {
+    @Override
+    public void onTick(TickEvent event) {
+        if (event.getState() != EventState.PRE ||
+            event.getType() != TickEvent.Type.IN) {
+            return;
+        }
+
         if (this.active(AutoPilot.class) ||
             this.active(BounceFly.class)) {
             Baritone.assist();
@@ -128,6 +139,15 @@ public class Hyperglide extends MeteorAddon {
      */
     private boolean loaded(String id) {
         return FabricLoader.getInstance().isModLoaded(id);
+    }
+
+    /**
+     * Registers tick listener for the Baritone assistance.
+     */
+    private void register() {
+        IBaritoneProvider provider = BaritoneAPI.getProvider();
+        IBaritone instance = provider.getPrimaryBaritone();
+        instance.getGameEventHandler().registerEventListener(this);
     }
 
     /**
