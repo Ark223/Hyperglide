@@ -7,7 +7,6 @@ import hyperglide.utilities.Elytra;
 import hyperglide.utilities.Flight;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Inventory;
-import hyperglide.utilities.Packets;
 import hyperglide.utilities.Player;
 import hyperglide.utilities.Takeoff;
 import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
@@ -42,6 +41,7 @@ public class ElytraTweaks extends Module {
 
     private static final int settle = 4;
     private static final int chest = 6;
+    private static final int limit = 6;
 
     private static final int xaxis = 1;
     private static final int zaxis = 2;
@@ -197,9 +197,11 @@ public class ElytraTweaks extends Module {
 
     private int jump;
     private int sync;
-    private int pulse;
     private int resume;
     private boolean boost;
+
+    private int check;
+    private int stock;
 
     private int retry;
     private boolean escaping;
@@ -267,10 +269,7 @@ public class ElytraTweaks extends Module {
             this.speed *= drag;
         }
 
-        if (this.pulse > 0 && --this.pulse <= 0) {
-            Packets.sync(Packets.forward());
-        }
-
+        this.verify();
         this.flight();
         this.controls();
 
@@ -516,11 +515,13 @@ public class ElytraTweaks extends Module {
     private void glide() {
         this.jump = 0;
         this.sync = 0;
-        this.pulse = 0;
         this.resume = 0;
-        this.retry = 0;
         this.boost = false;
 
+        this.check = 0;
+        this.stock = 0;
+
+        this.retry = 0;
         this.input.reset();
     }
 
@@ -860,8 +861,7 @@ public class ElytraTweaks extends Module {
      * Uses a rocket or starts a boosted takeoff.
      */
     private void trigger() {
-        if (!Client.ready() || !Client.interaction() ||
-            this.phase > 0) {
+        if (this.phase > 0 || !Client.interaction()) {
             return;
         }
 
@@ -871,7 +871,7 @@ public class ElytraTweaks extends Module {
                 return;
             }
 
-            this.rocket();
+            this.request();
             return;
         }
 
@@ -882,10 +882,10 @@ public class ElytraTweaks extends Module {
      * Starts a normal takeoff and prepares a rocket boost.
      */
     private void depart() {
-        this.jump = 0;
         this.retry = 0;
-        this.sync = 0;
 
+        this.jump = 0;
+        this.sync = 0;
         this.boost = true;
 
         if (this.flight.blocked()) {
@@ -1032,6 +1032,49 @@ public class ElytraTweaks extends Module {
     }
 
     /**
+     * Uses a rocket and schedules a delayed check.
+     */
+    private void request() {
+        int stock = this.rockets();
+        if (!this.rocket()) return;
+
+        this.check = stock > 0 ? limit : 0;
+        this.stock = stock;
+    }
+
+    /**
+     * Retries the rocket when its count did not change.
+     */
+    private void verify() {
+        if (this.check <= 0 || --this.check > 0) {
+            return;
+        }
+
+        int stock = this.stock;
+        this.stock = 0;
+
+        if (stock > 0 && this.rockets() == stock) {
+            this.rocket();
+        }
+    }
+
+    /**
+     * Counts available firework rockets in the inventory.
+     *
+     * @return total firework count in the inventory
+     */
+    private int rockets() {
+        int count = Inventory.count(Items.FIREWORK_ROCKET);
+        ItemStack stack = this.mc.player.getOffHandStack();
+
+        if (stack.isOf(Items.FIREWORK_ROCKET)) {
+            count += stack.getCount();
+        }
+
+        return count;
+    }
+
+    /**
      * Uses an available firework rocket.
      *
      * @return true when the rocket was used
@@ -1043,13 +1086,10 @@ public class ElytraTweaks extends Module {
     /**
      * Uses an available firework rocket immediately.
      *
-     * @return true when the rocket interaction was accepted
+     * @return true when the rocket was accepted
      */
     private boolean firework() {
-        if (!Elytra.firework()) return false;
-
-        this.pulse = 2;
-        return true;
+        return Elytra.firework();
     }
 
     //endregion
