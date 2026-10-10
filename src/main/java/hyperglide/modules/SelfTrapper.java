@@ -168,6 +168,7 @@ public class SelfTrapper extends Module {
         if (!this.box.enabled() || this.mc.world == null) return;
 
         LinkedHashSet<BlockPos> boxes = new LinkedHashSet<>(this.queue);
+
         boxes.addAll(this.pending.keySet());
         boxes.addAll(this.waiting.keySet());
 

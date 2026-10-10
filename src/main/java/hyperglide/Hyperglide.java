@@ -4,12 +4,16 @@ import com.mojang.logging.LogUtils;
 import hyperglide.hud.AvgSpeed;
 import hyperglide.hud.TruePing;
 import hyperglide.modules.*;
+import hyperglide.utilities.Baritone;
+import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
+import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.systems.hud.Hud;
 import meteordevelopment.meteorclient.systems.hud.HudGroup;
 import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
+import meteordevelopment.orbit.EventHandler;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import java.util.function.Supplier;
@@ -25,7 +29,7 @@ public class Hyperglide extends MeteorAddon {
         new Entry(AutoWeb::new),
         new Entry(BlockFarm::new),
         new Entry(BounceFly::new),
-        new Entry(ControlFly::new, "bephax"),
+        new Entry(ControlFly::new),
         new Entry(DeepTrace::new),
         new Entry(EasyAccess::new),
         new Entry(ElytraTweaks::new),
@@ -51,6 +55,7 @@ public class Hyperglide extends MeteorAddon {
     @Override
     public void onInitialize() {
         LOG.info("Initializing Hyperglide");
+        MeteorClient.EVENT_BUS.subscribe(this);
 
         Hud.get().register(AvgSpeed.info);
         Hud.get().register(TruePing.info);
@@ -66,6 +71,30 @@ public class Hyperglide extends MeteorAddon {
     @Override
     public void onRegisterCategories() {
         Modules.registerCategory(CATEGORY);
+    }
+
+    /**
+     * Assists Baritone to prevent stuttering.
+     *
+     * @param event pre-tick event
+     */
+    @EventHandler
+    private void tick(TickEvent.Post event) {
+        if (this.active(AutoPilot.class) ||
+            this.active(BounceFly.class)) {
+            Baritone.assist();
+        }
+    }
+
+    /**
+     * Checks whether a specified module is active.
+     *
+     * @param type module type
+     * @return true when the module is active
+     */
+    private boolean active(Class<? extends Module> type) {
+        Module module = Modules.get().get(type);
+        return module != null && module.isActive();
     }
 
     /**
