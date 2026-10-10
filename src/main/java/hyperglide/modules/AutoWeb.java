@@ -58,6 +58,16 @@ public class AutoWeb extends Module {
         .build()
     );
 
+    private final Setting<Double> buffer = this.general.add(new DoubleSetting.Builder()
+        .name("safety-buffer")
+        .description("Extra space to avoid getting trapped.")
+        .defaultValue(0.0)
+        .min(0.0)
+        .sliderMax(0.5)
+        .decimalPlaces(1)
+        .build()
+    );
+
     private final LinkedHashSet<BlockPos> queue = new LinkedHashSet<>();
     private final Map<BlockPos, Integer> marks = new HashMap<>();
 
@@ -149,7 +159,7 @@ public class AutoWeb extends Module {
             Box box = entity.getBoundingBox();
             this.add(box);
 
-            Vec3d move = this.move(entity);
+            Vec3d move = this.prediction(entity);
             if (move.lengthSquared() > 0) {
                 this.add(box.offset(move));
             }
@@ -162,13 +172,13 @@ public class AutoWeb extends Module {
      * @param box entity hitbox
      */
     private void add(Box box) {
-        int minx = MathHelper.floor(box.minX + edge);
-        int miny = MathHelper.floor(box.minY + edge);
-        int minz = MathHelper.floor(box.minZ + edge);
+        int minx = MathHelper.floor(box.minX);
+        int miny = MathHelper.floor(box.minY);
+        int minz = MathHelper.floor(box.minZ);
 
-        int maxx = MathHelper.floor(box.maxX - edge);
-        int maxy = MathHelper.floor(box.maxY - edge);
-        int maxz = MathHelper.floor(box.maxZ - edge);
+        int maxx = MathHelper.floor(Math.nextDown(box.maxX));
+        int maxy = MathHelper.floor(Math.nextDown(box.maxY));
+        int maxz = MathHelper.floor(Math.nextDown(box.maxZ));
 
         for (int px = minx; px <= maxx; px++) {
             for (int py = miny; py <= maxy; py++) {
@@ -202,11 +212,15 @@ public class AutoWeb extends Module {
      * @param entity entity to extrapolate
      * @return predicted movement offset
      */
-    private Vec3d move(Entity entity) {
-        if (this.extrapolation.get() == 0) return Vec3d.ZERO;
+    private Vec3d prediction(Entity entity) {
+        if (this.extrapolation.get() == 0) {
+            return Vec3d.ZERO;
+        }
 
         Vec3d vel = entity.getVelocity();
-        if (vel.lengthSquared() < edge) return Vec3d.ZERO;
+        if (vel.lengthSquared() < edge) {
+            return Vec3d.ZERO;
+        }
 
         return vel.multiply(this.extrapolation.get());
     }
@@ -227,6 +241,17 @@ public class AutoWeb extends Module {
     }
 
     /**
+     * Removes expired or no longer replaceable placement marks.
+     */
+    private void clean() {
+        this.marks.entrySet().removeIf(entry -> {
+            BlockPos pos = entry.getKey();
+            int diff = this.tick - entry.getValue();
+            return diff > life || !Placement.open(pos);
+        });
+    }
+
+    /**
      * Removes and returns the next valid position from the queue.
      *
      * @return next valid position, or null when none is available
@@ -237,17 +262,6 @@ public class AutoWeb extends Module {
             if (this.valid(pos)) return pos;
         }
         return null;
-    }
-
-    /**
-     * Removes expired or no longer replaceable placement marks.
-     */
-    private void clean() {
-        this.marks.entrySet().removeIf(entry -> {
-            BlockPos pos = entry.getKey();
-            int diff = this.tick - entry.getValue();
-            return diff > life || !Placement.open(pos);
-        });
     }
 
     //endregion
@@ -276,6 +290,8 @@ public class AutoWeb extends Module {
         if (!Placement.open(pos)) return false;
 
         Box box = this.mc.player.getBoundingBox();
+        box = box.expand(this.buffer.get());
+
         if (new Box(pos).intersects(box)) return false;
 
         Vec3d center = Vec3d.ofCenter(pos);
