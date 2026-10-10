@@ -12,7 +12,6 @@ import hyperglide.utilities.Player;
 import hyperglide.utilities.Takeoff;
 import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
-import meteordevelopment.meteorclient.mixininterface.IVec3d;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
@@ -39,13 +38,16 @@ import net.minecraft.world.RaycastContext;
 
 public class ElytraTweaks extends Module {
     private static final double epsilon = 1.0E-6;
+    private static final double drag = 0.99;
 
     private static final int settle = 4;
-    private static final int delay = 5;
     private static final int chest = 6;
 
     private static final int xaxis = 1;
     private static final int zaxis = 2;
+    private static final int yaxis = 4;
+
+    private static final int axes = xaxis | zaxis;
 
     private final SettingGroup equipment = this.settings.createGroup("Equipment");
     private final SettingGroup recovery = this.settings.createGroup("Recovery");
@@ -126,12 +128,13 @@ public class ElytraTweaks extends Module {
         .build()
     );
 
-    private final Setting<Integer> ticks = this.safety.add(new IntSetting.Builder()
-        .name("collision-ticks")
-        .description("How many movement ticks ahead to scan for collisions.")
-        .defaultValue(3)
-        .min(1)
-        .sliderMax(3)
+    private final Setting<Double> distance = this.safety.add(new DoubleSetting.Builder()
+        .name("scan-distance")
+        .description("Distance ahead in blocks to scan for collisions.")
+        .defaultValue(4.0)
+        .min(2.0)
+        .sliderMax(8.0)
+        .decimalPlaces(1)
         .visible(this.avoid::get)
         .build()
     );
@@ -149,10 +152,10 @@ public class ElytraTweaks extends Module {
 
     private final Setting<Integer> release = this.safety.add(new IntSetting.Builder()
         .name("release-delay")
-        .description("Ticks to wait after rocket boost ends before releasing.")
-        .defaultValue(8)
+        .description("Ticks to wait before release when the path is safe.")
+        .defaultValue(3)
         .min(0)
-        .sliderMax(10)
+        .sliderMax(5)
         .visible(this.avoid::get)
         .build()
     );
@@ -194,16 +197,16 @@ public class ElytraTweaks extends Module {
 
     private int jump;
     private int sync;
+    private int pulse;
     private int resume;
     private boolean boost;
 
     private int retry;
     private boolean escaping;
 
-    private int hold;
+    private int stable;
     private boolean halt;
     private boolean sneak;
-    private boolean renewed;
 
     private double speed;
     private FireworkRocketEntity rocket;
@@ -260,6 +263,14 @@ public class ElytraTweaks extends Module {
     private void tick(TickEvent.Pre event) {
         if (!Client.ready()) return;
 
+        if (this.halt && !this.active()) {
+            this.speed *= drag;
+        }
+
+        if (this.pulse > 0 && --this.pulse <= 0) {
+            Packets.sync(Packets.forward());
+        }
+
         this.flight();
         this.controls();
 
@@ -305,6 +316,12 @@ public class ElytraTweaks extends Module {
             return;
         }
 
+        if (event.movement.horizontalLength() > epsilon) {
+            this.speed = Math.max(event.movement.length(),
+                this.mc.player.getVelocity().length()
+            );
+        }
+
         if (this.danger(event.movement)) {
             this.stop(event);
         }
@@ -319,11 +336,6 @@ public class ElytraTweaks extends Module {
      */
     private void flight() {
         this.flight.enabled(this.spoofing());
-
-        if (Baritone.elytra()) {
-            this.flight.normal();
-            return;
-        }
 
         if (this.flight.standby() &&
             this.mc.player.isGliding()) {
@@ -353,11 +365,6 @@ public class ElytraTweaks extends Module {
         if (this.mc.player.isGliding()) {
             this.boost = false;
             this.rocket();
-            return;
-        }
-
-        if (!this.input.active() && this.sync <= 0) {
-            this.boost = false;
         }
     }
 
@@ -373,7 +380,6 @@ public class ElytraTweaks extends Module {
             this.takeoff();
             this.deploy();
         }
-
         this.recover();
     }
 
@@ -398,7 +404,7 @@ public class ElytraTweaks extends Module {
      * @return true while movement is halted for collision avoidance
      */
     public boolean halted() {
-        return this.isActive() && this.halt;
+        return this.isActive() && this.halt && !this.pilot();
     }
 
     /**
@@ -429,12 +435,12 @@ public class ElytraTweaks extends Module {
     }
 
     /**
-     * Checks whether elytra equipment is already handled.
+     * Checks whether normal elytra equipment is required.
      *
-     * @return true when spoofing is on or an elytra is equipped
+     * @return true when spoofing must stay disabled
      */
-    private boolean managed() {
-        return this.flight.spoof() || Elytra.equipped();
+    private boolean normal() {
+        return this.pilot() || this.bounce() || Baritone.elytra();
     }
 
     /**
@@ -443,7 +449,17 @@ public class ElytraTweaks extends Module {
      * @return true when spoofing is enabled
      */
     private boolean spoofing() {
-        return this.spoof.get() && !this.bounce();
+        return this.spoof.get() && !this.normal();
+    }
+
+    /**
+     * Checks whether Auto Pilot is currently active.
+     *
+     * @return true while Auto Pilot controls movement
+     */
+    private boolean pilot() {
+        AutoPilot module = Modules.get().get(AutoPilot.class);
+        return module != null && module.isActive();
     }
 
     /**
@@ -500,6 +516,7 @@ public class ElytraTweaks extends Module {
     private void glide() {
         this.jump = 0;
         this.sync = 0;
+        this.pulse = 0;
         this.resume = 0;
         this.retry = 0;
         this.boost = false;
@@ -511,9 +528,8 @@ public class ElytraTweaks extends Module {
      * Clears collision and boost tracking.
      */
     private void safety() {
-        this.hold = 0;
+        this.stable = 0;
         this.halt = false;
-        this.renewed = false;
 
         this.speed = 0.0;
         this.rocket = null;
@@ -527,7 +543,12 @@ public class ElytraTweaks extends Module {
      * Turns spoof mode on or off.
      */
     private void spoof() {
-        this.spoof.set(!this.spoof.get());
+        boolean enabled = !this.spoof.get();
+        this.spoof.set(enabled);
+
+        this.info("Spoof mode has been " +
+            (enabled ? "enabled." : "disabled.")
+        );
     }
 
     /**
@@ -538,7 +559,7 @@ public class ElytraTweaks extends Module {
     private void spoof(boolean enabled) {
         if (!this.isActive()) return;
 
-        if (this.bounce()) {
+        if (this.normal()) {
             this.flight.enabled(false);
             this.resume = 0;
             return;
@@ -621,11 +642,8 @@ public class ElytraTweaks extends Module {
      * Handles automatic elytra and chestplate swapping.
      */
     private void ground() {
-        if (this.bounce()) {
-            if (this.managed()) return;
-
-            int slot = this.hotbar(true);
-            if (slot >= 0) this.wear(slot);
+        if (this.normal()) {
+            if (!Elytra.equipped()) this.flight.normal();
             return;
         }
 
@@ -633,16 +651,8 @@ public class ElytraTweaks extends Module {
             return;
         }
 
-        if (Baritone.elytra()) {
-            if (this.flight.normal()) return;
-
-            int slot = this.hotbar(true);
-            if (slot >= 0) this.wear(slot);
-            return;
-        }
-
-        if (this.boost || this.sync > 0 ||
-            this.input.active() || !Elytra.equipped() ||
+        if (this.boost || this.input.active() ||
+            this.sync > 0 || !Elytra.equipped() ||
             this.mc.options.jumpKey.isPressed() ||
             !this.mc.player.isOnGround()) {
             return;
@@ -701,9 +711,9 @@ public class ElytraTweaks extends Module {
         if (stack.isOf(Items.ELYTRA) && stack.getDamage() > 0) return false;
 
         int slot = this.damaged();
-        if (slot < 0) return false;
-
-        if (!Inventory.ready()) return false;
+        if (slot < 0 || !Inventory.ready()) {
+            return false;
+        }
 
         this.slot = slot;
         this.opened = false;
@@ -725,9 +735,9 @@ public class ElytraTweaks extends Module {
         if (Elytra.remaining(stack) > this.minimum.get()) return false;
 
         int slot = this.spare();
-        if (slot < 0) return false;
-
-        if (!Inventory.ready()) return false;
+        if (slot < 0 || !Inventory.ready()) {
+            return false;
+        }
 
         this.slot = slot;
         this.opened = false;
@@ -836,20 +846,6 @@ public class ElytraTweaks extends Module {
     //endregion
 
     //region Takeoff control
-
-    /**
-     * Waits for the elytra before restarting flight.
-     */
-    private void handoff() {
-        if (this.resume <= 0 || !Elytra.equipped()) {
-            return;
-        }
-
-        if (--this.resume <= 0) {
-            this.mc.player.stopGliding();
-            this.start();
-        }
-    }
 
     /**
      * Handles the takeoff toggle key.
@@ -977,28 +973,63 @@ public class ElytraTweaks extends Module {
 
         if (this.boost) {
             this.input.start(this.mc.player.isOnGround());
-            return;
+        } else {
+            this.start();
         }
-
-        this.start();
     }
 
     /**
      * Starts elytra flight using jump input.
      */
     private void start() {
-        if (this.input.active() || !this.ready() ||
-            this.mc.player.isGliding() ||
-            this.mc.player.isOnGround()) {
+        if (!this.input.active() && this.ready() &&
+            !this.mc.player.isGliding() &&
+            !this.mc.player.isOnGround()) {
+            this.input.start();
+        }
+    }
+
+    /**
+     * Waits for the elytra before restarting flight.
+     */
+    private void handoff() {
+        if (this.resume <= 0 || !Elytra.equipped()) {
             return;
         }
 
-        this.input.start();
+        if (--this.resume <= 0) {
+            this.mc.player.stopGliding();
+            this.start();
+        }
     }
 
     //endregion
 
     //region Boost management
+
+    /**
+     * Tracks the firework currently boosting the player.
+     *
+     * @param rocket player-owned firework rocket
+     */
+    public void track(FireworkRocketEntity rocket) {
+        if (!this.isActive()) return;
+
+        if (this.sneak && this.rocket != rocket) {
+            if (!this.halt) this.sneak(false);
+        }
+
+        this.rocket = rocket;
+    }
+
+    /**
+     * Checks whether the tracked rocket is still active.
+     * 
+     * @return true while the rocket is alive
+     */
+    private boolean active() {
+        return this.rocket != null && this.rocket.isAlive();
+    }
 
     /**
      * Uses an available firework rocket.
@@ -1015,33 +1046,10 @@ public class ElytraTweaks extends Module {
      * @return true when the rocket interaction was accepted
      */
     private boolean firework() {
-        Packets.sync(Packets.forward());
-        return Elytra.firework();
-    }
+        if (!Elytra.firework()) return false;
 
-    /**
-     * Tracks the firework currently boosting the player.
-     *
-     * @param rocket player-owned firework rocket
-     */
-    public void track(FireworkRocketEntity rocket) {
-        if (!this.isActive()) return;
-
-        if (this.sneak && this.rocket != rocket) {
-            this.renewed = true;
-            if (!this.halt) this.sneak(false);
-        }
-
-        this.rocket = rocket;
-    }
-
-    /**
-     * Checks whether the tracked firework boost is still active.
-     *
-     * @return true while the tracked rocket is alive
-     */
-    private boolean boosted() {
-        return this.rocket != null && this.rocket.isAlive();
+        this.pulse = 2;
+        return true;
     }
 
     //endregion
@@ -1052,9 +1060,7 @@ public class ElytraTweaks extends Module {
      * Starts or restores Baritone elytra flight.
      */
     private void recover() {
-        if (!this.deploy.get() || !Elytra.equipped() ||
-            !Baritone.elytra() || this.bounce()) {
-
+        if (!this.recoverable()) {
             this.retry = 0;
             this.swim(false);
 
@@ -1071,18 +1077,7 @@ public class ElytraTweaks extends Module {
         }
 
         if (Player.liquid()) {
-            this.retry = 0;
-
-            if (!this.boost && this.input.ground()) {
-                this.input.reset();
-            }
-
-            if (!this.escape.get()) {
-                this.swim(false);
-                return;
-            }
-
-            this.swim(true);
+            this.liquid();
             return;
         }
 
@@ -1091,19 +1086,31 @@ public class ElytraTweaks extends Module {
             this.swim(false);
         }
 
-        if (this.input.active()) return;
+        if (!this.input.active()) {
+            this.redeploy(this.timeout.get());
+        }
+    }
 
-        if (this.mc.player.isOnGround()) {
-            if (++this.retry < delay) return;
+    /**
+     * Handles Baritone recovery while the player is in liquid.
+     */
+    private void liquid() {
+        this.retry = 0;
 
-            this.retry = 0;
-            this.input.start(true);
-            return;
+        if (!this.boost && this.input.ground()) {
+            this.input.reset();
         }
 
-        if (++this.retry < this.timeout.get()) {
-            return;
-        }
+        this.swim(this.escape.get());
+    }
+
+    /**
+     * Retries elytra deployment after the requested delay.
+     *
+     * @param timeout ticks to wait before retrying
+     */
+    private void redeploy(int timeout) {
+        if (++this.retry < timeout) return;
 
         this.retry = 0;
         this.input.start(true);
@@ -1121,44 +1128,60 @@ public class ElytraTweaks extends Module {
         this.mc.options.jumpKey.setPressed(pressed);
     }
 
+    /**
+     * Checks whether Baritone flight recovery can run.
+     *
+     * @return true when recovery is available
+     */
+    private boolean recoverable() {
+        return this.deploy.get() && Elytra.equipped()
+            && Baritone.elytra() && !this.bounce();
+    }
+
     //endregion
 
     //region Collision detection
 
     /**
-     * Predicts whether a collision would cause gliding damage.
+     * Predicts whether a collision would cause damage.
      *
      * @param motion current movement vector
      * @return true when predicted speed loss causes damage
      */
     private boolean danger(Vec3d motion) {
-        if (motion.lengthSquared() < epsilon) return false;
+        if (motion.lengthSquared() < epsilon) {
+            return false;
+        }
 
         int axis = this.collision(motion);
-        return axis != 0 && this.damage(motion, axis) > 0.0;
+        double damage = this.damage(motion, axis);
+
+        return (axis & yaxis) != 0 && motion.y > 0.0
+            || (axis & axes) != 0 && damage > 0.0;
     }
 
     /**
-     * Checks projected hitbox rays for horizontal collisions.
+     * Checks projected hitbox rays for collisions.
      *
      * @param motion movement vector to project
-     * @return combined X and Z collision axes
+     * @return combined collision axes
      */
     private int collision(Vec3d motion) {
         Vec3d flat = new Vec3d(motion.x, 0.0, motion.z);
         if (flat.lengthSquared() < epsilon) return 0;
 
-        Vec3d offset = flat.multiply(this.ticks.get());
         Vec3d front = flat.normalize();
-        Vec3d side = new Vec3d(-front.z, 0.0, front.x);
+        Vec3d offset = motion.normalize();
 
-        Box box = this.mc.player.getBoundingBox();
+        Vec3d side = new Vec3d(-front.z, 0.0, front.x);
+        offset = offset.multiply(this.distance.get());
 
         double expand = this.expand.get();
+        Box box = this.mc.player.getBoundingBox();
         box = box.expand(expand, 0.0, expand);
 
-        double px = (box.minX + box.maxX) / 2.0;
-        double pz = (box.minZ + box.maxZ) / 2.0;
+        double dx = (box.minX + box.maxX) / 2.0;
+        double dz = (box.minZ + box.maxZ) / 2.0;
 
         double halfx = box.getLengthX() / 2.0;
         double halfz = box.getLengthZ() / 2.0;
@@ -1169,43 +1192,41 @@ public class ElytraTweaks extends Module {
         double width = Math.abs(side.x) *
             halfx + Math.abs(side.z) * halfz;
 
-        double basex = px + front.x * forward;
-        double basez = pz + front.z * forward;
+        double bx = dx + front.x * forward;
+        double bz = dz + front.z * forward;
 
         double low = box.minY + 0.05;
         double high = box.maxY - 0.05;
 
-        int axis = 0;
+        double level = (low + high) / 2.0;
+        Vec3d center = new Vec3d(bx, level, bz);
 
-        Vec3d center = box.getCenter();
-        axis |= this.hit(center, center.add(offset));
+        int axis = this.hit(center, center.add(offset));
 
         for (int idx = -1; idx <= 1; idx += 2) {
             Vec3d edge = side.multiply(width * idx);
+            double ex = bx + edge.x, ez = bz + edge.z;
 
-            Vec3d bottom = new Vec3d(
-                basex + edge.x, low, basez + edge.z
-            );
+            Vec3d bot = new Vec3d(ex, low, ez);
+            Vec3d top = new Vec3d(ex, high, ez);
 
-            Vec3d top = new Vec3d(
-                basex + edge.x, high, basez + edge.z
-            );
+            if (motion.y >= 0.0) {
+                axis |= this.hit(bot, bot.add(offset));
+            }
 
-            axis |= this.hit(bottom, bottom.add(offset));
             axis |= this.hit(top, top.add(offset));
-
-            if (axis == (xaxis | zaxis)) return axis;
+            if ((axis & axes) == axes) return axis;
         }
 
         return axis;
     }
 
     /**
-     * Returns the horizontal collision axis hit by a ray.
+     * Returns the collision axis hit by a ray.
      *
      * @param start ray origin
      * @param end ray destination
-     * @return X or Z collision axis, or zero
+     * @return collision axis, or zero
      */
     private int hit(Vec3d start, Vec3d end) {
         BlockHitResult hit = this.mc.world.raycast(
@@ -1222,6 +1243,7 @@ public class ElytraTweaks extends Module {
 
         Direction.Axis axis = hit.getSide().getAxis();
         if (axis == Direction.Axis.X) return xaxis;
+        if (axis == Direction.Axis.Y) return yaxis;
         if (axis == Direction.Axis.Z) return zaxis;
 
         return 0;
@@ -1249,18 +1271,6 @@ public class ElytraTweaks extends Module {
     //region Collision recovery
 
     /**
-     * Checks whether collision avoidance should run.
-     *
-     * @param event player movement event
-     * @return true when collision avoidance is active
-     */
-    private boolean avoiding(PlayerMoveEvent event) {
-        return Client.ready() && event.type == MovementType.SELF
-            && this.mc.player.isGliding() && this.avoid.get()
-            && !Baritone.elytra() && !this.bounce();
-    }
-
-    /**
      * Waits until elytra flight can safely continue.
      *
      * @param event player movement event
@@ -1268,24 +1278,19 @@ public class ElytraTweaks extends Module {
     private void maintain(PlayerMoveEvent event) {
         Vec3d safe = this.safe();
 
-        if (safe.lengthSquared() > epsilon && !this.danger(safe)) {
-            this.resume(event, safe);
-            return;
-        }
-
-        if (this.boosted()) {
-            this.hold = 0;
+        double length = safe.lengthSquared();
+        if (length <= epsilon || this.danger(safe)) {
+            this.stable = 0;
             this.freeze(event);
             return;
         }
 
-        if (this.hold < this.release.get()) {
-            this.hold++;
+        if (++this.stable < this.release.get()) {
             this.freeze(event);
             return;
         }
 
-        this.release();
+        this.resume(event, safe);
     }
 
     /**
@@ -1294,15 +1299,8 @@ public class ElytraTweaks extends Module {
      * @param event player movement event
      */
     private void stop(PlayerMoveEvent event) {
-        this.speed = Math.max(
-            event.movement.length(),
-            this.mc.player.getVelocity().length()
-        );
-
+        this.stable = 0;
         this.halt = true;
-        this.hold = 0;
-        this.renewed = false;
-
         this.sneak(true);
         this.freeze(event);
     }
@@ -1314,35 +1312,21 @@ public class ElytraTweaks extends Module {
      * @param safe safe direction to continue flying
      */
     private void resume(PlayerMoveEvent event, Vec3d safe) {
+        this.stable = 0;
         this.halt = false;
-        this.hold = 0;
         this.speed = 0.0;
 
-        ((IVec3d) event.movement).meteor$set(safe.x, safe.y, safe.z);
-        this.mc.player.setVelocity(safe);
-
-        if (this.renewed) this.sneak(false);
-    }
-
-    /**
-     * Ends collision recovery after the delay.
-     */
-    private void release() {
-        this.halt = false;
-        this.hold = 0;
-        this.speed = 0.0;
-
-        if (this.renewed) this.sneak(false);
+        this.sneak(false);
+        Player.velocity(event, safe);
     }
 
     /**
      * Resets collision recovery when it is no longer needed.
      */
     private void clear() {
+        this.stable = 0;
         this.halt = false;
-        this.hold = 0;
         this.speed = 0.0;
-
         if (this.sneak) this.sneak(false);
     }
 
@@ -1354,8 +1338,29 @@ public class ElytraTweaks extends Module {
     private Vec3d safe() {
         if (this.speed <= epsilon) return Vec3d.ZERO;
 
-        Vec3d safe = this.mc.player.getRotationVec(1.0F);
-        return safe.normalize().multiply(this.speed);
+        Vec3d motion = this.mc.player.getRotationVec(1.0F);
+        motion = this.redirect(motion);
+
+        return motion.normalize().multiply(this.speed);
+    }
+
+    /**
+     * Redirects recovery toward Control Fly input.
+     *
+     * @param motion current recovery direction
+     * @return redirected recovery direction
+     */
+    private Vec3d redirect(Vec3d motion) {
+        ControlFly control = Modules.get().get(ControlFly.class);
+        if (control == null || !control.isActive()) return motion;
+
+        Vec3d dir = control.direction();
+
+        double target = dir.horizontalLength();
+        if (target <= epsilon) return motion;
+
+        double scale = motion.horizontalLength() / target;
+        return new Vec3d(dir.x * scale, motion.y, dir.z * scale);
     }
 
     /**
@@ -1364,8 +1369,7 @@ public class ElytraTweaks extends Module {
      * @param event player movement event
      */
     private void freeze(PlayerMoveEvent event) {
-        ((IVec3d) event.movement).meteor$set(0.0, 0.0, 0.0);
-        this.mc.player.setVelocity(Vec3d.ZERO);
+        Player.velocity(event, Vec3d.ZERO);
     }
 
     /**
@@ -1375,9 +1379,20 @@ public class ElytraTweaks extends Module {
      */
     private void sneak(boolean pressed) {
         this.sneak = pressed;
-
-        if (!pressed) this.renewed = false;
         this.mc.options.sneakKey.setPressed(pressed);
+    }
+
+    /**
+     * Checks whether collision avoidance should run.
+     *
+     * @param event player movement event
+     * @return true when collision avoidance is active
+     */
+    private boolean avoiding(PlayerMoveEvent event) {
+        return Client.ready()
+            && this.mc.player.isGliding()
+            && event.type == MovementType.SELF
+            && this.avoid.get() && !this.normal();
     }
 
     //endregion
