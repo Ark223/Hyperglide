@@ -5,11 +5,11 @@ import hyperglide.utilities.Client;
 import hyperglide.utilities.Elytra;
 import hyperglide.utilities.Flight;
 import hyperglide.utilities.Hotbar;
+import hyperglide.utilities.Player;
 import hyperglide.utilities.Takeoff;
 import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
-import meteordevelopment.meteorclient.mixininterface.IVec3d;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
@@ -38,9 +38,7 @@ public class ControlFly extends Module {
     private static final int priority = 100;
     private static final int timeout = 4;
 
-    private static final double delta = 0.025;
     private static final double gain = 0.60;
-
     private static final double sharp = Math.cos(Math.toRadians(45.0));
 
     private final SettingGroup movement = this.settings.createGroup("Movement");
@@ -50,7 +48,7 @@ public class ControlFly extends Module {
         .name("maximum-speed")
         .description("Maximum controlled speed in blocks per second.")
         .defaultValue(34.0)
-        .min(20.0)
+        .min(10.0)
         .sliderMax(34.0)
         .build()
     );
@@ -58,8 +56,8 @@ public class ControlFly extends Module {
     private final Setting<Double> minimum = this.movement.add(new DoubleSetting.Builder()
         .name("minimum-speed")
         .description("Uses a rocket when speed drops below this value.")
-        .defaultValue(30.0)
-        .min(20.0)
+        .defaultValue(27.0)
+        .min(10.0)
         .sliderMax(34.0)
         .build()
     );
@@ -70,6 +68,15 @@ public class ControlFly extends Module {
         .defaultValue(2.0)
         .min(0.0)
         .sliderMax(5.0)
+        .build()
+    );
+
+    private final Setting<Integer> offset = this.movement.add(new IntSetting.Builder()
+        .name("latency-offset")
+        .description("Reduces boost time by milliseconds for ping variation.")
+        .defaultValue(50)
+        .min(0)
+        .sliderMax(250)
         .build()
     );
 
@@ -107,7 +114,7 @@ public class ControlFly extends Module {
     private int jump;
 
     public ControlFly() {
-        super(Hyperglide.CATEGORY, "control-fly",
+        super(Hyperglide.CATEGORY, "control-fly-",
             "Provides controlled flight with automatic rocket boosting."
         );
     }
@@ -162,8 +169,8 @@ public class ControlFly extends Module {
         this.input.reset();
 
         if (this.halted()) return;
-
         Vec3d input = this.direction();
+
         this.view(input);
         this.control(input);
     }
@@ -211,7 +218,7 @@ public class ControlFly extends Module {
         if (!stack.isOf(Items.FIREWORK_ROCKET)) return;
 
         this.await();
-        this.count(stack);
+        this.duration(stack);
     }
 
     //endregion
@@ -262,7 +269,7 @@ public class ControlFly extends Module {
      */
     private void clear() {
         this.boost.expiry = 0;
-        this.boost.end = 0;
+        this.boost.endtime = 0;
 
         this.boost.pending = false;
         this.boost.automatic = false;
@@ -304,25 +311,32 @@ public class ControlFly extends Module {
             this.mc.options.jumpKey.isPressed() ||
             this.mc.options.sneakKey.isPressed();
 
-        Vec3d dir = this.steer(input.normalize());
-
-        if (this.motion.dir.lengthSquared() >= epsilon &&
-            this.sharp(this.motion.dir, dir)) {
-            this.motion.brake = true;
-        }
-
-        this.motion.dir = dir;
+        Vec3d steer = this.steer(input.normalize());
+        this.turn(steer);
 
         boolean boosted = this.active();
-        this.aim(dir, boosted, manual);
+        this.aim(steer, boosted, manual);
 
-        boolean launch = this.launch(dir, boosted, redirect);
+        boolean launch = this.launch(steer, boosted, redirect);
         if (launch) this.prepare(manual);
 
         this.mc.player.setYaw(this.motion.yaw);
         this.mc.player.setPitch(this.motion.pitch);
 
         this.rotate(launch);
+    }
+
+    /**
+     * Tracks steering changes and marks sharp turns for braking.
+     *
+     * @param direction requested steering direction
+     */
+    private void turn(Vec3d direction) {
+        if (this.motion.dir.lengthSquared() >= epsilon &&
+            this.sharp(this.motion.dir, direction)) {
+            this.motion.brake = true;
+        }
+        this.motion.dir = direction;
     }
 
     /**
@@ -347,32 +361,25 @@ public class ControlFly extends Module {
      * @param event player movement event
      */
     private void stop(PlayerMoveEvent event) {
-        ((IVec3d) event.movement).meteor$set(0.0, 0.0, 0.0);
-        this.mc.player.setVelocity(Vec3d.ZERO);
+        Player.velocity(event, Vec3d.ZERO);
     }
 
     /**
-     * Limits horizontal movement and applies boost correction.
+     * Limits horizontal movement to the configured maximum.
      *
      * @param event player movement event
      * @param dir normalized flight direction
      */
     private void limit(PlayerMoveEvent event, Vec3d dir) {
         double horizontal = event.movement.horizontalLength();
+
         double maximum = this.maximum(dir);
-        double amount = horizontal;
+        if (horizontal <= maximum) return;
 
-        if (horizontal > maximum) {
-            amount = maximum;
-        } else if (this.active()) {
-            amount = Math.min(maximum, horizontal + delta);
-        }
+        Vec3d flat = this.flat(event.movement, maximum, horizontal);
+        Vec3d velocity = new Vec3d(flat.x, event.movement.y, flat.z);
 
-        if (Math.abs(amount - horizontal) <= epsilon) return;
-        Vec3d flat = this.flat(event.movement, amount, horizontal);
-
-        ((IVec3d) event.movement).meteor$set(flat.x, event.movement.y, flat.z);
-        this.mc.player.setVelocity(new Vec3d(flat.x, event.movement.y, flat.z));
+        Player.velocity(event, velocity);
     }
 
     /**
@@ -443,11 +450,14 @@ public class ControlFly extends Module {
      *
      * @param stack used firework stack
      */
-    private void count(ItemStack stack) {
+    private void duration(ItemStack stack) {
         FireworksComponent fireworks = stack.get(DataComponentTypes.FIREWORKS);
-        int duration = fireworks == null ? 1 : fireworks.flightDuration();
 
-        this.boost.end = this.mc.player.age + Math.max(1, (duration + 1) * 10);
+        int duration = fireworks == null ? 1 : fireworks.flightDuration();
+        double time = Math.max(0.0, (duration + 1) * 500.0 - this.offset.get());
+
+        int ticks = Math.max(1, (int) Math.ceil(time / 50.0));
+        this.boost.endtime = this.mc.player.age + ticks;
     }
 
     /**
@@ -466,7 +476,7 @@ public class ControlFly extends Module {
      */
     private boolean busy() {
         return this.boost.pending || this.active()
-            || this.boost.end > this.mc.player.age;
+            || this.boost.endtime > this.mc.player.age;
     }
 
     /**
@@ -475,14 +485,78 @@ public class ControlFly extends Module {
      * @return true when the current boost is about to expire
      */
     private boolean renew() {
-        return this.boost.end > 0
-            && this.mc.player.age >= this.boost.end - 1
+        return this.boost.endtime > 0
+            && this.mc.player.age >= this.boost.endtime - 1
             && !this.boost.pending && this.stocked();
     }
 
     //endregion
 
     //region Takeoff and steering
+
+    /**
+     * Calculates movement input relative to the camera direction.
+     *
+     * @return combined movement direction
+     */
+    public Vec3d direction() {
+        float yaw = this.view.active ?
+            this.view.yaw : this.mc.player.getYaw();
+
+        Vec3d forward = Vec3d.fromPolar(0.0F, yaw);
+        Vec3d right = Vec3d.fromPolar(0.0F, yaw + 90.0F);
+
+        Vec3d direction = Vec3d.ZERO;
+
+        if (this.mc.options.forwardKey.isPressed()) {
+            direction = direction.add(forward);
+        }
+
+        if (this.mc.options.backKey.isPressed()) {
+            direction = direction.subtract(forward);
+        }
+
+        if (this.mc.options.rightKey.isPressed()) {
+            direction = direction.add(right);
+        }
+
+        if (this.mc.options.leftKey.isPressed()) {
+            direction = direction.subtract(right);
+        }
+
+        if (this.forward.get() &&
+            direction.lengthSquared() < epsilon) {
+            direction = forward;
+        }
+
+        if (this.mc.options.jumpKey.isPressed()) {
+            direction = direction.add(0.0, 1.0, 0.0);
+        }
+
+        if (this.mc.options.sneakKey.isPressed()) {
+            direction = direction.add(0.0, -1.0, 0.0);
+        }
+
+        return direction;
+    }
+
+    /**
+     * Retrieves the current movement input state as a bitmask.
+     *
+     * @return a bitmask containing the active movement inputs
+     */
+    private int state() {
+        int state = 0;
+
+        state |= this.mc.options.forwardKey.isPressed() ? 1 : 0;
+        state |= this.mc.options.backKey.isPressed() ? 2 : 0;
+        state |= this.mc.options.rightKey.isPressed() ? 4 : 0;
+        state |= this.mc.options.leftKey.isPressed() ? 8 : 0;
+        state |= this.mc.options.jumpKey.isPressed() ? 16 : 0;
+        state |= this.mc.options.sneakKey.isPressed() ? 32 : 0;
+
+        return state != 0 ? state : this.forward.get() ? 1 : 0;
+    }
 
     /**
      * Starts automatic takeoff after jump is held long enough.
@@ -505,48 +579,6 @@ public class ControlFly extends Module {
         if (++this.jump >= this.timer.get()) {
             this.input.start();
         }
-    }
-
-    /**
-     * Calculates movement input relative to the camera direction.
-     *
-     * @return combined movement direction
-     */
-    private Vec3d direction() {
-        Vec3d dir = Vec3d.ZERO;
-
-        float angle = this.view.active ? this.view.yaw : this.mc.player.getYaw();
-
-        Vec3d front = Vec3d.fromPolar(0.0F, angle);
-        Vec3d right = Vec3d.fromPolar(0.0F, angle + 90.0F);
-
-        if (this.mc.options.forwardKey.isPressed()) dir = dir.add(front);
-        if (this.mc.options.backKey.isPressed()) dir = dir.subtract(front);
-        if (this.mc.options.rightKey.isPressed()) dir = dir.add(right);
-        if (this.mc.options.leftKey.isPressed()) dir = dir.subtract(right);
-        if (this.mc.options.jumpKey.isPressed()) dir = dir.add(0.0, 1.0, 0.0);
-        if (this.mc.options.sneakKey.isPressed()) dir = dir.add(0.0, -1.0, 0.0);
-
-        return dir.lengthSquared() < epsilon && this.forward.get() ? front : dir;
-    }
-
-    /**
-     * Returns the current movement key state.
-     *
-     * @return movement key state
-     */
-    private int state() {
-        int state = 0;
-
-        if (this.mc.options.forwardKey.isPressed()) state |= 1;
-        if (this.mc.options.backKey.isPressed()) state |= 2;
-        if (this.mc.options.rightKey.isPressed()) state |= 4;
-        if (this.mc.options.leftKey.isPressed()) state |= 8;
-        if (this.mc.options.jumpKey.isPressed()) state |= 16;
-        if (this.mc.options.sneakKey.isPressed()) state |= 32;
-
-        if (state == 0 && this.forward.get()) state = 1;
-        return state;
     }
 
     /**
@@ -894,9 +926,11 @@ public class ControlFly extends Module {
         this.boost.automatic = true;
 
         try {
-            boolean used = Elytra.firework(yaw, pitch);
-            if (!used) return false;
-            this.count(stack);
+            if (Elytra.firework(yaw, pitch)) {
+                this.duration(stack);
+            } else {
+                return false;
+            }
         } finally {
             this.boost.automatic = false;
         }
@@ -1099,7 +1133,7 @@ public class ControlFly extends Module {
      */
     private static class Boost {
         private int expiry;
-        private int end;
+        private int endtime;
 
         private boolean pending;
         private boolean automatic;

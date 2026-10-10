@@ -9,8 +9,8 @@ import hyperglide.utilities.Player;
 import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
-import meteordevelopment.meteorclient.mixininterface.IVec3d;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
@@ -34,7 +34,7 @@ public class RocketBoost extends Module {
     private final SettingGroup general = this.settings.getDefaultGroup();
 
     private final Setting<Double> maximum = this.general.add(new DoubleSetting.Builder()
-        .name("max-boost")
+        .name("maximum-boost")
         .description("Maximum extra speed added above normal rocket speed.")
         .defaultValue(10.0)
         .min(0.0)
@@ -42,12 +42,12 @@ public class RocketBoost extends Module {
         .build()
     );
 
-    private final Setting<Double> delta = this.general.add(new DoubleSetting.Builder()
-        .name("safety-delta")
-        .description("Shortens fallback rocket time for ping variation.")
-        .defaultValue(0.1)
-        .min(0.0)
-        .sliderMax(1.0)
+    private final Setting<Integer> offset = this.general.add(new IntSetting.Builder()
+        .name("latency-offset")
+        .description("Reduces boost time by milliseconds for ping variation.")
+        .defaultValue(50)
+        .min(0)
+        .sliderMax(250)
         .build()
     );
 
@@ -109,11 +109,9 @@ public class RocketBoost extends Module {
             return;
         }
 
-        if (!this.active() || this.controlled()) {
-            return;
-        }
-
+        if (!this.active() || this.controlled()) return;
         Vec3d aim = this.mc.player.getRotationVec(1.0F);
+
         double[] bounds = this.bounds(this.velocity, aim);
         Vec3d target = this.point(bounds, aim);
 
@@ -130,8 +128,8 @@ public class RocketBoost extends Module {
      */
     @EventHandler
     private void move(PlayerMoveEvent event) {
-        if (!Client.ready() || this.target == null ||
-            event.type != MovementType.SELF ||
+        if (event.type != MovementType.SELF ||
+            !Client.ready() || this.target == null ||
             !this.gliding() || this.controlled()) {
             return;
         }
@@ -139,11 +137,7 @@ public class RocketBoost extends Module {
         Vec3d target = this.target;
         this.target = null;
 
-        ((IVec3d) event.movement).meteor$set(
-            target.x, target.y, target.z
-        );
-
-        this.mc.player.setVelocity(target);
+        Player.velocity(event, target);
     }
 
     /**
@@ -153,44 +147,7 @@ public class RocketBoost extends Module {
      */
     @EventHandler
     private void packet(PacketEvent.Send event) {
-        if (!Client.ready()) return;
-
-        if (event.packet instanceof PlayerInteractItemC2SPacket packet) {
-            if (!this.mc.player.isGliding()) return;
-
-            ItemStack stack = this.mc.player.getStackInHand(packet.getHand());
-            if (!stack.isOf(Items.FIREWORK_ROCKET)) return;
-
-            this.expiry = this.mc.player.age;
-
-            FireworksComponent fireworks = stack.get(DataComponentTypes.FIREWORKS);
-            int flight = fireworks == null ? 1 : fireworks.flightDuration();
-
-            double seconds = Math.max(0.0, flight * 0.5 + 0.5 - this.delta.get());
-            this.expiry += Math.max(1, (int) Math.ceil(seconds * 20.0));
-            return;
-        }
-
-        if (!(event.packet instanceof PlayerMoveC2SPacket packet)) {
-            return;
-        }
-
-        if (packet.changesPosition()) {
-            Vec3d prev = API.prev(this.mc.player);
-
-            this.velocity = new Vec3d(
-                packet.getX(prev.x) - prev.x,
-                packet.getY(prev.y) - prev.y,
-                packet.getZ(prev.z) - prev.z
-            );
-        }
-
-        if (packet.changesLook()) {
-            this.yaw = packet.getYaw(this.yaw);
-            this.pitch = packet.getPitch(this.pitch);
-        }
-
-        this.moved = packet.changesPosition();
+        if (Client.ready()) this.send(event);
     }
 
     //endregion
@@ -220,6 +177,67 @@ public class RocketBoost extends Module {
         this.velocity = Vec3d.ZERO;
 
         this.moved = true;
+    }
+
+    //endregion
+
+    //region Packet handling
+
+    /**
+     * Tracks outgoing rocket and movement packets.
+     *
+     * @param event outgoing packet event
+     */
+    private void send(PacketEvent.Send event) {
+        if (event.packet instanceof PlayerInteractItemC2SPacket packet) {
+            this.use(packet);
+        } else if (event.packet instanceof PlayerMoveC2SPacket packet) {
+            this.motion(packet);
+        }
+    }
+
+    /**
+     * Tracks a firework use attempt while gliding.
+     *
+     * @param packet item interaction packet
+     */
+    private void use(PlayerInteractItemC2SPacket packet) {
+        if (!this.mc.player.isGliding()) return;
+
+        ItemStack stack = this.mc.player.getStackInHand(packet.getHand());
+        if (!stack.isOf(Items.FIREWORK_ROCKET)) return;
+
+        FireworksComponent fireworks = stack.get(DataComponentTypes.FIREWORKS);
+        this.expiry = this.mc.player.age;
+
+        int duration = fireworks != null ? fireworks.flightDuration() : 1;
+        double time = Math.max(0.0, (duration + 1) * 500.0 - this.offset.get());
+
+        this.expiry += Math.max(1, (int) Math.ceil(time / 50.0));
+    }
+
+    /**
+     * Tracks movement and rotation sent to the server.
+     *
+     * @param packet movement packet
+     */
+    private void motion(PlayerMoveC2SPacket packet) {
+        if (packet.changesPosition()) {
+            Vec3d prev = API.prev(this.mc.player);
+
+            this.velocity = new Vec3d(
+                packet.getX(prev.x) - prev.x,
+                packet.getY(prev.y) - prev.y,
+                packet.getZ(prev.z) - prev.z
+            );
+        }
+
+        if (packet.changesLook()) {
+            this.yaw = packet.getYaw(this.yaw);
+            this.pitch = packet.getPitch(this.pitch);
+        }
+
+        this.moved = packet.changesPosition();
     }
 
     //endregion
