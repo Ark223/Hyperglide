@@ -536,40 +536,34 @@ public class ControlFly extends Module {
      * @return combined movement direction
      */
     public Vec3d direction() {
-        float yaw = this.view.active ?
-            this.view.yaw : this.mc.player.getYaw();
+        float yaw = this.yaw();
+        int state = this.state();
 
+        Vec3d direction = Vec3d.ZERO;
         Vec3d forward = Vec3d.fromPolar(0.0F, yaw);
         Vec3d right = Vec3d.fromPolar(0.0F, yaw + 90.0F);
 
-        Vec3d direction = Vec3d.ZERO;
-
-        if (this.mc.options.forwardKey.isPressed()) {
+        if ((state & 1) != 0) {
             direction = direction.add(forward);
         }
 
-        if (this.mc.options.backKey.isPressed()) {
+        if ((state & 2) != 0) {
             direction = direction.subtract(forward);
         }
 
-        if (this.mc.options.rightKey.isPressed()) {
+        if ((state & 4) != 0) {
             direction = direction.add(right);
         }
 
-        if (this.mc.options.leftKey.isPressed()) {
+        if ((state & 8) != 0) {
             direction = direction.subtract(right);
         }
 
-        if (this.forward.get() &&
-            direction.lengthSquared() < epsilon) {
-            direction = forward;
-        }
-
-        if (this.mc.options.jumpKey.isPressed()) {
+        if ((state & 16) != 0) {
             direction = direction.add(0.0, 1.0, 0.0);
         }
 
-        if (this.mc.options.sneakKey.isPressed()) {
+        if ((state & 32) != 0) {
             direction = direction.add(0.0, -1.0, 0.0);
         }
 
@@ -1045,21 +1039,21 @@ public class ControlFly extends Module {
     }
 
     /**
-     * Returns the independent camera yaw.
+     * Returns the independent camera yaw used for movement control.
      *
      * @return camera yaw
      */
     public float yaw() {
-        return this.view.yaw;
+        return this.view.active ? this.view.yaw : this.mc.player.getYaw();
     }
 
     /**
-     * Returns the independent camera pitch.
+     * Returns the independent camera pitch used for movement control.
      *
      * @return camera pitch
      */
     public float pitch() {
-        return this.view.pitch;
+        return this.view.active ? this.view.pitch : this.mc.player.getPitch();
     }
 
     /**
