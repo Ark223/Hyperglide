@@ -393,7 +393,18 @@ public class AutoPilot extends Module {
         if (progress < 0) return;
 
         this.leg = progress;
-        if (this.access()) return;
+        if (!this.access()) this.begin();
+    }
+
+    /**
+     * Starts flight directly or searches for clear space.
+     */
+    private void begin() {
+        if (this.mc.player.isGliding()) {
+            this.launch();
+            this.flight();
+            return;
+        }
 
         if (!this.open()) {
             if (this.timer > 0 && --this.timer > 0) {
@@ -436,8 +447,9 @@ public class AutoPilot extends Module {
             return;
         }
 
-        if (this.pathing()) return;
-        this.prepare();
+        if (!this.pathing()) {
+            this.prepare();
+        }
     }
 
     /**
