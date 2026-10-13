@@ -5,6 +5,7 @@ import hyperglide.utilities.BlockFilter;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Placement;
+import hyperglide.utilities.Player;
 import hyperglide.utilities.Render;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -22,10 +23,11 @@ import java.util.Map;
 
 public class Scaffolding extends Module {
     private static final int life = 10;
+    private static final int batch = 9;
 
     private static final double extend = 1.25;
-    private static final double step = 0.25;
     private static final double reach = 2.0;
+    private static final double step = 0.25;
 
     private final SettingGroup general = this.settings.getDefaultGroup();
     private final SettingGroup visuals = this.settings.createGroup("Visuals");
@@ -45,7 +47,7 @@ public class Scaffolding extends Module {
 
     private final Setting<Boolean> dynamic = this.general.add(new BoolSetting.Builder()
         .name("dynamic-mode")
-        .description("Uses a one-tick delay when close to the edge.")
+        .description("Places immediately when close to the edge.")
         .defaultValue(true)
         .build()
     );
@@ -75,13 +77,15 @@ public class Scaffolding extends Module {
     }
 
     /**
-     * Resets runtime state and prepares the active scaffold layer.
+     * Resets runtime state and prepares the active layer.
      */
     @Override
     public void onActivate() {
         this.reset();
+
         this.timer = this.delay.get();
-        this.level = this.mc.player == null ? 0 : this.layer();
+        this.level = this.mc.player != null
+            ? Player.floor().getY() : 0;
     }
 
     /**
@@ -109,25 +113,28 @@ public class Scaffolding extends Module {
         this.clean();
         this.collect();
 
-        if (++this.timer < this.pace()) {
+        int pace = this.pace();
+        if (pace > 0 && ++this.timer < pace) {
             return;
         }
 
-        BlockPos pos = this.next();
-        if (pos == null) return;
+        int limit = pace == 0 ? batch : 1;
+        for (int count = 0; count < limit; count++) {
 
-        int slot = Hotbar.block(this.filter, pos);
-        if (slot == -1) {
-            this.add(pos, true);
-            return;
+            BlockPos pos = this.next();
+            if (pos == null) return;
+
+            int slot = Hotbar.block(this.filter, pos);
+            if (slot == -1) {
+                this.add(pos, true);
+                return;
+            } else if (!Placement.place(pos, slot)) {
+                return;
+            }
+
+            this.timer = 0;
+            this.marks.put(pos, this.tick);
         }
-
-        if (!Placement.place(pos, slot)) {
-            return;
-        }
-
-        this.timer = 0;
-        this.marks.put(pos, this.tick);
     }
 
     /**
@@ -154,7 +161,7 @@ public class Scaffolding extends Module {
 
     //endregion
 
-    //region Scaffold control
+    //region Core management
 
     /**
      * Clears queued positions, placement marks and timers.
@@ -171,7 +178,7 @@ public class Scaffolding extends Module {
      * Updates the active scaffold layer and clears queued positions.
      */
     private void update() {
-        int level = this.layer();
+        int level = Player.floor().getY();
         if (this.level != level) {
             this.level = level;
             this.queue.clear();
@@ -200,11 +207,11 @@ public class Scaffolding extends Module {
 
         this.add(BlockPos.ofFloored(px, this.level, pz), true);
 
-        Vec3d move = this.move();
-        if (move.lengthSquared() == 0) return;
+        Vec3d dir = this.direction();
+        if (dir.lengthSquared() == 0) return;
 
         for (double idx = step; idx <= extend + 0.001; idx += step) {
-            double sx = px + move.x * idx, sz = pz + move.z * idx;
+            double sx = px + dir.x * idx, sz = pz + dir.z * idx;
             this.add(BlockPos.ofFloored(sx, this.level, sz), false);
         }
     }
@@ -249,12 +256,12 @@ public class Scaffolding extends Module {
     //region Placement control
 
     /**
-     * Calculates the delay required before the next placement.
+     * Calculates the placement delay based on edge proximity.
      *
      * @return required delay in ticks
      */
     private int pace() {
-        return this.dynamic.get() && this.edge() ? 1 : this.delay.get();
+        return this.dynamic.get() && this.edge() ? 0 : this.delay.get();
     }
 
     /**
@@ -298,32 +305,12 @@ public class Scaffolding extends Module {
         return true;
     }
 
-    //endregion
-
-    //region Player positioning
-
-    /**
-     * Calculates the block layer directly below the player.
-     *
-     * @return Y coordinate of the scaffold layer
-     */
-    private int layer() {
-        boolean ground = this.mc.player.isOnGround();
-        double offset = ground ? 0.01 : 1.0;
-
-        double px = this.mc.player.getX();
-        double pz = this.mc.player.getZ();
-
-        double py = this.mc.player.getY() - offset;
-        return BlockPos.ofFloored(px, py, pz).getY();
-    }
-
     /**
      * Calculates the normalized movement direction from pressed keys.
      *
      * @return normalized movement direction, or zero when stationary
      */
-    private Vec3d move() {
+    private Vec3d direction() {
         Vec3d move = Vec3d.ZERO;
         float yaw = this.mc.player.getYaw();
 

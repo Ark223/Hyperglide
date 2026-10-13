@@ -4,6 +4,7 @@ import hyperglide.Hyperglide;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Placement;
+import hyperglide.utilities.Player;
 import hyperglide.utilities.Render;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -22,6 +23,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class FastPortal extends Module {
+    private static final int timeout = 3;
+
     private final SettingGroup general = this.settings.getDefaultGroup();
     private final SettingGroup visuals = this.settings.createGroup("Visuals");
 
@@ -29,7 +32,7 @@ public class FastPortal extends Module {
         .name("place-delay")
         .description("Delay in ticks between placements.")
         .defaultValue(2)
-        .min(1)
+        .min(0)
         .sliderMax(5)
         .build()
     );
@@ -48,6 +51,7 @@ public class FastPortal extends Module {
 
     private int index;
     private int timer;
+    private int sync;
 
     public FastPortal() {
         super(Hyperglide.CATEGORY, "fast-portal",
@@ -60,7 +64,18 @@ public class FastPortal extends Module {
      */
     @Override
     public void onActivate() {
-        this.setup();
+        if (!Client.loaded()) {
+            this.toggle();
+            return;
+        }
+
+        this.portal.clear();
+        this.timer = this.delay.get();
+        this.index = 0;
+        this.sync = 0;
+
+        this.collect();
+        this.validate();
     }
 
     /**
@@ -71,18 +86,47 @@ public class FastPortal extends Module {
         this.portal.clear();
         this.index = 0;
         this.timer = 0;
+        this.sync = 0;
     }
 
     //region Event handlers
 
     /**
-     * Places the next required frame block after the delay.
+     * Advances portal construction and places required blocks.
      *
      * @param event pre-tick event
      */
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (Client.loaded()) this.build();
+        if (!Client.loaded()) return;
+
+        int delay = this.delay.get();
+        if (delay == 0 && this.sync > 0) {
+            this.sync--;
+            return;
+        }
+
+        this.skip();
+
+        if (this.index >= this.portal.size()) {
+            this.done();
+            return;
+        }
+
+        if (delay > 0) {
+            if (++this.timer >= delay) this.place();
+            return;
+        }
+
+        while (this.index < this.portal.size()) {
+            int index = this.index;
+            this.place();
+
+            if (this.index == index) return;
+        }
+
+        this.index = 0;
+        this.sync = timeout;
     }
 
     /**
@@ -92,52 +136,17 @@ public class FastPortal extends Module {
      */
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (this.box.enabled()) this.render(event);
+        if (!this.box.enabled()) return;
+
+        for (int idx = this.index; idx < this.portal.size(); idx++) {
+            BlockPos pos = this.portal.get(idx);
+            if (!this.obsidian(pos)) this.box.box(event, pos);
+        }
     }
 
     //endregion
 
     //region Portal structure
-
-    /**
-     * Prepares and validates the portal frame.
-     */
-    private void setup() {
-        if (!Client.loaded()) {
-            this.toggle();
-            return;
-        }
-
-        this.portal.clear();
-        this.index = 0;
-        this.timer = this.delay.get();
-
-        this.collect();
-        int need = 0;
-
-        for (BlockPos pos : this.portal) {
-            if (this.obsidian(pos)) continue;
-
-            if (!Placement.open(pos)) {
-                this.error("Portal area is obstructed.");
-                this.toggle();
-                return;
-            }
-
-            need++;
-        }
-
-        if (need == 0) {
-            this.info("A portal already exists here.");
-            this.toggle();
-            return;
-        }
-
-        if (Hotbar.count(Items.OBSIDIAN) < need) {
-            this.error("Not enough obsidian in hotbar.");
-            this.toggle();
-        }
-    }
 
     /**
      * Calculates the portal frame positions in front of the player.
@@ -148,7 +157,7 @@ public class FastPortal extends Module {
 
         BlockPos base = BlockPos.ofFloored(
             this.mc.player.getX() + front.getOffsetX() * 2,
-            this.level(),
+            Player.floor().getY() + 1,
             this.mc.player.getZ() + front.getOffsetZ() * 2
         ).offset(right, -1);
 
@@ -168,6 +177,35 @@ public class FastPortal extends Module {
     }
 
     /**
+     * Validates portal space and checks the required obsidian count.
+     */
+    private void validate() {
+        int need = 0;
+
+        for (BlockPos pos : this.portal) {
+            if (this.obsidian(pos)) continue;
+
+            if (!Placement.open(pos)) {
+                this.error("Portal area is obstructed.");
+                this.toggle();
+                return;
+            }
+            need++;
+        }
+
+        if (need == 0) {
+            this.info("A portal already exists here.");
+            this.toggle();
+            return;
+        }
+
+        if (Hotbar.count(Items.OBSIDIAN) < need) {
+            this.error("Not enough obsidian in hotbar.");
+            this.toggle();
+        }
+    }
+
+    /**
      * Advances past frame positions that already contain obsidian.
      */
     private void skip() {
@@ -178,36 +216,18 @@ public class FastPortal extends Module {
     }
 
     /**
-     * Renders the remaining incomplete portal frame positions.
+     * Checks whether a position already contains obsidian.
      *
-     * @param event 3D render event
+     * @param pos block position to check
+     * @return true when the position contains obsidian
      */
-    private void render(Render3DEvent event) {
-        for (int idx = this.index; idx < this.portal.size(); idx++) {
-            BlockPos pos = this.portal.get(idx);
-            if (!this.obsidian(pos)) this.box.box(event, pos);
-        }
+    private boolean obsidian(BlockPos pos) {
+        return this.mc.world.getBlockState(pos).isOf(Blocks.OBSIDIAN);
     }
 
     //endregion
 
     //region Portal interaction
-
-    /**
-     * Advances portal construction and places the next block.
-     */
-    private void build() {
-        this.skip();
-
-        if (this.index >= this.portal.size()) {
-            this.done();
-            return;
-        }
-
-        if (++this.timer >= this.delay.get()) {
-            this.place();
-        }
-    }
 
     /**
      * Places the next required obsidian block.
@@ -233,10 +253,6 @@ public class FastPortal extends Module {
         this.index++;
         this.timer = 0;
         this.skip();
-
-        if (this.index >= this.portal.size()) {
-            this.done();
-        }
     }
 
     /**
@@ -278,36 +294,6 @@ public class FastPortal extends Module {
         else this.error("Portal complete but unable to ignite.");
 
         this.toggle();
-    }
-
-    //endregion
-
-    //region Utilities and validation
-
-    /**
-     * Calculates the portal layer at the player's feet.
-     *
-     * @return Y coordinate of the portal base
-     */
-    private int level() {
-        boolean ground = this.mc.player.isOnGround();
-        double offset = ground ? 0.01 : 1.0;
-
-        double px = this.mc.player.getX();
-        double pz = this.mc.player.getZ();
-
-        double py = this.mc.player.getY() - offset;
-        return BlockPos.ofFloored(px, py, pz).getY() + 1;
-    }
-
-    /**
-     * Checks whether a position contains obsidian.
-     *
-     * @param pos block position to check
-     * @return true when the position contains obsidian
-     */
-    private boolean obsidian(BlockPos pos) {
-        return this.mc.world.getBlockState(pos).isOf(Blocks.OBSIDIAN);
     }
 
     //endregion
