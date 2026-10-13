@@ -910,15 +910,14 @@ public class ControlFly extends Module {
     /**
      * Marks a rocket launch as pending and adjusts leveling.
      *
-     * @param manual whether vertical movement input is controlling pitch
+     * @param manual whether vertical input is controlling pitch
      */
     private void prepare(boolean manual) {
         this.await();
         if (manual) return;
 
-        this.motion.pitch = this.level(
-            this.mc.player.getVelocity(), true
-        );
+        Vec3d velocity = this.mc.player.getVelocity();
+        this.motion.pitch = this.level(velocity, true);
     }
 
     /**
