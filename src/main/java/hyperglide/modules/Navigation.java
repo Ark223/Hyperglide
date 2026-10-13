@@ -341,48 +341,17 @@ public class Navigation extends Module {
         int top = (int) this.top();
 
         Vec2f mouse = Gui.mouse();
-        Vec2f current = Player.position();
-        View view = this.view(current);
+        View view = this.view(Player.position());
 
         boolean hovered = this.hovered(mouse.x, mouse.y);
-
-        Highways.Road highway = !hovered ? null
-            : this.road(mouse, view, left, top);
         if (!hovered && this.route == null) return;
 
         double gui = this.mc.getWindow().getScaleFactor();
         HudRenderer renderer = HudRenderer.INSTANCE;
-
         renderer.begin(event.drawContext);
 
-        if (hovered) {
-            if (this.stream.get()) {
-                if (highway != null) {
-                    this.box(renderer,
-                        new String[] {highway.name()},
-                        left * gui, top * gui, true, gui
-                    );
-                }
-            } else {
-                BlockPos point = this.world(mouse, view, left, top);
-                String position = "X: " + point.getX() + " Z: " + point.getZ();
-
-                this.box(renderer, highway == null ?
-                    new String[] {position} :
-                    new String[] {highway.name(), position},
-                    left * gui, top * gui, true, gui
-                );
-            }
-        }
-
-        if (this.route != null) {
-            String eta = this.time(this.route.time());
-            int length = Math.round(this.route.distance());
-
-            this.box(renderer, new String[] {"ETA: " + eta,
-                String.format(Locale.ROOT, "%,d blocks left", length)
-            }, left * gui, top * gui, false, gui);
-        }
+        if (hovered) this.hover(renderer, mouse, view, left, top, gui);
+        if (this.route != null) this.status(renderer, left, top, gui);
 
         renderer.end();
     }
@@ -405,41 +374,17 @@ public class Navigation extends Module {
         this.click();
 
         Vec2f current = Player.position();
-        Vec2f destination = this.target();
-
         View view = this.view(current);
-        Color road = this.highways.get();
 
         context.fill(left, top, left + size, top + size, background.getPacked());
         context.enableScissor(left + 1, top + 1, left + size - 1, top + size - 1);
 
-        for (Highways.Road highway : this.roads) {
-            for (Segment segment : highway.segments()) {
-                this.draw(context, segment.start(), segment.end(),
-                    view, left, top, road, this.thickness.get()
-                );
-            }
-        }
-
-        float radius = this.clip();
-        if (radius > 0.0F) {
-            Vec2f origin = this.screen(Vec2f.ZERO, view, left, top);
-            API.circle(context, origin.x, origin.y, radius / view.scale,
-                this.thickness.get(), this.area.get().getPacked()
-            );
-        }
-
-        if (this.route != null) {
-            Color path = this.path.get();
-            for (Route.Leg leg : this.route.legs()) {
-                this.draw(context, leg.start(), leg.end(), view,
-                    left, top, path, this.thickness.get() + 1
-                );
-            }
-        }
+        this.network(context, view, left, top);
+        this.circle(context, view, left, top);
+        this.trace(context, view, left, top);
 
         this.mark(context, current, view, left, top, this.player.get());
-        this.mark(context, destination, view, left, top, this.destination.get());
+        this.mark(context, this.target(), view, left, top, this.destination.get());
 
         context.disableScissor();
         this.frame(context, left, top);
@@ -476,7 +421,7 @@ public class Navigation extends Module {
 
     //endregion
 
-    //region Map rendering
+    //region Map display
 
     /**
      * Calculates the map view around the selected position.
@@ -569,6 +514,113 @@ public class Navigation extends Module {
             Math.round(world.x) * scale, 0,
             Math.round(world.y) * scale
         );
+    }
+
+    //endregion
+
+    //region Map rendering
+
+    /**
+     * Draws every highway segment within the current map view.
+     *
+     * @param context draw context
+     * @param view current map view
+     * @param left map left position
+     * @param top map top position
+     */
+    private void network(DrawContext context, View view, int left, int top) {
+        Color color = this.highways.get();
+        int width = this.thickness.get();
+
+        for (Highways.Road highway : this.roads) {
+            for (Segment segment : highway.segments()) {
+                this.draw(context, segment.start(), segment.end(),
+                    view, left, top, color, width
+                );
+            }
+        }
+    }
+
+    /**
+     * Draws the circular boundary for the configured clip radius.
+     *
+     * @param context draw context
+     * @param view current map view
+     * @param left map left position
+     * @param top map top position
+     */
+    private void circle(DrawContext context, View view, int left, int top) {
+        float radius = this.clip();
+        if (radius <= 0.0F) return;
+
+        Vec2f origin = this.screen(Vec2f.ZERO, view, left, top);
+        API.circle(context, origin.x, origin.y, radius / view.scale,
+            this.thickness.get(), this.area.get().getPacked()
+        );
+    }
+
+    /**
+     * Draws each leg of the currently calculated navigation route.
+     *
+     * @param context draw context
+     * @param view current map view
+     * @param left map left position
+     * @param top map top position
+     */
+    private void trace(DrawContext context, View view, int left, int top) {
+        if (this.route == null) return;
+
+        Color color = this.path.get();
+        int width = this.thickness.get() + 1;
+
+        for (Route.Leg leg : this.route.legs()) {
+            this.draw(context, leg.start(), leg.end(),
+                view, left, top, color, width
+            );
+        }
+    }
+
+    /**
+     * Draws a square marker for a world position on the map.
+     *
+     * @param context draw context
+     * @param point marker world position
+     * @param view current map view
+     * @param left map left position
+     * @param top map top position
+     * @param color marker color
+     */
+    private void mark(DrawContext context, Vec2f point,
+        View view, double left, double top, Color color) {
+
+        double size = this.size.get();
+        Vec2f screen = this.screen(point, view, left, top);
+
+        if (screen.x < left || screen.x > left + size ||
+            screen.y < top || screen.y > top + size) return;
+
+        int radius = this.thickness.get() + 2;
+
+        context.fill(
+            Math.round(screen.x - radius),
+            Math.round(screen.y - radius),
+            Math.round(screen.x + radius),
+            Math.round(screen.y + radius),
+            color.getPacked()
+        );
+    }
+
+    /**
+     * Draws the outline around the navigation map window.
+     *
+     * @param context draw context
+     * @param left map left position
+     * @param top map top position
+     */
+    private void frame(DrawContext context, int left, int top) {
+        int size = this.size.get();
+        int color = this.outline.get().getPacked();
+        API.border(context, left, top, size, size, color);
     }
 
     /**
@@ -695,52 +747,60 @@ public class Navigation extends Module {
         };
     }
 
+    //endregion
+
+    //region Info rendering
+
     /**
-     * Draws a position marker on the map.
+     * Renders information for the hovered map position.
      *
-     * @param context draw context
-     * @param point marker world position
+     * @param renderer HUD renderer
+     * @param mouse mouse position
      * @param view current map view
      * @param left map left position
      * @param top map top position
-     * @param color marker color
+     * @param gui GUI scale factor
      */
-    private void mark(DrawContext context, Vec2f point,
-        View view, double left, double top, Color color) {
+    private void hover(HudRenderer renderer, Vec2f mouse,
+        View view, int left, int top, double gui) {
 
-        double size = this.size.get();
-        Vec2f screen = this.screen(point, view, left, top);
+        Highways.Road highway = this.road(mouse, view, left, top);
 
-        if (screen.x < left || screen.x > left + size ||
-            screen.y < top || screen.y > top + size) return;
+        if (this.stream.get()) {
+            if (highway != null) {
+                this.box(renderer, new String[] {highway.name()},
+                    left * gui, top * gui, true, gui
+                );
+            }
+            return;
+        }
 
-        int radius = this.thickness.get() + 2;
+        BlockPos point = this.world(mouse, view, left, top);
+        String position = "X: " + point.getX() + " Z: " + point.getZ();
 
-        context.fill(
-            Math.round(screen.x - radius),
-            Math.round(screen.y - radius),
-            Math.round(screen.x + radius),
-            Math.round(screen.y + radius),
-            color.getPacked()
+        this.box(renderer, highway == null ?
+            new String[] {position} :
+            new String[] {highway.name(), position},
+            left * gui, top * gui, true, gui
         );
     }
 
     /**
-     * Draws the one-pixel map outline.
+     * Renders current route information below the map.
      *
-     * @param context draw context
+     * @param renderer HUD renderer
      * @param left map left position
      * @param top map top position
+     * @param gui GUI scale factor
      */
-    private void frame(DrawContext context, int left, int top) {
-        int size = this.size.get();
-        int color = this.outline.get().getPacked();
-        API.border(context, left, top, size, size, color);
+    private void status(HudRenderer renderer, int left, int top, double gui) {
+        String eta = this.time(this.route.time());
+        int length = Math.round(this.route.distance());
+
+        this.box(renderer, new String[] {"ETA: " + eta,
+            String.format(Locale.ROOT, "%,d blocks left", length)
+        }, left * gui, top * gui, false, gui);
     }
-
-    //endregion
-
-    //region Info rendering
 
     /**
      * Returns the highway currently under the mouse.
@@ -875,17 +935,7 @@ public class Navigation extends Module {
             return;
         }
 
-        int button = -1;
-
-        if (this.mode.get() == Mode.Free &&
-            Gui.pressed(GLFW.GLFW_MOUSE_BUTTON_LEFT)) {
-            button = GLFW.GLFW_MOUSE_BUTTON_LEFT;
-
-        } else if (!this.lock.get() &&
-            Gui.pressed(GLFW.GLFW_MOUSE_BUTTON_RIGHT)) {
-            button = GLFW.GLFW_MOUSE_BUTTON_RIGHT;
-        }
-
+        int button = this.button();
         if (button == -1) {
             this.drag = -1;
             return;
@@ -894,25 +944,57 @@ public class Navigation extends Module {
         Vec2f mouse = Gui.mouse();
 
         if (this.drag == -1) {
-            if (!this.hovered(mouse.x, mouse.y)) {
-                return;
-            }
+            this.start(mouse, button);
+        } else if (button == this.drag) {
+            this.shift(mouse);
+        }
+    }
 
+    /**
+     * Returns the currently pressed map drag button.
+     *
+     * @return mouse button, or -1 when dragging is inactive
+     */
+    private int button() {
+        if (this.mode.get() == Mode.Free &&
+            Gui.pressed(GLFW.GLFW_MOUSE_BUTTON_LEFT)) {
+            return GLFW.GLFW_MOUSE_BUTTON_LEFT;
+        }
+
+        if (!this.lock.get() &&
+            Gui.pressed(GLFW.GLFW_MOUSE_BUTTON_RIGHT)) {
+            return GLFW.GLFW_MOUSE_BUTTON_RIGHT;
+        }
+
+        return -1;
+    }
+
+    /**
+     * Starts map dragging from the current mouse position.
+     *
+     * @param mouse mouse position
+     * @param button active mouse button
+     */
+    private void start(Vec2f mouse, int button) {
+        if (this.hovered(mouse.x, mouse.y)) {
             this.drag = button;
             this.mx = mouse.x;
             this.my = mouse.y;
-            return;
         }
+    }
 
-        if (button != this.drag) return;
-
+    /**
+     * Applies the current map drag movement.
+     *
+     * @param mouse mouse position
+     */
+    private void shift(Vec2f mouse) {
         float dx = mouse.x - this.mx;
         float dy = mouse.y - this.my;
 
         if (this.drag == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
             this.xoffset.set(this.xoffset.get() + Math.round(dx));
             this.yoffset.set(this.yoffset.get() + Math.round(dy));
-
         } else {
             double scale = this.scale();
             this.offset = this.bound(this.offset.add(new Vec2f(
@@ -990,7 +1072,7 @@ public class Navigation extends Module {
     //region Destination control
 
     /**
-     * Applies a destination change and restarts Auto Pilot when active.
+     * Applies a destination change and restarts Auto Pilot.
      *
      * @param value typed destination value
      */
@@ -1069,8 +1151,8 @@ public class Navigation extends Module {
             return;
         }
 
-        this.route = this.search.find(
-            Player.position(), this.target(), this.speed(), standard
+        this.route = this.search.find(Player.position(),
+            this.target(), this.speed(), standard
         );
     }
 
