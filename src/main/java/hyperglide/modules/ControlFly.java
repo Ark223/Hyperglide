@@ -39,6 +39,7 @@ public class ControlFly extends Module {
     private static final int timeout = 4;
 
     private static final double gain = 0.60;
+    private static final double push = 0.025;
     private static final double sharp = Math.cos(Math.toRadians(45.0));
 
     private final SettingGroup movement = this.settings.createGroup("Movement");
@@ -371,31 +372,66 @@ public class ControlFly extends Module {
      * @param dir normalized flight direction
      */
     private void limit(PlayerMoveEvent event, Vec3d dir) {
-        double horizontal = event.movement.horizontalLength();
+        double length = event.movement.horizontalLength();
+        Vec3d velocity = new Vec3d(0.0, event.movement.y, 0.0);
 
+        boolean ceiling = !this.mc.player.isOnGround()
+            && this.mc.player.verticalCollision;
+
+        if (dir.horizontalLength() < epsilon && !ceiling) {
+            if (length < epsilon) return;
+            Player.velocity(event, velocity);
+            return;
+        }
+
+        Vec3d flat = this.adjust(event.movement, dir, length, ceiling);
+        if (flat != null) {
+            velocity = new Vec3d(flat.x, event.movement.y, flat.z);
+            Player.velocity(event, velocity);
+        }
+    }
+
+    /**
+     * Controls horizontal movement and ceiling collision acceleration.
+     *
+     * @param motion current movement vector
+     * @param dir normalized flight direction
+     * @param length current horizontal magnitude
+     * @param ceiling whether the player is colliding with a ceiling
+     * @return adjusted horizontal movement, or null when unchanged
+     */
+    private Vec3d adjust(Vec3d motion, Vec3d dir, double length, boolean ceiling) {
         double maximum = this.maximum(dir);
-        if (horizontal <= maximum) return;
 
-        Vec3d flat = this.flat(event.movement, maximum, horizontal);
-        Vec3d velocity = new Vec3d(flat.x, event.movement.y, flat.z);
+        double amount = ceiling ? length + push : length;
+        amount = Math.min(maximum, amount);
 
-        Player.velocity(event, velocity);
+        if (Math.abs(amount - length) <= epsilon) return null;
+
+        if (ceiling && dir.horizontalLength() < epsilon) {
+            dir = Vec3d.fromPolar(0.0F, this.yaw());
+            return dir.multiply(amount);
+        } else {
+            return this.flat(motion, amount, length);
+        }
     }
 
     /**
      * Scales horizontal movement without changing its direction.
      *
-     * @param movement current movement vector
+     * @param motion current movement vector
      * @param amount requested horizontal magnitude
-     * @param horizontal current horizontal magnitude
+     * @param length current horizontal magnitude
      * @return adjusted horizontal movement vector
      */
-    private Vec3d flat(Vec3d movement, double amount, double horizontal) {
-        if (horizontal > epsilon) {
-            double scale = amount / horizontal;
-            return new Vec3d(movement.x * scale, 0.0, movement.z * scale);
+    private Vec3d flat(Vec3d motion, double amount, double length) {
+        if (length > epsilon) {
+            double scale = amount / length;
+            return new Vec3d(motion.x * scale, 0.0, motion.z * scale);
+        } else {
+            motion = Vec3d.fromPolar(0.0F, this.motion.yaw);
+            return motion.multiply(amount);   
         }
-        return Vec3d.fromPolar(0.0F, this.motion.yaw).multiply(amount);
     }
 
     //endregion
@@ -823,7 +859,6 @@ public class ControlFly extends Module {
     private Vec3d predict(Vec3d velocity, float yaw, float pitch, boolean boosted) {
         Vec3d rotation = Vec3d.fromPolar(pitch, yaw);
         Vec3d next = Elytra.glide(velocity, rotation);
-
         return boosted ? this.firework(next, rotation) : next;
     }
 
@@ -869,8 +904,7 @@ public class ControlFly extends Module {
         if (this.busy() || !this.stocked()) return false;
         if (!boosted && redirect) return true;
 
-        Vec3d next = this.predict(
-            this.mc.player.getVelocity(),
+        Vec3d next = this.predict(this.mc.player.getVelocity(),
             this.motion.yaw, this.motion.pitch, boosted
         );
 
