@@ -13,6 +13,7 @@ import baritone.api.pathing.movement.IMovement;
 import baritone.api.pathing.path.IPathExecutor;
 import baritone.api.utils.IPlayerContext;
 import baritone.api.utils.input.Input;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import java.util.List;
@@ -21,6 +22,10 @@ import java.util.List;
  * Handles Baritone pathing, elytra flight and movement inputs.
  */
 public final class Baritone {
+    private static final MinecraftClient client = MinecraftClient.getInstance();
+
+    private static boolean paused;
+
     private Baritone() {}
 
     /**
@@ -83,7 +88,7 @@ public final class Baritone {
     }
 
     /**
-     * Starts elytra pathing to a destination.
+     * Starts Baritone elytra pathing to a destination.
      *
      * @param pos destination position
      * @param exact whether Y is part of the goal
@@ -93,7 +98,7 @@ public final class Baritone {
     }
 
     /**
-     * Starts walking to an exact block.
+     * Starts walking to an exact block using normal pathing.
      *
      * @param pos destination position
      */
@@ -102,7 +107,7 @@ public final class Baritone {
     }
 
     /**
-     * Starts walking to a destination.
+     * Starts walking to a destination using normal pathing.
      *
      * @param pos destination position
      * @param exact whether Y is part of the goal
@@ -123,14 +128,32 @@ public final class Baritone {
     }
 
     /**
-     * Cancels the current pathing process.
+     * Cancels the current pathing process and clears paths.
      */
     public static void cancel() {
         instance().getPathingBehavior().cancelEverything();
     }
 
     /**
-     * Stops all active processes immediately.
+     * Pauses the current pathing process until it is resumed.
+     */
+    public static void pause() {
+        if (paused) return;
+        paused = instance().getCommandManager().execute("pause");
+    }
+
+    /**
+     * Resumes the pathing process after it has been paused.
+     */
+    public static void resume() {
+        if (!paused) return;
+        client.options.forwardKey.setPressed(false);
+        client.options.sneakKey.setPressed(false);
+        paused = !instance().getCommandManager().execute("resume");
+    }
+
+    /**
+     * Stops all active pathfinding processes immediately.
      */
     public static void stop() {
         IBaritone baritone = instance();
@@ -149,7 +172,7 @@ public final class Baritone {
     }
 
     /**
-     * Changes forced forward movement.
+     * Sets whether forward movement is forced.
      *
      * @param state whether forward movement is pressed
      */
@@ -158,7 +181,7 @@ public final class Baritone {
     }
 
     /**
-     * Changes forced backward movement.
+     * Sets whether backward movement is forced.
      *
      * @param state whether backward movement is pressed
      */
@@ -167,7 +190,7 @@ public final class Baritone {
     }
 
     /**
-     * Changes forced left movement.
+     * Sets whether left movement is forced.
      *
      * @param state whether left movement is pressed
      */
@@ -176,7 +199,7 @@ public final class Baritone {
     }
 
     /**
-     * Changes forced right movement.
+     * Sets whether right movement is forced.
      *
      * @param state whether right movement is pressed
      */
@@ -185,7 +208,7 @@ public final class Baritone {
     }
 
     /**
-     * Changes forced sprinting.
+     * Sets whether sprinting is forced.
      *
      * @param state whether sprint is pressed
      */
@@ -201,11 +224,12 @@ public final class Baritone {
      * @return matching Baritone goal
      */
     private static Goal goal(BlockPos pos, boolean exact) {
-        return exact ? new GoalBlock(pos) : new GoalXZ(pos.getX(), pos.getZ());
+        if (exact) return new GoalBlock(pos);
+        return new GoalXZ(pos.getX(), pos.getZ());
     }
 
     /**
-     * Changes a forced Baritone input.
+     * Sets the forced state of a Baritone input.
      *
      * @param input input to change
      * @param state whether the input is pressed
@@ -231,27 +255,35 @@ public final class Baritone {
      * Helps Baritone step onto blocks it needs to place.
      */
     public static void assist() {
+        if (!supporting()) resume();
+    }
+
+    /**
+     * Checks whether ascending step needs player alignment.
+     *
+     * @return true when corrective movement was requested
+     */
+    public static boolean supporting() {
         IBaritone baritone = instance();
 
         IMovement movement = movement(baritone);
         if (movement == null || !rising(movement)) {
-            return;
+            return false;
         }
 
         IPlayerContext context = baritone.getPlayerContext();
-        if (context.player() == null || context.world() == null) {
-            return;
+        if (context.player() == null || context.player().isGliding() ||
+            !context.player().isOnGround() || context.world() == null) {
+            return false;
         }
 
         BlockPos pos = movement.getDest().down();
         if (!context.world().getBlockState(pos).isReplaceable()) {
-            return;
+            return false;
         }
 
         BlockPos source = movement.getSrc();
-        if (!aligned(context, source)) {
-            move(baritone, source);
-        }
+        return !aligned(context, source) && move(context, source);
     }
 
     /**
@@ -280,30 +312,22 @@ public final class Baritone {
     /**
      * Moves the player toward the current movement source.
      *
-     * @param baritone Baritone instance
+     * @param context Baritone player context
      * @param pos target block position
+     * @return true when corrective movement was requested
      */
-    private static void move(IBaritone baritone, BlockPos pos) {
-        IPlayerContext context = baritone.getPlayerContext();
-        var handler = baritone.getInputOverrideHandler();
+    private static boolean move(IPlayerContext context, BlockPos pos) {
+        pause();
 
-        double dx = pos.getX() + 0.5 - context.player().getX();
-        double dz = pos.getZ() + 0.5 - context.player().getZ();
-        double yaw = Math.toRadians(context.player().getYaw());
+        double dx = pos.getX() - context.player().getX();
+        double dz = pos.getZ() - context.player().getZ();
+        double yaw = Math.atan2(-(dx + 0.5), dz + 0.5);
 
-        double forward = -Math.sin(yaw) * dx + Math.cos(yaw) * dz;
-        double sideway = -Math.cos(yaw) * dx - Math.sin(yaw) * dz;
+        Player.rotate((float) Math.toDegrees(yaw));
+        client.options.sneakKey.setPressed(true);
+        client.options.forwardKey.setPressed(true);
 
-        handler.setInputForceState(Input.MOVE_FORWARD, false);
-        handler.setInputForceState(Input.MOVE_BACK, false);
-        handler.setInputForceState(Input.MOVE_LEFT, false);
-        handler.setInputForceState(Input.MOVE_RIGHT, false);
-
-        Input input = sideway * sideway >= forward * forward ?
-            sideway >= 0.0 ? Input.MOVE_RIGHT : Input.MOVE_LEFT :
-            forward >= 0.0 ? Input.MOVE_FORWARD : Input.MOVE_BACK;
-
-        handler.setInputForceState(input, true);
+        return true;
     }
 
     /**
@@ -316,9 +340,9 @@ public final class Baritone {
     private static boolean aligned(IPlayerContext context, BlockPos pos) {
         if (context.player().getBlockY() != pos.getY()) return false;
 
-        Box box = context.player().getBoundingBox();
-        return box.minX >= pos.getX() && box.maxX <= pos.getX() + 1.0
-            && box.minZ >= pos.getZ() && box.maxZ <= pos.getZ() + 1.0;
+        Box box = context.player().getBoundingBox().expand(0.1);
+        return box.minX > pos.getX() && box.maxX < pos.getX() + 1.0
+            && box.minZ > pos.getZ() && box.maxZ < pos.getZ() + 1.0;
     }
 
     /**

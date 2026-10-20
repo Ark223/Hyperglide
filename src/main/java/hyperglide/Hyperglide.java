@@ -2,8 +2,7 @@ package hyperglide;
 
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
-import baritone.api.IBaritoneProvider;
-import baritone.api.event.events.TickEvent;
+import baritone.api.event.events.PlayerUpdateEvent;
 import baritone.api.event.events.type.EventState;
 import baritone.api.event.listener.AbstractGameEventListener;
 import com.mojang.logging.LogUtils;
@@ -13,13 +12,16 @@ import hyperglide.modules.*;
 import hyperglide.utilities.Baritone;
 import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
+import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
 import meteordevelopment.meteorclient.systems.hud.Hud;
 import meteordevelopment.meteorclient.systems.hud.HudGroup;
 import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
+import meteordevelopment.orbit.EventHandler;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
+import java.util.Arrays;
 import java.util.function.Supplier;
 
 public class Hyperglide extends MeteorAddon implements AbstractGameEventListener {
@@ -50,7 +52,7 @@ public class Hyperglide extends MeteorAddon implements AbstractGameEventListener
         new Entry(RocketBoost::new),
         new Entry(Scaffolding::new),
         new Entry(SelfTrapper::new),
-        new Entry(TriggerBot::new)
+        new Entry(TriggerBot::new),
     };
 
     /**
@@ -85,27 +87,23 @@ public class Hyperglide extends MeteorAddon implements AbstractGameEventListener
      * @param event Baritone tick event
      */
     @Override
-    public void onTick(TickEvent event) {
-        if (event.getState() != EventState.PRE ||
-            event.getType() != TickEvent.Type.IN) {
-            return;
-        }
-
-        if (this.active(AutoPilot.class) ||
-            this.active(BounceFly.class)) {
+    public void onPlayerUpdate(PlayerUpdateEvent event) {
+        if (event.getState() == EventState.PRE) {
             Baritone.assist();
         }
     }
 
     /**
-     * Checks whether a specified module is active.
+     * Hides pause and resume messages printed by Baritone.
      *
-     * @param type module type
-     * @return true when the module is active
+     * @param event received chat message
      */
-    private boolean active(Class<? extends Module> type) {
-        Module module = Modules.get().get(type);
-        return module != null && module.isActive();
+    @EventHandler
+    private void message(ReceiveMessageEvent event) {
+        String text = event.getMessage().getString().trim();
+        if (text.contains("Paused") || text.contains("Resumed")) {
+            event.cancel();
+        }
     }
 
     /**
@@ -125,10 +123,7 @@ public class Hyperglide extends MeteorAddon implements AbstractGameEventListener
      * @return true when a conflicting addon is loaded
      */
     private boolean blocked(Entry entry) {
-        for (String id : entry.mods()) {
-            if (this.loaded(id)) return true;
-        }
-        return false;
+        return Arrays.stream(entry.mods()).anyMatch(this::loaded);
     }
 
     /**
@@ -142,11 +137,10 @@ public class Hyperglide extends MeteorAddon implements AbstractGameEventListener
     }
 
     /**
-     * Registers tick listener for the Baritone assistance.
+     * Registers event listeners for the Baritone assistance.
      */
     private void register() {
-        IBaritoneProvider provider = BaritoneAPI.getProvider();
-        IBaritone instance = provider.getPrimaryBaritone();
+        IBaritone instance = BaritoneAPI.getProvider().getPrimaryBaritone();
         instance.getGameEventHandler().registerEventListener(this);
     }
 
