@@ -674,10 +674,12 @@ public class BounceFly extends Module {
         Vec3d side = new Vec3d(-front.z, 0, front.x);
         Vec3d vel = this.mc.player.getVelocity();
 
+        double px = this.mc.player.getX();
+        double py = Math.floor(this.mc.player.getY());
+        double pz = this.mc.player.getZ();
+
         double scan = vel.horizontalLength();
         scan = Math.max(1.0, scan * this.collision.get());
-
-        double level = Math.floor(this.mc.player.getY());
 
         double width = this.mc.player.getWidth() / 2.0;
         width *= Math.abs(side.x) + Math.abs(side.z);
@@ -686,11 +688,8 @@ public class BounceFly extends Module {
         double distance = Double.MAX_VALUE;
 
         for (int idx = -1; idx <= 1; idx++) {
-            for (double py = 0.5; py <= 1.5; py++) {
-                Vec3d start = new Vec3d(
-                    this.mc.player.getX(), level + py,
-                    this.mc.player.getZ()
-                );
+            for (double off = 0.5; off <= 1.5; off += 1.0) {
+                Vec3d start = new Vec3d(px, py + off, pz);
 
                 start = start.add(side.multiply(width * idx));
                 Vec3d end = start.add(front.multiply(scan));
@@ -700,7 +699,9 @@ public class BounceFly extends Module {
                     continue;
                 }
 
-                double current = start.squaredDistanceTo(hit.getPos());
+                Vec3d center = hit.getBlockPos().toCenterPos();
+                double current = start.squaredDistanceTo(center);
+
                 if (current < distance) {
                     closest = hit.getBlockPos();
                     distance = current;
@@ -737,13 +738,14 @@ public class BounceFly extends Module {
         float sector = (yaw + 22.5F) / 45.0F;
 
         int face = MathHelper.floor(sector) & 7;
+
+        this.dx = dxs[face];
+        this.dz = dzs[face];
+
         double len = Math.hypot(this.dx, this.dz);
 
         this.yaw = face > 4 ? face - 8 : face;
         this.yaw *= 45.0;
-
-        this.dx = dxs[face];
-        this.dz = dzs[face];
 
         this.nx = this.dx / len;
         this.nz = this.dz / len;
@@ -833,7 +835,7 @@ public class BounceFly extends Module {
     //region Height correction
 
     /**
-     * Finds the most likely highway level around the current one.
+     * Finds the most likely highway level being followed.
      *
      * @return detected highway level
      */
@@ -842,7 +844,7 @@ public class BounceFly extends Module {
     }
 
     /**
-     * Scores clear supported positions along the highway center line.
+     * Scores clear positions along the highway center line.
      *
      * @param level highway level to check
      * @return number of valid center positions
@@ -912,10 +914,10 @@ public class BounceFly extends Module {
     }
 
     /**
-     * Checks whether a block has a collision shape.
+     * Checks whether a block can collide with the player.
      *
      * @param pos block position to check
-     * @return true when the block can collide with the player
+     * @return true when the block is solid and collidable
      */
     private boolean solid(BlockPos pos) {
         BlockState state = this.mc.world.getBlockState(pos);
