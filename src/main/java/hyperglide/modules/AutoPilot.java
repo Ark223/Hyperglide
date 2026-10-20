@@ -1,6 +1,9 @@
 package hyperglide.modules;
 
 import hyperglide.Hyperglide;
+import hyperglide.navigation.Route;
+import hyperglide.navigation.Route.Leg;
+import hyperglide.navigation.Segment;
 import hyperglide.utilities.Baritone;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Elytra;
@@ -8,9 +11,6 @@ import hyperglide.utilities.Flight;
 import hyperglide.utilities.Hotbar;
 import hyperglide.utilities.Placement;
 import hyperglide.utilities.Player;
-import hyperglide.navigation.Route;
-import hyperglide.navigation.Route.Leg;
-import hyperglide.navigation.Segment;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.systems.modules.Module;
@@ -18,6 +18,7 @@ import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.BlockState;
 import net.minecraft.fluid.Fluid;
+import net.minecraft.fluid.FluidState;
 import net.minecraft.fluid.Fluids;
 import net.minecraft.item.Items;
 import net.minecraft.util.math.BlockPos;
@@ -59,11 +60,11 @@ public class AutoPilot extends Module {
 
     private int leg = -1;
     private int timer;
+    private int bottom;
 
     private boolean join;
     private boolean enabled;
     private boolean emergency;
-    private boolean raised;
 
     /**
      * Defines the current travel stage.
@@ -206,10 +207,11 @@ public class AutoPilot extends Module {
 
         this.leg = -1;
         this.timer = 0;
+        this.bottom = 0;
+
         this.join = false;
         this.enabled = false;
         this.emergency = false;
-        this.raised = false;
     }
 
     /**
@@ -417,6 +419,7 @@ public class AutoPilot extends Module {
                 return;
             }
 
+            this.blocks = null;
             this.timer = settle;
             this.state = State.Seek;
             return;
@@ -453,40 +456,41 @@ public class AutoPilot extends Module {
     }
 
     /**
-     * Prepares the selected clear space for launch.
+     * Clears temporary supports before starting launch flight.
      */
     private void prepare() {
-        if (!this.mc.player.isOnGround() || this.open()) {
+        if (this.blocks == null && !this.settled()) {
+            return;
+        }
+
+        if (this.excavate()) {
             this.launch();
-            return;
-        }
-
-        if (!this.close(this.point, 1.5)) {
-            this.goal = null;
-            this.timer = settle;
-            return;
-        }
-
-        if (this.timer > 0) {
-            this.timer--;
-            return;
-        }
-
-        if (!this.raised) {
-            this.launch();
-            return;
-        }
-
-        this.toward(this.point);
-
-        if (this.mining != null) {
-            BlockPos pos = this.point.down();
-            this.mining.mine(pos, Direction.UP);
+            this.flight();
         }
     }
 
     /**
-     * Resumes normal route flight after finding clear launch space.
+     * Waits for the launch position before collecting blocks.
+     *
+     * @return true when the support column is ready
+     */
+    private boolean settled() {
+        if (!this.close(this.point, 1.5)) {
+            this.goal = null;
+            this.timer = settle;
+            return false;
+        }
+
+        if (this.timer > 0 && --this.timer >= 0) {
+            return false;
+        }
+
+        this.blocks = this.column(this.point, this.bottom);
+        return true;
+    }
+
+    /**
+     * Resumes normal route flight after finding clear space.
      */
     private void launch() {
         this.abort();
@@ -494,7 +498,6 @@ public class AutoPilot extends Module {
         this.point = null;
         this.blocks = null;
         this.timer = 0;
-        this.raised = false;
 
         this.state = State.Flight;
     }
@@ -658,8 +661,7 @@ public class AutoPilot extends Module {
         this.mc.player.setPitch(-90.0F);
         this.glide();
 
-        if (this.timer > 0) {
-            this.timer--;
+        if (this.timer > 0 && --this.timer >= 0) {
             return;
         }
 
@@ -871,21 +873,79 @@ public class AutoPilot extends Module {
 
     //endregion
 
-    //region Clear space search
+    //region Highway exit
 
     /**
-     * Adjusts a clear space point for launch or exit use.
-     *
-     * @param point clear space point
-     * @param start whether selecting a launch point
-     * @return adjusted point to traverse to
+     * Moves to the selected exit block before starting the drop.
      */
-    private BlockPos adjust(BlockPos point, boolean start) {
-        if (!start) return point.up();
+    private void exit() {
+        if (this.point == null || this.leg < 0 ||
+            this.leg >= this.route.legs().size()) {
+            return;
+        }
 
-        this.raised = !this.solid(point.down());
-        return this.raised ? point.up() : point;
+        if (this.reach(this.point, lava)) this.fill();
+
+        if (this.goal == null || !this.goal.equals(this.point)) {
+            if (this.pathing()) this.abort();
+            this.walk(this.point, true);
+            return;
+        }
+
+        if (this.pathing() || !this.mc.player.isOnGround()) {
+            return;
+        }
+
+        if (!this.close(this.point, 1.5)) {
+            this.goal = null;
+            return;
+        }
+
+        int bot = this.point.getY() - height;
+        this.blocks = this.column(this.point, bot);
+
+        this.abort();
+        this.timer = settle;
+        this.state = State.Drop;
     }
+
+    /**
+     * Clears the selected exit column before resuming flight.
+     */
+    private void drop() {
+        if (this.point == null) return;
+
+        if (this.timer <= 0 || --this.timer < 0) {
+            if (this.excavate()) this.depart();
+        }
+    }
+
+    /**
+     * Stops exit and starts flying to the next route point.
+     */
+    private void depart() {
+        List<Leg> legs = this.route.legs();
+        if (this.leg < 0 || this.leg >= legs.size()) {
+            return;
+        }
+
+        Vec2f point = legs.get(this.leg).end();
+        BlockPos destination = this.waypoint(point);
+
+        this.release();
+
+        if (this.fly(destination, false)) {
+            this.point = null;
+            this.blocks = null;
+
+            this.timer = 0;
+            this.state = State.Flight;
+        }
+    }
+
+    //endregion
+
+    //region Clear space search
 
     /**
      * Finds the nearest clear space below the player.
@@ -895,7 +955,6 @@ public class AutoPilot extends Module {
      */
     private BlockPos space(boolean start) {
         BlockPos origin = this.mc.player.getBlockPos();
-        if (start) this.raised = false;
 
         int limit = origin.getY() - floor;
         limit -= start ? 0 : height - 1;
@@ -943,25 +1002,52 @@ public class AutoPilot extends Module {
 
         for (int px = -range; px <= range; px++) {
             for (int pz = -range; pz <= range; pz++) {
-                if (Math.max(Math.abs(px), Math.abs(pz)) != range) {
-                    continue;
-                }
 
-                for (int offset = 0; offset <= limit; offset++) {
-                    int py = base - offset;
+                int test = Math.max(Math.abs(px), Math.abs(pz));
+                if (test != range) continue;
 
-                    BlockPos center = origin.add(px, py, pz);
-                    BlockPos point = this.closest(center, origin);
+                BlockPos point = this.vertical(
+                    origin, px, pz, base, limit, distance
+                );
 
-                    double current = point.getSquaredDistance(origin);
-                    if (current >= distance || !this.clear(center)) {
-                        continue;
-                    }
-
+                if (point != null) {
+                    distance = point.getSquaredDistance(origin);
                     best = point;
-                    distance = current;
                 }
             }
+        }
+
+        return best;
+    }
+
+    /**
+     * Searches the vertical positions at a horizontal offset.
+     *
+     * @param origin player position
+     * @param px horizontal X offset
+     * @param pz horizontal Z offset
+     * @param base initial vertical offset
+     * @param limit vertical search distance
+     * @param distance nearest distance already found
+     * @return closest clear position, or null
+     */
+    private BlockPos vertical(BlockPos origin, int px,
+        int pz, int base, int limit, double distance) {
+
+        BlockPos best = null;
+
+        for (int offset = 0; offset <= limit; offset++) {
+            BlockPos center = origin.add(px, base - offset, pz);
+            BlockPos point = this.closest(center, origin);
+
+            double current = point.getSquaredDistance(origin);
+            if (current >= distance || !this.clear(center)) {
+                continue;
+            }
+
+            this.bottom = center.getY() - height / 2;
+            distance = current;
+            best = point;
         }
 
         return best;
@@ -991,14 +1077,25 @@ public class AutoPilot extends Module {
     }
 
     /**
+     * Adjusts a clear space point for launch or exit use.
+     *
+     * @param point clear space point
+     * @param start whether selecting a launch point
+     * @return adjusted point to traverse to
+     */
+    private BlockPos adjust(BlockPos point, boolean start) {
+        if (!start) return point.up();
+        return this.solid(point.down()) ? point : point.up();
+    }
+
+    /**
      * Checks whether the launch box above the player is clear.
      *
      * @return true when flight can start from the current position
      */
     private boolean open() {
         BlockPos origin = this.mc.player.getBlockPos();
-        BlockPos center = origin.up(height / 2);
-        return this.clear(center);
+        return this.clear(origin.up(height / 2));
     }
 
     /**
@@ -1021,8 +1118,8 @@ public class AutoPilot extends Module {
             return false;
         }
 
-        if (!this.loaded(minx, minz, maxx, maxz)) return false;
-        return this.empty(minx, miny, minz, maxx, maxy, maxz);
+        return this.loaded(minx, minz, maxx, maxz)
+            && this.empty(minx, miny, minz, maxx, maxy, maxz);
     }
 
     /**
@@ -1045,13 +1142,7 @@ public class AutoPilot extends Module {
             for (int px = minx; px <= maxx; px++) {
                 for (int pz = minz; pz <= maxz; pz++) {
                     pos.set(px, py, pz);
-
-                    BlockState state = this.mc.world.getBlockState(pos);
-                    Fluid fluid = state.getFluidState().getFluid();
-
-                    if (!state.isAir() && fluid != Fluids.FLOWING_LAVA) {
-                        return false;
-                    }
+                    if (!this.empty(pos)) return false;
                 }
             }
         }
@@ -1081,157 +1172,79 @@ public class AutoPilot extends Module {
 
     //endregion
 
-    //region Highway exit
+    //region Block control
 
     /**
-     * Moves to the selected exit block before starting the drop.
-     */
-    private void exit() {
-        if (this.point == null || this.leg < 0 ||
-            this.leg >= this.route.legs().size()) {
-            return;
-        }
-
-        if (this.reach(this.point, lava)) this.fill();
-
-        if (this.goal == null || !this.goal.equals(this.point)) {
-            if (this.pathing()) this.abort();
-            this.walk(this.point, true);
-            return;
-        }
-
-        if (this.pathing()) return;
-
-        if (!this.mc.player.isOnGround()) {
-            this.depart();
-            return;
-        }
-
-        if (!this.close(this.point, 1.5)) {
-            this.goal = null;
-            return;
-        }
-
-        this.blocks = this.column();
-
-        this.abort();
-        this.timer = settle;
-        this.state = State.Drop;
-    }
-
-    /**
-     * Mines the selected exit block while moving toward it.
-     */
-    private void drop() {
-        if (this.point == null) return;
-
-        if (this.timer > 0) {
-            this.timer--;
-            return;
-        }
-
-        if (this.blocks == null || this.blocks.isEmpty()) {
-            this.depart();
-            return;
-        }
-
-        this.blocks.removeIf(pos ->
-            this.mc.world.getBlockState(pos).isAir()
-        );
-
-        if (this.blocks.isEmpty()) {
-            this.depart();
-            return;
-        }
-
-        if (this.mc.player.isOnGround()) {
-            this.toward(this.point);
-        }
-
-        if (this.mining != null) {
-            for (BlockPos pos : this.blocks) {
-                this.mining.mine(pos, Direction.UP);
-            }
-        }
-    }
-
-    /**
-     * Collects the solid exit column below the selected point.
+     * Collects non-air blocks in a selected vertical column.
      *
-     * @return contiguous non-air blocks below the exit point
+     * @param point upper position of the column
+     * @param bottom lowest included block level
+     * @return column blocks ordered from highest to lowest
      */
-    private List<BlockPos> column() {
+    private List<BlockPos> column(BlockPos point, int bottom) {
         List<BlockPos> blocks = new ArrayList<>();
 
-        int px = this.point.getX();
-        int pz = this.point.getZ();
-
-        for (int py = this.point.getY() - 1;
-            py >= this.mc.world.getBottomY(); py--) {
-
+        int px = point.getX(), pz = point.getZ();
+        for (int py = point.getY() - 1; py >= bottom; py--) {
             BlockPos pos = new BlockPos(px, py, pz);
-            if (this.mc.world.getBlockState(pos).isAir()) {
-                break;
-            }
-
-            blocks.add(pos);
+            if (!this.empty(pos)) blocks.add(pos);
         }
 
         return blocks;
     }
 
     /**
-     * Stops exit and starts flying to the next route point.
+     * Moves toward and mines the highest remaining block.
+     *
+     * @return true when no blocks remain
      */
-    private void depart() {
-        List<Leg> legs = this.route.legs();
-        if (this.leg < 0 || this.leg >= legs.size()) {
-            return;
+    private boolean excavate() {
+        if (this.blocks == null) return false;
+
+        this.blocks.removeIf(pos -> this.empty(pos));
+
+        if (this.blocks.isEmpty()) {
+            this.release();
+            return true;
         }
 
-        Route.Leg leg = legs.get(this.leg);
-        BlockPos destination = this.waypoint(leg.end());
+        BlockPos pos = this.blocks.get(0);
+        this.toward(pos);
 
-        this.release();
-
-        if (!this.fly(destination, false)) {
-            return;
+        if (this.mining != null) {
+            this.mining.mine(pos, Direction.UP);
         }
 
-        this.point = null;
-        this.blocks = null;
-        this.timer = 0;
-
-        this.state = State.Flight;
+        return false;
     }
-
-    //endregion
-
-    //region Block control
 
     /**
      * Fills nearby lava source blocks with netherrack.
      */
     private void fill() {
-        AirPlace air = Modules.get().get(AirPlace.class);
-
         int slot = this.netherrack();
-        if (slot < 0 || air == null) return;
+        if (slot < 0) return;
+
+        AirPlace air = Modules.get().get(AirPlace.class);
+        if (air == null) return;
 
         BlockPos origin = this.mc.player.getBlockPos();
         BlockPos.Mutable pos = new BlockPos.Mutable();
 
+        int bx = origin.getX(), by = origin.getY();
+        int bz = origin.getZ();
+
         for (int px = -lava; px <= lava; px++) {
             for (int py = -lava; py <= lava; py++) {
                 for (int pz = -lava; pz <= lava; pz++) {
-                    if (px * px + py * py + pz * pz > lava * lava) {
-                        continue;
-                    }
 
-                    pos.set(origin.getX() + px, origin.getY() + py, origin.getZ() + pz);
-                    if (this.mc.world.getFluidState(pos).getFluid() != Fluids.LAVA) {
-                        continue;
-                    }
+                    int radius = px * px + py * py + pz * pz;
+                    if (radius > lava * lava) continue;
+
+                    pos.set(bx + px, by + py, bz + pz);
+
+                    FluidState state = this.mc.world.getFluidState(pos);
+                    if (state.getFluid() != Fluids.LAVA) continue;
 
                     air.place(pos.toImmutable(), slot);
                 }
@@ -1270,8 +1283,7 @@ public class AutoPilot extends Module {
      * @return true when every required block is present
      */
     private boolean support() {
-        if (this.blocks == null ||
-            this.blocks.isEmpty()) {
+        if (this.blocks == null || this.blocks.isEmpty()) {
             return false;
         }
 
@@ -1395,13 +1407,14 @@ public class AutoPilot extends Module {
      * @param pos block position to move toward
      */
     private void toward(BlockPos pos) {
-        Vec2f target = new Vec2f(
-            pos.getX() + 0.5F, pos.getZ() + 0.5F
-        );
-
         this.release();
-        this.rotate(target);
 
+        if (this.close(pos, 0.2)) return;
+
+        float px = pos.getX() + 0.5F;
+        float pz = pos.getZ() + 0.5F;
+
+        this.rotate(new Vec2f(px, pz));
         this.mc.options.forwardKey.setPressed(true);
     }
 
@@ -1415,9 +1428,8 @@ public class AutoPilot extends Module {
         this.mc.player.setVelocity(0.0, 0.0, 0.0);
         this.mc.player.setSprinting(false);
 
-        float yaw = MathHelper.wrapDegrees(
-            this.mc.player.getYaw() + 180.0F
-        );
+        float yaw = this.mc.player.getYaw();
+        yaw = MathHelper.wrapDegrees(yaw + 180.0F);
 
         this.mc.player.setYaw(yaw);
         this.mc.player.setPitch(0.0F);
@@ -1431,8 +1443,8 @@ public class AutoPilot extends Module {
     private void rotate(Vec2f point) {
         double px = point.x - this.mc.player.getX();
         double pz = point.y - this.mc.player.getZ();
-
         double yaw = Math.atan2(-px, pz);
+
         Player.rotate((float) Math.toDegrees(yaw));
     }
 
@@ -1522,7 +1534,7 @@ public class AutoPilot extends Module {
     }
 
     /**
-     * Checks exact proximity to a block position.
+     * Checks the exact proximity to a block position.
      *
      * @param pos block position
      * @param radius maximum distance
@@ -1536,10 +1548,22 @@ public class AutoPilot extends Module {
     }
 
     /**
-     * Checks whether a block has a collision shape.
+     * Checks whether a block is air or flowing lava.
      *
      * @param pos block position to check
-     * @return true when the block can collide with the player
+     * @return true when the block is air or flowing lava
+     */
+    private boolean empty(BlockPos pos) {
+        BlockState state = this.mc.world.getBlockState(pos);
+        Fluid fluid = state.getFluidState().getFluid();
+        return state.isAir() || fluid == Fluids.FLOWING_LAVA;
+    }
+
+    /**
+     * Checks whether a block can collide with the player.
+     *
+     * @param pos block position to check
+     * @return true when the block is solid and collidable
      */
     private boolean solid(BlockPos pos) {
         BlockState state = this.mc.world.getBlockState(pos);
