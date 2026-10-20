@@ -193,8 +193,9 @@ public class TriggerBot extends Module {
         if (!this.wall.get()) return false;
 
         HitResult block = camera.raycast(range, 0.0F, false);
-        return block.getType() != HitResult.Type.MISS
-            && block.squaredDistanceTo(camera) < hit.squaredDistanceTo(camera);
+        if (block.getType() == HitResult.Type.MISS) return false;
+
+        return block.squaredDistanceTo(camera) < hit.squaredDistanceTo(camera);
     }
 
     /**
@@ -204,8 +205,7 @@ public class TriggerBot extends Module {
      * @return true when the entity is a valid selected target
      */
     private boolean valid(Entity entity) {
-        return entity != null
-            && entity != this.mc.player
+        return entity != null && entity != this.mc.player
             && entity != this.mc.getCameraEntity()
             && entity.isAlive() && entity.canHit()
             && this.entities.get().contains(entity.getType());
