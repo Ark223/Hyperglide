@@ -32,6 +32,7 @@ import java.util.Locale;
 public class Navigation extends Module {
     private static final int rebuild = 20;
     private static final int recalc = 10;
+    private static final int settle = 20;
 
     private static final double border = 3750000.0;
     private static final double limit = 5000000.0;
@@ -215,6 +216,7 @@ public class Navigation extends Module {
 
     private int timer;
     private int pending;
+    private int restart;
     private Route route;
 
     private float mx;
@@ -257,9 +259,18 @@ public class Navigation extends Module {
 
         this.timer = 0;
         this.pending = 0;
+        this.restart = 0;
 
         this.parse(this.goal.get());
         this.reload();
+    }
+
+    /**
+     * Cancels any pending Auto Pilot restart.
+     */
+    @Override
+    public void onDeactivate() {
+        this.restart = 0;
     }
 
     //region Event handlers
@@ -273,8 +284,11 @@ public class Navigation extends Module {
     private void onTick(TickEvent.Post event) {
         if (!Client.nether() || this.mc.player == null) {
             this.route = null;
+            this.restart = 0;
             return;
         }
+
+        this.restart();
 
         if (this.pending > 0 && --this.pending == 0) {
             this.reload();
@@ -942,7 +956,6 @@ public class Navigation extends Module {
         }
 
         Vec2f mouse = Gui.mouse();
-
         if (this.drag == -1) {
             this.start(mouse, button);
         } else if (button == this.drag) {
@@ -1024,9 +1037,8 @@ public class Navigation extends Module {
         int left = (int) this.left();
         int top = (int) this.top();
 
-        BlockPos point = this.world(
-            mouse, this.view(Player.position()), left, top
-        );
+        View view = this.view(Player.position());
+        BlockPos point = this.world(mouse, view, left, top);
 
         this.goal.set(point.getX() + " " + point.getZ());
     }
@@ -1037,8 +1049,8 @@ public class Navigation extends Module {
      * @return map left position
      */
     private double left() {
-        int width = this.mc.getWindow().getScaledWidth();
-        return width - this.size.get() - margin + this.xoffset.get();
+        return this.mc.getWindow().getScaledWidth() -
+            this.size.get() - margin + this.xoffset.get();
     }
 
     /**
@@ -1072,21 +1084,33 @@ public class Navigation extends Module {
     //region Destination control
 
     /**
-     * Applies a destination change and restarts Auto Pilot.
+     * Applies a destination change and delays Auto Pilot restart.
      *
      * @param value typed destination value
      */
     private void change(String value) {
         BlockPos previous = this.point;
-
         this.parse(value);
+
         if (this.point.equals(previous)) return;
 
         AutoPilot pilot = Modules.get().get(AutoPilot.class);
-        if (pilot == null || !pilot.isActive()) return;
+        if (pilot == null) return;
 
-        pilot.toggle();
-        pilot.toggle();
+        if (pilot.isActive() || this.restart != 0) {
+            if (pilot.isActive()) pilot.toggle();
+            this.restart = settle;
+        }
+    }
+
+    /**
+     * Reactivates Auto Pilot once the destination has settled.
+     */
+    private void restart() {
+        if (this.restart == 0 || --this.restart > 0) return;
+
+        AutoPilot pilot = Modules.get().get(AutoPilot.class);
+        if (pilot != null && !pilot.isActive()) pilot.toggle();
     }
 
     /**
