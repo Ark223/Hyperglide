@@ -895,8 +895,13 @@ public class ControlFly extends Module {
      * @return true when direction or speed requires another rocket
      */
     private boolean launch(Vec3d dir, boolean boosted, boolean redirect) {
-        if (this.busy() || !this.stocked()) return false;
-        if (!boosted && redirect) return true;
+        if (!this.stocked()) return false;
+
+        boolean diving = (this.motion.input & 33) == 33;
+        if (diving && this.renew()) return true;
+
+        if (this.busy()) return false;
+        if (diving || !boosted && redirect) return true;
 
         Vec3d next = this.predict(this.mc.player.getVelocity(),
             this.motion.yaw, this.motion.pitch, boosted
