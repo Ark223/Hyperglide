@@ -84,7 +84,7 @@ public final class Flight {
     }
 
     /**
-     * Checks whether the current flight mode has usable equipment.
+     * Checks whether the flight mode has usable equipment.
      *
      * @return true when normal or spoofed flight is available
      */
@@ -108,8 +108,8 @@ public final class Flight {
             return true;
         }
 
-        return Elytra.equipped()
-            && Hotbar.find(Elytra::chestplate) >= 0;
+        if (!Elytra.equipped()) return false;
+        return Hotbar.find(Elytra::chestplate) >= 0;
     }
 
     /**
@@ -490,9 +490,11 @@ public final class Flight {
     private void clear() {
         if (this.restore && Client.ready() &&
             Elytra.equipped() && this.slot >= 0) {
+
             this.inventory();
             Inventory.swap(chest, this.slot);
         }
+
         this.reset();
     }
 

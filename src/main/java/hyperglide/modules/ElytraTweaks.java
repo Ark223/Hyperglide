@@ -41,7 +41,6 @@ public class ElytraTweaks extends Module {
 
     private static final int settle = 4;
     private static final int chest = 6;
-    private static final int limit = 6;
 
     private static final int xaxis = 1;
     private static final int zaxis = 2;
@@ -200,9 +199,6 @@ public class ElytraTweaks extends Module {
     private int resume;
     private boolean boost;
 
-    private int check;
-    private int stock;
-
     private int retry;
     private boolean escaping;
 
@@ -269,7 +265,6 @@ public class ElytraTweaks extends Module {
             this.speed *= drag;
         }
 
-        this.verify();
         this.flight();
         this.controls();
 
@@ -517,9 +512,6 @@ public class ElytraTweaks extends Module {
         this.sync = 0;
         this.resume = 0;
         this.boost = false;
-
-        this.check = 0;
-        this.stock = 0;
 
         this.retry = 0;
         this.input.reset();
@@ -861,7 +853,8 @@ public class ElytraTweaks extends Module {
      * Uses a rocket or starts a boosted takeoff.
      */
     private void trigger() {
-        if (this.phase > 0 || !Client.interaction()) {
+        if (!Client.ready() || !Client.interaction() ||
+            this.phase > 0) {
             return;
         }
 
@@ -871,7 +864,7 @@ public class ElytraTweaks extends Module {
                 return;
             }
 
-            this.request();
+            this.rocket();
             return;
         }
 
@@ -882,11 +875,11 @@ public class ElytraTweaks extends Module {
      * Starts a normal takeoff and prepares a rocket boost.
      */
     private void depart() {
-        this.retry = 0;
-
         this.jump = 0;
         this.sync = 0;
         this.boost = true;
+
+        this.retry = 0;
 
         if (this.flight.blocked()) {
             this.boost = false;
@@ -1032,49 +1025,6 @@ public class ElytraTweaks extends Module {
     }
 
     /**
-     * Uses a rocket and schedules a delayed check.
-     */
-    private void request() {
-        int stock = this.rockets();
-        if (!this.rocket()) return;
-
-        this.check = stock > 0 ? limit : 0;
-        this.stock = stock;
-    }
-
-    /**
-     * Retries the rocket when its count did not change.
-     */
-    private void verify() {
-        if (this.check <= 0 || --this.check > 0) {
-            return;
-        }
-
-        int stock = this.stock;
-        this.stock = 0;
-
-        if (stock > 0 && this.rockets() == stock) {
-            this.rocket();
-        }
-    }
-
-    /**
-     * Counts available firework rockets in the inventory.
-     *
-     * @return total firework count in the inventory
-     */
-    private int rockets() {
-        int count = Inventory.count(Items.FIREWORK_ROCKET);
-        ItemStack stack = this.mc.player.getOffHandStack();
-
-        if (stack.isOf(Items.FIREWORK_ROCKET)) {
-            count += stack.getCount();
-        }
-
-        return count;
-    }
-
-    /**
      * Uses an available firework rocket.
      *
      * @return true when the rocket was used
@@ -1086,7 +1036,7 @@ public class ElytraTweaks extends Module {
     /**
      * Uses an available firework rocket immediately.
      *
-     * @return true when the rocket was accepted
+     * @return true when the rocket interaction was accepted
      */
     private boolean firework() {
         return Elytra.firework();
