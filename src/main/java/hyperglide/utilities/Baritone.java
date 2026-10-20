@@ -340,7 +340,7 @@ public final class Baritone {
     private static boolean aligned(IPlayerContext context, BlockPos pos) {
         if (context.player().getBlockY() != pos.getY()) return false;
 
-        Box box = context.player().getBoundingBox().expand(0.1);
+        Box box = context.player().getBoundingBox().expand(0.05);
         return box.minX > pos.getX() && box.maxX < pos.getX() + 1.0
             && box.minZ > pos.getZ() && box.maxZ < pos.getZ() + 1.0;
     }

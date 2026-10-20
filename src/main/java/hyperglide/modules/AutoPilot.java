@@ -1175,7 +1175,7 @@ public class AutoPilot extends Module {
     //region Block control
 
     /**
-     * Collects non-air blocks in a selected vertical column.
+     * Collects minable blocks in a selected vertical column.
      *
      * @param point upper position of the column
      * @param bottom lowest included block level
