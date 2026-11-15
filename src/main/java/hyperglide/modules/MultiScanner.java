@@ -1,0 +1,1158 @@
+package hyperglide.modules;
+
+import hyperglide.Hyperglide;
+import hyperglide.scanner.Area;
+import hyperglide.scanner.Coverage;
+import hyperglide.scanner.Heatmap;
+import hyperglide.scanner.Meshing;
+import hyperglide.scanner.Xaero;
+import hyperglide.utilities.API;
+import hyperglide.utilities.Client;
+import hyperglide.utilities.Gui;
+import it.unimi.dsi.fastutil.longs.Long2ByteMap;
+import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
+import meteordevelopment.meteorclient.events.meteor.MouseScrollEvent;
+import meteordevelopment.meteorclient.events.render.Render2DEvent;
+import meteordevelopment.meteorclient.events.render.Render3DEvent;
+import meteordevelopment.meteorclient.events.world.TickEvent;
+import meteordevelopment.meteorclient.renderer.ShapeMode;
+import meteordevelopment.meteorclient.settings.*;
+import meteordevelopment.meteorclient.systems.hud.HudRenderer;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.SettingColor;
+import meteordevelopment.orbit.EventHandler;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.ChunkPos;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec2f;
+import net.minecraft.util.math.Vec3d;
+import org.lwjgl.glfw.GLFW;
+
+public class MultiScanner extends Module {
+    private static final double range = 1000.0;
+    private static final double margin = 8.0;
+
+    private static final int maximum = 8;
+    private static final int minimum = -4;
+    private static final int interval = 20;
+
+    private static final Area world = Area.defaults();
+
+    private static final Color background = new Color(0, 0, 0, 220);
+    private static final Color foreground = new Color(255, 255, 255, 255);
+
+    private final SettingGroup display = this.settings.getDefaultGroup();
+    private final SettingGroup colors = this.settings.createGroup("Colors");
+    private final SettingGroup heatmaps = this.settings.createGroup("Heatmap");
+    private final SettingGroup markers = this.settings.createGroup("Markers");
+
+    private final Setting<Boolean> render = this.display.add(new BoolSetting.Builder()
+        .name("render")
+        .description("Renders the chunk scanner map.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Boolean> lock = this.display.add(new BoolSetting.Builder()
+        .name("lock-map")
+        .description("Prevents moving the map window.")
+        .defaultValue(false)
+        .visible(this.render::get)
+        .build()
+    );
+
+    private final Setting<Mode> mode = this.display.add(new EnumSetting.Builder<Mode>()
+        .name("view-mode")
+        .description("Controls how the map view is centered.")
+        .defaultValue(Mode.Free)
+        .onChanged(value -> { if (value == Mode.Free) this.follow(); })
+        .visible(this.render::get)
+        .build()
+    );
+
+    private final Setting<Integer> xoffset = this.display.add(new IntSetting.Builder()
+        .name("x-offset")
+        .description("Horizontal map window offset.")
+        .defaultValue(0)
+        .range(-3840, 3840)
+        .noSlider()
+        .visible(this.render::get)
+        .build()
+    );
+
+    private final Setting<Integer> yoffset = this.display.add(new IntSetting.Builder()
+        .name("y-offset")
+        .description("Vertical map window offset.")
+        .defaultValue(170)
+        .range(-2160, 2160)
+        .noSlider()
+        .visible(this.render::get)
+        .build()
+    );
+
+    private final Setting<Integer> size = this.display.add(new IntSetting.Builder()
+        .name("window-size")
+        .description("Size of the scanner map in pixels.")
+        .defaultValue(150)
+        .min(100)
+        .sliderMax(600)
+        .onChanged(value -> this.clamp())
+        .visible(this.render::get)
+        .build()
+    );
+
+    private final Setting<Double> info = this.display.add(new DoubleSetting.Builder()
+        .name("info-scale")
+        .description("Scale of chunk information text.")
+        .defaultValue(1.0)
+        .min(0.5)
+        .sliderMax(1.5)
+        .visible(this.render::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> legacy = this.colors.add(new ColorSetting.Builder()
+        .name("legacy")
+        .description("Legacy 1.12 chunks.")
+        .defaultValue(new SettingColor(16, 148, 148, 220))
+        .visible(this.render::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> modern = this.colors.add(new ColorSetting.Builder()
+        .name("modern")
+        .description("Modern 1.19+ chunks.")
+        .defaultValue(new SettingColor(32, 32, 32, 220))
+        .visible(this.render::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> recent = this.colors.add(new ColorSetting.Builder()
+        .name("recent")
+        .description("Chunks generated by you.")
+        .defaultValue(new SettingColor(192, 0, 0, 220))
+        .visible(this.render::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> flows = this.colors.add(new ColorSetting.Builder()
+        .name("flows")
+        .description("Chunks containing flowing lava.")
+        .defaultValue(new SettingColor(255, 255, 255, 220))
+        .visible(this.render::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> columns = this.colors.add(new ColorSetting.Builder()
+        .name("columns")
+        .description("Chunks containing lava columns.")
+        .defaultValue(new SettingColor(255, 255, 0, 220))
+        .visible(this.render::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> portals = this.colors.add(new ColorSetting.Builder()
+        .name("portals")
+        .description("Chunks containing open portals.")
+        .defaultValue(new SettingColor(144, 80, 224, 220))
+        .visible(this.render::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> player = this.colors.add(new ColorSetting.Builder()
+        .name("player")
+        .description("Player position color.")
+        .defaultValue(new SettingColor(255, 128, 0, 255))
+        .visible(this.render::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> outline = this.colors.add(new ColorSetting.Builder()
+        .name("outline")
+        .description("Map outline color.")
+        .defaultValue(new SettingColor(200, 200, 200, 128))
+        .visible(this.render::get)
+        .build()
+    );
+
+    private final Setting<Boolean> enabled = this.heatmaps.add(new BoolSetting.Builder()
+        .name("enable")
+        .description("Displays heatmap instead of flags.")
+        .defaultValue(false)
+        .onChanged(enabled -> { if (enabled) this.reload(); })
+        .build()
+    );
+
+    private final Setting<Integer> heat = this.heatmaps.add(new IntSetting.Builder()
+        .name("max-heat")
+        .description("Square width for maximum heat.")
+        .defaultValue(15)
+        .min(7)
+        .sliderMax(63)
+        .onChanged(value -> { if (this.enabled.get()) this.reload(); })
+        .visible(this.enabled::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> cold = this.heatmaps.add(new ColorSetting.Builder()
+        .name("cold-temp")
+        .description("Color for the lowest heat score.")
+        .defaultValue(new SettingColor(0, 64, 224, 220))
+        .visible(this.enabled::get)
+        .onChanged(value -> this.reload())
+        .build()
+    );
+
+    private final Setting<SettingColor> mild = this.heatmaps.add(new ColorSetting.Builder()
+        .name("mild-temp")
+        .description("Color between low and high heat.")
+        .defaultValue(new SettingColor(255, 192, 64, 220))
+        .visible(this.enabled::get)
+        .onChanged(value -> this.reload())
+        .build()
+    );
+
+    private final Setting<SettingColor> warm = this.heatmaps.add(new ColorSetting.Builder()
+        .name("warm-temp")
+        .description("Color for the highest heat score.")
+        .defaultValue(new SettingColor(255, 64, 0, 220))
+        .visible(this.enabled::get)
+        .onChanged(value -> this.reload())
+        .build()
+    );
+
+    private final Setting<Boolean> spots = this.markers.add(new BoolSetting.Builder()
+        .name("enable-")
+        .description("Shows the proposed portal spots.")
+        .defaultValue(false)
+        .onChanged(value -> { if (!value) this.coverage.reset(); })
+        .build()
+    );
+
+    private final Setting<Boolean> glow = this.markers.add(new BoolSetting.Builder()
+        .name("soft-glow")
+        .description("Draws a soft glow around markers.")
+        .defaultValue(true)
+        .visible(this.spots::get)
+        .build()
+    );
+
+    private final Setting<Double> thickness = this.markers.add(new DoubleSetting.Builder()
+        .name("thickness")
+        .description("thickness of the portal markers.")
+        .defaultValue(0.25)
+        .min(0.05)
+        .sliderRange(0.05, 0.5)
+        .visible(this.spots::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> beam = this.markers.add(new ColorSetting.Builder()
+        .name("beam-color")
+        .description("Color of the portal markers.")
+        .defaultValue(new SettingColor(164, 80, 255, 255))
+        .visible(this.spots::get)
+        .build()
+    );
+
+    private final Heatmap heatmap = new Heatmap();
+    private final Coverage coverage = new Coverage();
+
+    private final Meshing meshing = new Meshing(this::priority, this::color);
+    private final Meshing heatmesh = new Meshing(this::intensity, this::gradient);
+
+    private Long2ByteMap heatdata = new Long2ByteOpenHashMap();
+
+    private int drag = -1;
+    private int pixels = 3;
+    private int tick;
+
+    private float mx, my;
+    private boolean tracking;
+
+    private Xaero xaero = null;
+    private Vec3d prev = Vec3d.ZERO;
+    private Vec2f offset = Vec2f.ZERO;
+
+    /**
+     * Controls how the map view is centered.
+     */
+    private enum Mode {
+        Free,
+        Origin,
+        Player
+    }
+
+    public MultiScanner() {
+        super(Hyperglide.CATEGORY, "multi-scanner",
+            "Provides nether scanning and portal skip detection."
+        );
+    }
+
+    /**
+     * Initializes the map and begins tracking chunks.
+     */
+    @Override
+    public void onActivate() {
+        if (!FabricLoader.getInstance().isModLoaded("xaeroplus")) {
+            this.error("Xaero is required to run this module.");
+            this.toggle();
+            return;
+        }
+
+        this.drag = -1;
+        this.init();
+        this.open();
+    }
+
+    /**
+     * Stops tracking chunk updates.
+     */
+    @Override
+    public void onDeactivate() {
+        this.close();
+    }
+
+    //region Event handlers
+
+    /**
+     * Updates chunk loading and tracks the current dimension.
+     *
+     * @param event pre-tick event
+     */
+    @EventHandler
+    private void onTick(TickEvent.Pre event) {
+        if (this.xaero == null) return;
+
+        if (!Client.nether() || this.mc.player == null) {
+            this.close();
+            return;
+        }
+
+        if (!this.tracking) this.open();
+
+        this.xaero.tick();
+        if (!this.xaero.ready()) return;
+
+        this.relocate();
+
+        if (this.enabled.get() &&
+            this.heatdata != this.xaero.scores()) {
+            this.reload();
+        }
+
+        if (++this.tick >= interval) {
+            if (this.spots.get()) this.optimize();
+            this.tick = 0;
+        }
+    }
+
+    /**
+     * Changes the chunk map scale when scrolling over it.
+     *
+     * @param event mouse scroll event
+     */
+    @EventHandler
+    private void onScroll(MouseScrollEvent event) {
+        if (!this.visible() || !Gui.interactive() ||
+            event.value == 0.0) return;
+
+        Vec2f mouse = Gui.mouse();
+        if (!this.hovered(mouse.x, mouse.y)) return;
+
+        int pixels = this.pixels + (event.value > 0.0 ? 1 : -1);
+        pixels = MathHelper.clamp(pixels, minimum, maximum);
+
+        if (pixels != this.pixels) {
+            View view = this.view();
+            this.pixels = pixels;
+
+            if (this.mode.get() == Mode.Free) {
+                this.zoom(mouse, view);
+            }
+        }
+
+        event.cancel();
+    }
+
+    /**
+     * Renders information about the hovered chunk.
+     *
+     * @param event 2D render event
+     */
+    @EventHandler
+    private void onRender2D(Render2DEvent event) {
+        if (!this.visible() || !Gui.interactive()) {
+            return;
+        }
+
+        Vec2f mouse = Gui.mouse();
+        if (!this.hovered(mouse.x, mouse.y)) return;
+
+        ChunkPos pos = this.chunk(mouse, this.view());
+        if (!world.contains(pos.toLong())) return;
+
+        int px = pos.getCenterX(), pz = pos.getCenterZ();
+        String position = "X: " + px + " Z: " + pz;
+
+        String detail = this.detail(pos.toLong());
+        String[] lines = {position, detail};
+
+        double gui = this.mc.getWindow().getScaleFactor();
+        HudRenderer renderer = HudRenderer.INSTANCE;
+
+        renderer.begin(event.drawContext);
+        this.box(renderer, lines, gui);
+        renderer.end();
+    }
+
+    /**
+     * Renders visible beams at the selected portal spots.
+     *
+     * @param event active 3D render event
+     */
+    @EventHandler
+    private void onRender3D(Render3DEvent event) {
+        if (!this.spots.get() || !this.tracking ||
+            !Client.nether() || !this.xaero.ready()) {
+            return;
+        }
+
+        Coverage.Result result = this.coverage.result();
+        if (result == null) return;
+
+        double bottom = this.mc.world.getBottomY();
+        double top = this.mc.world.getTopYInclusive();
+
+        for (Coverage.Spot spot : result.spots()) {
+            this.beam(event, spot.key(), bottom, top + 1.0);
+        }
+    }
+
+    /**
+     * Renders the chunk scanner map.
+     *
+     * @param context draw context
+     */
+    public void render(DrawContext context) {
+        if (!this.visible()) return;
+
+        this.pan();
+
+        View view = this.view();
+        Area area = this.area(view);
+
+        int size = this.size.get();
+        int left = (int) this.left();
+        int top = (int) this.top();
+
+        context.fill(left, top, left + size, top + size, background.getPacked());
+        context.enableScissor(left + 1, top + 1, left + size - 1, top + size - 1);
+
+        Long2ByteMap chunks = this.enabled.get() ? this.heatdata : this.xaero.chunks();
+
+        Meshing mesh = this.enabled.get() ? this.heatmesh : this.meshing;
+        mesh.draw(context, area, chunks, view.sx, view.sz, view.pixels, view.step);
+
+        this.mark(context, view);
+        context.disableScissor();
+        this.frame(context, left, top);
+    }
+
+    //endregion
+
+    //region Map display
+
+    /**
+     * Calculates the map view around the selected chunk.
+     *
+     * @return current map view
+     */
+    private View view() {
+        Vec2f center = this.center();
+
+        int pixels = Math.max(this.pixels, 1);
+        int step = this.step();
+
+        double half = (this.size.get() - pixels) * 0.5;
+        double sx = this.left() + half - center.x * pixels / step;
+        double sy = this.top() + half - center.y * pixels / step;
+
+        return new View((int) sx, (int) sy, pixels, step);
+    }
+
+    /**
+     * Returns the current chunk center of the map.
+     *
+     * @return map center in chunk coordinates
+     */
+    private Vec2f center() {
+        return switch (this.mode.get()) {
+            case Free -> this.offset;
+            case Origin -> Vec2f.ZERO;
+            case Player -> {
+                ChunkPos pos = this.mc.player.getChunkPos();
+                yield new Vec2f(pos.x, pos.z);
+            }
+        };
+    }
+
+    /**
+     * Keeps the free map view inside the world limits.
+     */
+    private void clamp() {
+        if (this.mode.get() != Mode.Free) return;
+
+        int pixels = Math.max(1, this.pixels);
+        float half = this.size.get() - pixels + 1f;
+        half *= this.step() / (2f * pixels);
+
+        float ox = (world.x1() + world.x2()) * 0.5f;
+        float oz = (world.z1() + world.z2()) * 0.5f;
+        float px = this.offset.x, py = this.offset.y;
+
+        float minx = world.x1() + half, maxx = world.x2() - half;
+        float minz = world.z1() + half, maxz = world.z2() - half;
+
+        if (minx <= maxx) ox = MathHelper.clamp(px, minx, maxx);
+        if (minz <= maxz) oz = MathHelper.clamp(py, minz, maxz);
+
+        this.offset = new Vec2f(ox, oz);
+    }
+
+    /**
+     * Calculates the visible chunk area to fit in a map.
+     *
+     * @param view current map view
+     * @return visible chunk area
+     */
+    private Area area(View view) {
+        int size = this.size.get() - 1;
+
+        double scale = (double) view.step / view.pixels;
+
+        double x1 = (this.left() - view.sx) * scale;
+        double z1 = (this.top() - view.sz) * scale;
+        double x2 = (this.left() + size - view.sx) * scale;
+        double z2 = (this.top() + size - view.sz) * scale;
+
+        int minx = Math.max((int) Math.floor(x1), world.x1());
+        int minz = Math.max((int) Math.floor(z1), world.z1());
+        int maxx = Math.min((int) Math.floor(x2), world.x2());
+        int maxz = Math.min((int) Math.floor(z2), world.z2());
+
+        if (minx > maxx || minz > maxz) return null;
+        return new Area(minx, minz, maxx, maxz);
+    }
+
+    /**
+     * Finds the chunk beneath the mouse position.
+     *
+     * @param mouse mouse position
+     * @param view current map view
+     * @return hovered chunk position
+     */
+    private ChunkPos chunk(Vec2f mouse, View view) {
+        int cx = (int) Math.floor((mouse.x - view.sx) / view.pixels);
+        int cz = (int) Math.floor((mouse.y - view.sz) / view.pixels);
+        return new ChunkPos(cx * view.step, cz * view.step);
+    }
+
+    /**
+     * Centers the free map on the current player chunk.
+     */
+    private void follow() {
+        if (this.mc.player == null) return;
+
+        ChunkPos pos = this.mc.player.getChunkPos();
+        this.offset = new Vec2f(pos.x, pos.z);
+        this.clamp();
+    }
+
+    /**
+     * Recenters the map view after player teleports.
+     */
+    private void relocate() {
+        Vec3d pos = API.pos(this.mc.player);
+
+        if (this.prev != null && this.mode.get() != Mode.Origin &&
+            pos.squaredDistanceTo(this.prev) > range * range) {
+            this.follow();
+        }
+
+        this.prev = pos;
+    }
+
+    /**
+     * Preserves the hovered terrain while changing chunk size.
+     *
+     * @param mouse mouse position
+     * @param view current map view
+     */
+    private void zoom(Vec2f mouse, View view) {
+        ChunkPos prev = this.chunk(mouse, view);
+        View updated = this.view();
+
+        float half = this.size.get() * 0.5f;
+        float scale = (float) view.step / view.pixels;
+        scale -= (float) updated.step / updated.pixels;
+
+        this.offset = this.offset.add(new Vec2f(
+            (float) (mouse.x - this.left() - half) * scale,
+            (float) (mouse.y - this.top() - half) * scale
+        ));
+
+        ChunkPos next = this.chunk(mouse, this.view());
+        int ox = prev.x - next.x, oz = prev.z - next.z;
+
+        this.offset = this.offset.add(new Vec2f(ox, oz));
+        this.clamp();
+    }
+
+    /**
+     * Returns how many chunks each map pixel represents.
+     *
+     * @return one at normal zoom, otherwise a power of two
+     */
+    private int step() {
+        if (this.pixels > 0) return 1;
+        return 1 << (1 - this.pixels);
+    }
+
+    /**
+     * Checks whether the scanner map is visible.
+     *
+     * @return true when the map is visible
+     */
+    private boolean visible() {
+        return this.isActive() && this.render.get()
+            && this.tracking && this.xaero.ready()
+            && Client.nether() && !Gui.vanilla();
+    }
+
+    //endregion
+
+    //region Map rendering
+
+    /**
+     * Draws a beam with an optional glow at a selected chunk.
+     *
+     * @param event active 3D render event
+     * @param key packed chunk position
+     * @param bottom lowest world Y
+     * @param top upper world Y boundary
+     */
+    private void beam(Render3DEvent event, long key, double bottom, double top) {
+        ChunkPos chunk = new ChunkPos(key);
+        Vec3d pos = new Vec3d(chunk.getCenterX(), 0.0, chunk.getCenterZ());
+
+        double width = this.thickness.get() / 2.0;
+        SettingColor color = this.beam.get();
+
+        if (this.glow.get()) {
+            for (int idx = 3; idx >= 1; idx--) {
+                double spread = width + idx * 0.15;
+                int alpha = Math.max(4, color.a / (4 + idx * 3));
+
+                SettingColor side = this.alpha(color, alpha);
+                SettingColor line = this.alpha(color, 0);
+
+                Box box = this.box(pos, spread, bottom, top);
+                event.renderer.box(box, side, line, ShapeMode.Sides, 0);
+            }
+        }
+
+        Box box = this.box(pos, width, bottom, top);
+        SettingColor side = this.alpha(color, Math.max(24, color.a / 4));
+        event.renderer.box(box, side, color, ShapeMode.Both, 0);
+    }
+
+    /**
+     * Copies a beam color with the requested alpha channel.
+     */
+    private SettingColor alpha(SettingColor color, int alpha) {
+        return new SettingColor(color.r, color.g, color.b, alpha);
+    }
+
+    /**
+     * Constructs a full-height beam box around a chunk center.
+     */
+    private Box box(Vec3d pos, double width, double bottom, double top) {
+        return new Box(
+            pos.x - width, bottom, pos.z - width,
+            pos.x + width, top, pos.z + width
+        );
+    }
+
+    /**
+     * Draws the player marker as a complete chunk cell.
+     *
+     * @param context draw context
+     * @param view map coordinates
+     */
+    private void mark(DrawContext context, View view) {
+        ChunkPos pos = this.mc.player.getChunkPos();
+        if (!world.contains(pos.toLong())) return;
+
+        this.cell(context, view, pos.x, pos.z, this.player.get());
+    }
+
+    /**
+     * Draws the player's chunk at the current zoom level.
+     *
+     * @param context draw context
+     * @param view map coordinates
+     * @param cx chunk X coordinate
+     * @param cz chunk Z coordinate
+     * @param color chunk color
+     */
+    private void cell(DrawContext context,
+        View view, int cx, int cz, Color color) {
+
+        int sx = Math.floorDiv(cx, view.step);
+        int sy = Math.floorDiv(cz, view.step);
+
+        sx = view.sx + sx * view.pixels;
+        sy = view.sz + sy * view.pixels;
+
+        context.fill(sx, sy, sx + view.pixels,
+            sy + view.pixels, color.getPacked()
+        );
+    }
+
+    /**
+     * Draws the outline around the scanner map window.
+     *
+     * @param context draw context
+     * @param left map left position
+     * @param top map top position
+     */
+    private void frame(DrawContext context, int left, int top) {
+        int size = this.size.get();
+        int color = this.outline.get().getPacked();
+        API.border(context, left, top, size, size, color);
+    }
+
+    /**
+     * Selects the highest priority chunk flag.
+     *
+     * @param flags chunk flags
+     * @return visible flag mask
+     */
+    private int priority(int flags) {
+        if ((flags & Xaero.Type.Portal.mask) != 0) {
+            return Xaero.Type.Portal.mask;
+        }
+
+        if ((flags & Xaero.Type.Column.mask) != 0) {
+            return Xaero.Type.Column.mask;
+        }
+
+        if ((flags & Xaero.Type.Flowing.mask) != 0) {
+            return Xaero.Type.Flowing.mask;
+        }
+
+        if ((flags & Xaero.Type.Recent.mask) != 0) {
+            return Xaero.Type.Recent.mask;
+        }
+
+        if ((flags & Xaero.Type.Modern.mask) != 0) {
+            return Xaero.Type.Modern.mask;
+        }
+
+        if ((flags & Xaero.Type.Legacy.mask) != 0) {
+            return Xaero.Type.Legacy.mask;
+        }
+
+        return 0;
+    }
+
+    /**
+     * Returns the color for a selected chunk flag.
+     *
+     * @param mask selected classification
+     * @return corresponding chunk color
+     */
+    private int color(int mask) {
+        if (mask == Xaero.Type.Portal.mask) {
+            return this.portals.get().getPacked();
+        }
+
+        if (mask == Xaero.Type.Column.mask) {
+            return this.columns.get().getPacked();
+        }
+
+        if (mask == Xaero.Type.Flowing.mask) {
+            return this.flows.get().getPacked();
+        }
+
+        if (mask == Xaero.Type.Recent.mask) {
+            return this.recent.get().getPacked();
+        }
+
+        if (mask == Xaero.Type.Modern.mask) {
+            return this.modern.get().getPacked();
+        }
+
+        return this.legacy.get().getPacked();
+    }
+
+    /**
+     * Returns the raw skip score used for meshing.
+     *
+     * @param value raw skip width
+     * @return skip priority
+     */
+    private int intensity(int value) {
+        return value & 255;
+    }
+
+    /**
+     * Returns the color of a heatmap cell.
+     *
+     * @param value raw skip width
+     * @return opaque ARGB color
+     */
+    private int gradient(int value) {
+        return this.heatmap.color(value);
+    }
+
+    //endregion
+
+    //region Info rendering
+
+    /**
+     * Returns the score or flags for a position.
+     *
+     * @param key chunk position
+     * @return text displayed below the map
+     */
+    private String detail(long key) {
+        if (this.enabled.get()) {
+            byte score = this.heatdata.get(key);
+            return "Portal Skip Score: " + score;
+        }
+
+        byte flags = this.xaero.chunks().get(key);
+        return this.types(flags);
+    }
+
+    /**
+     * Formats the recorded flags of a chunk.
+     *
+     * @param flags chunk flags
+     * @return readable flags
+     */
+    private String types(byte flags) {
+        if (flags == 0) return "Flag: Unknown";
+
+        StringBuilder text = new StringBuilder();
+        for (Xaero.Type type : Xaero.Type.values()) {
+            if ((flags & type.mask) == 0) continue;
+            if (!text.isEmpty()) text.append(" + ");
+            text.append(type.name());
+        }
+
+        return "Flag: " + text;
+    }
+
+    /**
+     * Draws centered chunk information below the map.
+     *
+     * @param renderer HUD renderer
+     * @param lines information lines
+     * @param gui GUI scale factor
+     */
+    private void box(HudRenderer renderer, String[] lines, double gui) {
+        Color color = this.outline.get();
+
+        double scale = this.info.get();
+        double padding = 3.0 * scale * gui;
+
+        double width = this.size.get() * gui;
+        double height = renderer.textHeight(false, scale);
+        double box = height * lines.length + padding * 2.0;
+
+        double top = (this.top() + this.size.get() + 2.0) * gui;
+        double level = top + padding, left = this.left() * gui;
+
+        renderer.quad(left, top, width, box, background);
+        renderer.quad(left, top, width, gui, color);
+        renderer.quad(left, top + box - gui, width, gui, color);
+        renderer.quad(left, top, gui, box, color);
+        renderer.quad(left + width - gui, top, gui, box, color);
+
+        for (String line : lines) {
+            double length = renderer.textWidth(line, false, scale);
+            double shift = left + (width - length) * 0.5;
+
+            renderer.text(line, shift, level, foreground, false, scale);
+            level += height;
+        }
+    }
+
+    //endregion
+
+    //region Map interaction
+
+    /**
+     * Moves the window or pans the map while dragging.
+     */
+    private void pan() {
+        if (!Gui.interactive()) {
+            this.drag = -1;
+            return;
+        }
+
+        int button = this.button();
+        if (button == -1) {
+            this.drag = -1;
+            return;
+        }
+
+        Vec2f mouse = Gui.mouse();
+        if (this.drag == -1) {
+            this.start(mouse, button);
+        } else if (button == this.drag) {
+            this.shift(mouse);
+        }
+    }
+
+    /**
+     * Returns the currently pressed map drag button.
+     *
+     * @return mouse button, or -1 when dragging is inactive
+     */
+    private int button() {
+        if (this.mode.get() == Mode.Free &&
+            Gui.pressed(GLFW.GLFW_MOUSE_BUTTON_LEFT)) {
+            return GLFW.GLFW_MOUSE_BUTTON_LEFT;
+        }
+
+        if (!this.lock.get() &&
+            Gui.pressed(GLFW.GLFW_MOUSE_BUTTON_RIGHT)) {
+            return GLFW.GLFW_MOUSE_BUTTON_RIGHT;
+        }
+
+        return -1;
+    }
+
+    /**
+     * Starts map dragging from the current mouse position.
+     *
+     * @param mouse mouse position
+     * @param button active mouse button
+     */
+    private void start(Vec2f mouse, int button) {
+        if (this.hovered(mouse.x, mouse.y)) {
+            this.drag = button;
+            this.mx = mouse.x;
+            this.my = mouse.y;
+        }
+    }
+
+    /**
+     * Moves the window or map while dragging.
+     *
+     * @param mouse current mouse position
+     */
+    private void shift(Vec2f mouse) {
+        float dx = mouse.x - this.mx;
+        float dy = mouse.y - this.my;
+
+        if (this.drag == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+            this.xoffset.set(this.xoffset.get() + Math.round(dx));
+            this.yoffset.set(this.yoffset.get() + Math.round(dy));
+        } else {
+            this.move(dx, dy);
+        }
+
+        this.mx = mouse.x;
+        this.my = mouse.y;
+    }
+
+    /**
+     * Moves the map according to the zoom level.
+     *
+     * @param dx horizontal mouse movement
+     * @param dy vertical mouse movement
+     */
+    private void move(float dx, float dy) {
+        float scale = (float) this.step();
+        scale /= Math.max(1, this.pixels);
+
+        float xoff = -dx * scale;
+        float yoff = -dy * scale;
+
+        Vec2f offset = new Vec2f(xoff, yoff);
+        this.offset = this.offset.add(offset);
+        this.clamp();
+    }
+
+    /**
+     * Returns the map left position.
+     *
+     * @return map left position
+     */
+    private double left() {
+        return this.mc.getWindow().getScaledWidth() -
+            this.size.get() - margin + this.xoffset.get();
+    }
+
+    /**
+     * Returns the map top position.
+     *
+     * @return map top position
+     */
+    private double top() {
+        return margin + this.yoffset.get();
+    }
+
+    /**
+     * Checks whether the mouse is inside the map.
+     *
+     * @param mx mouse X position
+     * @param my mouse Y position
+     * @return true when the mouse is inside the map
+     */
+    private boolean hovered(double mx, double my) {
+        double size = this.size.get();
+
+        double left = this.left();
+        double top = this.top();
+
+        return mx >= left && mx <= left + size
+            && my >= top && my <= top + size;
+    }
+
+    //endregion
+
+    //region Scanner control
+
+    /**
+     * Initializes the tracker if it does not exist.
+     */
+    private void init() {
+        if (this.xaero == null) {
+            this.xaero = new Xaero();
+        }
+    }
+
+    /**
+     * Starts tracking chunk flags in the nether.
+     */
+    private void open() {
+        if (this.tracking || !Client.nether() ||
+            this.mc.player == null) return;
+
+        this.follow();
+        this.meshing.reset();
+        this.heatmesh.reset();
+
+        this.heatdata = new Long2ByteOpenHashMap();
+        this.coverage.reset();
+
+        this.tick = 0;
+        this.tracking = true;
+        this.prev = API.pos(this.mc.player);
+
+        this.xaero.start(this::changed, this::loaded);
+        if (this.xaero.ready() && this.enabled.get()) {
+            this.reload();
+        }
+    }
+
+    /**
+     * Stops tracking and releases the scanner state.
+     */
+    private void close() {
+        if (!this.tracking) return;
+
+        this.xaero.stop();
+        this.meshing.reset();
+        this.heatmesh.reset();
+
+        this.heatdata = new Long2ByteOpenHashMap();
+        this.coverage.reset();
+
+        this.drag = -1;
+        this.tick = 0;
+
+        this.tracking = false;
+        this.prev = null;
+    }
+
+    /**
+     * Refreshes the map after database loading completes.
+     */
+    private void loaded() {
+        this.meshing.reset();
+        if (this.enabled.get()) this.reload();
+    }
+
+    /**
+     * Requests updated portal coverage around the player.
+     */
+    private void optimize() {
+        if (this.mc.player != null && this.xaero.ready()) {
+            ChunkPos center = this.mc.player.getChunkPos();
+            this.coverage.update(this.xaero.scores(), center);
+        }
+    }
+
+    /**
+     * Displays the latest completed portal skip widths.
+     */
+    private void reload() {
+        if (this.xaero == null) return;
+
+        this.heatmap.palette(
+            this.heat.get(), rgb(this.cold.get()),
+            rgb(this.mild.get()), rgb(this.warm.get())
+        );
+
+        if (this.xaero.ready() && Client.nether()) {
+            this.heatdata = this.xaero.scores();
+            this.heatmesh.reset();
+        }
+    }
+
+    /**
+     * Returns the RGB part of a configured color.
+     *
+     * @param color selected color
+     * @return RGB color without opacity
+     */
+    private static int rgb(SettingColor color) {
+        return color.getPacked() & 0xFFFFFF;
+    }
+
+    /**
+     * Invalidates cached meshes when chunk flags change.
+     *
+     * @param key packed chunk position
+     */
+    private void changed(long key) {
+        this.meshing.changed(key);
+        this.heatmesh.changed(key);
+    }
+
+    //endregion
+
+    //region Data structures
+
+    /**
+     * Represents the map origin and size of a chunk cell.
+     *
+     * @param sx screen X origin
+     * @param sz screen Y origin
+     * @param pixels pixels occupied by one map cell
+     * @param step chunks covered by one map cell
+     */
+    private record View(int sx, int sz, int pixels, int step) {}
+
+    //endregion
+}

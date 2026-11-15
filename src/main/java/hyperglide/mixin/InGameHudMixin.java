@@ -1,5 +1,6 @@
 package hyperglide.mixin;
 
+import hyperglide.modules.MultiScanner;
 import hyperglide.modules.Navigation;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import net.minecraft.client.gui.DrawContext;
@@ -13,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(InGameHud.class)
 public abstract class InGameHudMixin {
     /**
-     * Renders the Navigation map.
+     * Renders the navigation and scanner maps.
      *
      * @param context draw context
      * @param counter render tick counter
@@ -22,6 +23,9 @@ public abstract class InGameHudMixin {
     @Inject(method = "render", at = @At("TAIL"))
     private void hyperglide$render(DrawContext context,
         RenderTickCounter counter, CallbackInfo info) {
+
+        MultiScanner scanner = Modules.get().get(MultiScanner.class);
+        if (scanner != null) scanner.render(context);
 
         Navigation module = Modules.get().get(Navigation.class);
         if (module != null) module.render(context);

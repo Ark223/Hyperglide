@@ -9,10 +9,13 @@ import com.mojang.logging.LogUtils;
 import hyperglide.hud.AvgSpeed;
 import hyperglide.hud.TruePing;
 import hyperglide.modules.*;
+import hyperglide.scanner.Loader;
 import hyperglide.utilities.Baritone;
 import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
+import meteordevelopment.meteorclient.events.game.GameLeftEvent;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
+import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.systems.hud.Hud;
 import meteordevelopment.meteorclient.systems.hud.HudGroup;
 import meteordevelopment.meteorclient.systems.modules.Category;
@@ -44,13 +47,13 @@ public class Hyperglide extends MeteorAddon implements AbstractGameEventListener
         new Entry(FD3Crafter::new),
         new Entry(ForceLog::new),
         new Entry(MiningTweaks::new),
+        new Entry(MultiScanner::new),
         new Entry(Navigation::new),
         new Entry(NoCoordLeak::new),
         new Entry(NoSprintFov::new),
         new Entry(Overview::new),
         new Entry(RaidStarter::new),
         new Entry(RocketBoost::new),
-        new Entry(Scaffolding::new),
         new Entry(SelfTrapper::new),
         new Entry(TriggerBot::new),
     };
@@ -94,6 +97,16 @@ public class Hyperglide extends MeteorAddon implements AbstractGameEventListener
     }
 
     /**
+     * Tracks the player's horizontal movement speed.
+     *
+     * @param event pre-tick event
+     */
+    @EventHandler(priority = 100)
+    private void tick(TickEvent.Pre event) {
+        AvgSpeed.track();
+    }
+
+    /**
      * Hides pause and resume messages printed by Baritone.
      *
      * @param event received chat message
@@ -104,6 +117,17 @@ public class Hyperglide extends MeteorAddon implements AbstractGameEventListener
         if (text.contains("Paused") || text.contains("Resumed")) {
             event.cancel();
         }
+    }
+
+    /**
+     * Clears cached chunk data when leaving the current world.
+     *
+     * @param event game disconnect event
+     */
+    @EventHandler
+    private void leave(GameLeftEvent event) {
+        Loader.cancel();
+        AvgSpeed.reset();
     }
 
     /**
