@@ -81,7 +81,7 @@ public class AutoWeb extends Module {
     }
 
     /**
-     * Clears runtime state and prepares the placement timer.
+     * Clears runtime state and prepares the timer.
      */
     @Override
     public void onActivate() {
@@ -213,16 +213,15 @@ public class AutoWeb extends Module {
      * @return predicted movement offset
      */
     private Vec3d prediction(Entity entity) {
-        if (this.extrapolation.get() == 0) {
+        int offset = this.extrapolation.get();
+        if (offset == 0) return Vec3d.ZERO;
+
+        Vec3d velocity = entity.getVelocity();
+        if (velocity.lengthSquared() >= edge) {
+            return velocity.multiply(offset);
+        } else {
             return Vec3d.ZERO;
         }
-
-        Vec3d vel = entity.getVelocity();
-        if (vel.lengthSquared() < edge) {
-            return Vec3d.ZERO;
-        }
-
-        return vel.multiply(this.extrapolation.get());
     }
 
     //endregion
