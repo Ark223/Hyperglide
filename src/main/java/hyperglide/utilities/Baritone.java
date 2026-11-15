@@ -15,7 +15,6 @@ import baritone.api.utils.IPlayerContext;
 import baritone.api.utils.input.Input;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
 import java.util.List;
 
 /**
@@ -24,7 +23,11 @@ import java.util.List;
 public final class Baritone {
     private static final MinecraftClient client = MinecraftClient.getInstance();
 
+    private static final double threshold = 0.17;
+    private static final int interval = 4;
+
     private static boolean paused;
+    private static int timer;
 
     private Baritone() {}
 
@@ -147,8 +150,7 @@ public final class Baritone {
      */
     public static void resume() {
         if (!paused) return;
-        client.options.forwardKey.setPressed(false);
-        client.options.sneakKey.setPressed(false);
+        send(false, false, false);
         paused = !instance().getCommandManager().execute("resume");
     }
 
@@ -255,7 +257,19 @@ public final class Baritone {
      * Helps Baritone step onto blocks it needs to place.
      */
     public static void assist() {
+        if (waiting()) return;
         if (!supporting()) resume();
+    }
+
+    /**
+     * Keeps Baritone paused briefly after the assisted jump.
+     *
+     * @return true while waiting to resume pathing
+     */
+    private static boolean waiting() {
+        if (timer <= 0) return false;
+        if (--timer == 0) resume();
+        return true;
     }
 
     /**
@@ -283,7 +297,11 @@ public final class Baritone {
         }
 
         BlockPos source = movement.getSrc();
-        return !aligned(context, source) && move(context, source);
+        if (!aligned(context, source)) {
+            return move(context, source);
+        } else {
+            return jump();
+        }
     }
 
     /**
@@ -324,10 +342,36 @@ public final class Baritone {
         double yaw = Math.atan2(-(dx + 0.5), dz + 0.5);
 
         Player.rotate((float) Math.toDegrees(yaw));
-        client.options.sneakKey.setPressed(true);
-        client.options.forwardKey.setPressed(true);
-
+        send(false, true, true);
         return true;
+    }
+
+    /**
+     * Starts an assisted jump before resuming Baritone path.
+     *
+     * @return true when a jump was started
+     */
+    private static boolean jump() {
+        if (!paused) return false;
+
+        send(true, false, false);
+        timer = interval;
+        return true;
+    }
+
+    /**
+     * Updates movement keys used during assisted block climbing.
+     *
+     * @param jump whether to jump
+     * @param forward whether to move forward
+     * @param sneak whether to sneak
+     */
+    private static void send(boolean jump, boolean forward, boolean sneak) {
+        if (!jump && !forward && !sneak) timer = 0;
+
+        client.options.jumpKey.setPressed(jump);
+        client.options.sneakKey.setPressed(sneak);
+        client.options.forwardKey.setPressed(forward);
     }
 
     /**
@@ -340,9 +384,9 @@ public final class Baritone {
     private static boolean aligned(IPlayerContext context, BlockPos pos) {
         if (context.player().getBlockY() != pos.getY()) return false;
 
-        Box box = context.player().getBoundingBox().expand(0.05);
-        return box.minX > pos.getX() && box.maxX < pos.getX() + 1.0
-            && box.minZ > pos.getZ() && box.maxZ < pos.getZ() + 1.0;
+        double dx = context.player().getX() - pos.getX() - 0.5;
+        double dz = context.player().getZ() - pos.getZ() - 0.5;
+        return (dx * dx + dz * dz) <= (threshold * threshold);
     }
 
     /**
