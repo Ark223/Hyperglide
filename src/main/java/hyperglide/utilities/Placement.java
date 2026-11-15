@@ -3,9 +3,6 @@ package hyperglide.utilities;
 import net.minecraft.block.Block;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
@@ -38,22 +35,7 @@ public final class Placement {
      * @return true when the placement interaction was sent
      */
     public static boolean place(BlockPos pos, int slot) {
-        ItemStack stack = Hotbar.stack(slot);
-        if (!(stack.getItem() instanceof BlockItem item)) {
-            return false;
-        }
-
-        if (!Hotbar.swap(slot)) return false;
-
-        try {
-            place(pos);
-            client.player.swingHand(Hand.MAIN_HAND);
-
-            sound(item, pos);
-            return true;
-        } finally {
-            Hotbar.restore();
-        }
+        return place(air(pos), slot);
     }
 
     /**
@@ -64,8 +46,7 @@ public final class Placement {
      * @return true when the placement interaction was sent
      */
     public static boolean place(BlockHitResult hit, int slot) {
-        ItemStack stack = Hotbar.stack(slot);
-        if (!(stack.getItem() instanceof BlockItem)) {
+        if (!(Hotbar.stack(slot).getItem() instanceof BlockItem)) {
             return false;
         }
 
@@ -74,11 +55,7 @@ public final class Placement {
         }
 
         try {
-            client.interactionManager.interactBlock(
-                client.player, Hand.MAIN_HAND, hit
-            );
-
-            client.player.swingHand(Hand.MAIN_HAND);
+            place(hit);
             return true;
         } finally {
             Hotbar.restore();
@@ -111,23 +88,15 @@ public final class Placement {
      * @param guard receives true only while the interaction is sent
      */
     public static void place(BlockHitResult hit, Consumer<Boolean> guard) {
-        PlayerActionC2SPacket swap = new PlayerActionC2SPacket(
-            PlayerActionC2SPacket.Action.SWAP_ITEM_WITH_OFFHAND,
-            BlockPos.ORIGIN, Direction.DOWN
-        );
-
-        client.player.networkHandler.sendPacket(swap);
         if (guard != null) guard.accept(true);
 
         try {
-            client.player.networkHandler.sendPacket(
-                new PlayerInteractBlockC2SPacket(Hand.OFF_HAND, hit,
-                    client.player.currentScreenHandler.getRevision() + 2
-                )
+            client.player.swingHand(Hand.MAIN_HAND);
+            client.interactionManager.interactBlock(
+                client.player, Hand.MAIN_HAND, hit
             );
         } finally {
             if (guard != null) guard.accept(false);
-            client.player.networkHandler.sendPacket(swap);
         }
     }
 
@@ -138,9 +107,8 @@ public final class Placement {
      * @return direct block hit result for the destination
      */
     private static BlockHitResult air(BlockPos pos) {
-        return new BlockHitResult(
-            Vec3d.ofCenter(pos), Direction.UP, pos, false
-        );
+        Vec3d center = Vec3d.ofCenter(pos);
+        return new BlockHitResult(center, Direction.UP, pos, false);
     }
 
     /**
@@ -150,8 +118,8 @@ public final class Placement {
      * @return true when the block can be replaced
      */
     public static boolean open(BlockPos pos) {
-        return client.world != null
-            && client.world.getBlockState(pos).isReplaceable();
+        if (client.world == null) return false;
+        return client.world.getBlockState(pos).isReplaceable();
     }
 
     /**
