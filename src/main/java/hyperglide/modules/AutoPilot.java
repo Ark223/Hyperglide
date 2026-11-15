@@ -33,7 +33,7 @@ public class AutoPilot extends Module {
     private static final double approach = 128.0;
     private static final double proximity = 3.0;
 
-    private static final int halt = 25;
+    private static final int halt = 30;
     private static final int lava = 3;
     private static final int level = 120;
 
@@ -1479,6 +1479,7 @@ public class AutoPilot extends Module {
         this.mc.options.forwardKey.setPressed(false);
         this.mc.options.backKey.setPressed(false);
         this.mc.options.leftKey.setPressed(false);
+
         this.mc.options.rightKey.setPressed(false);
         this.mc.options.jumpKey.setPressed(false);
         this.mc.options.sneakKey.setPressed(false);
