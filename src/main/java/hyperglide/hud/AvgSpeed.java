@@ -1,6 +1,7 @@
 package hyperglide.hud;
 
 import hyperglide.Hyperglide;
+import hyperglide.utilities.API;
 import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.settings.EnumSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
@@ -9,11 +10,15 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.systems.hud.elements.TextHud;
+import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.util.math.Vec3d;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Locale;
 
 public class AvgSpeed extends TextHud {
+    private static final double ticks = 20.0;
+
     public static final HudElementInfo<TextHud> info = new HudElementInfo<>(
         Hyperglide.HUD_GROUP, "avg-speed",
         "Displays the average horizontal movement speed.",
@@ -49,8 +54,9 @@ public class AvgSpeed extends TextHud {
 
     private final Deque<Double> speeds = new ArrayDeque<>();
 
-    private double px = Double.NaN;
-    private double pz = Double.NaN;
+    private static ClientPlayerEntity player;
+    private static Vec3d previous;
+    private static double speed;
 
     private double total;
     private String value = "";
@@ -69,7 +75,7 @@ public class AvgSpeed extends TextHud {
     }
 
     /**
-     * Samples speed before Meteor refreshes the text element.
+     * Refreshes the text using the latest speed samples.
      *
      * @param renderer HUD renderer
      */
@@ -79,16 +85,61 @@ public class AvgSpeed extends TextHud {
         super.tick(renderer);
     }
 
+    //region Public interface
+
+    /**
+     * Tracks the player's movement speed each game tick.
+     */
+    public static void track() {
+        ClientPlayerEntity entity = MeteorClient.mc.player;
+        if (entity == null || MeteorClient.mc.world == null) {
+            reset();
+            return;
+        }
+
+        Vec3d current = API.pos(entity);
+
+        if (player == entity && previous != null) {
+            double dx = current.x - previous.x;
+            double dz = current.z - previous.z;
+            speed = Math.hypot(dx, dz) * ticks;
+        } else {
+            speed = 0.0;
+        }
+
+        player = entity;
+        previous = current;
+    }
+
+    /**
+     * Returns the movement speed in blocks per second.
+     *
+     * @return horizontal movement speed
+     */
+    public static double speed() {
+        return speed;
+    }
+
+    /**
+     * Clears movement tracking when leaving a world.
+     */
+    public static void reset() {
+        player = null;
+        previous = null;
+        speed = 0.0;
+    }
+
     /**
      * Clears the stored speed samples.
      */
     private void clear() {
         this.speeds.clear();
-
-        this.px = Double.NaN;
-        this.pz = Double.NaN;
-        this.total = 0;
+        this.total = 0.0;
     }
+
+    //endregion
+
+    //region Internal tracking
 
     /**
      * Returns the rolling average of the horizontal speed.
@@ -101,23 +152,7 @@ public class AvgSpeed extends TextHud {
             return Double.NaN;
         }
 
-        double px = MeteorClient.mc.player.getX();
-        double pz = MeteorClient.mc.player.getZ();
-
-        if (!Double.isFinite(this.px)) {
-            this.px = px;
-            this.pz = pz;
-            return Double.NaN;
-        }
-
-        double dx = px - this.px;
-        double dz = pz - this.pz;
-
-        this.px = px;
-        this.pz = pz;
-
-        double speed = Math.hypot(dx, dz) * 20.0;
-
+        double speed = speed();
         this.speeds.addLast(speed);
         this.total += speed;
 
@@ -150,4 +185,6 @@ public class AvgSpeed extends TextHud {
         this.text.set("Avg Speed: #1{" + number + "} " + suffix);
         this.value = value;
     }
+
+    //endregion
 }

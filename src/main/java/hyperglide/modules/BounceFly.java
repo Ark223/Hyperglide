@@ -1,6 +1,7 @@
 package hyperglide.modules;
 
 import hyperglide.Hyperglide;
+import hyperglide.hud.AvgSpeed;
 import hyperglide.utilities.Baritone;
 import hyperglide.utilities.Client;
 import hyperglide.utilities.Elytra;
@@ -102,7 +103,7 @@ public class BounceFly extends Module {
         .name("collision-ticks")
         .description("How many movement ticks ahead to scan for obstacles.")
         .defaultValue(8)
-        .min(5)
+        .min(3)
         .sliderMax(10)
         .visible(() -> this.passer.get() && this.avoid.get())
         .build()
@@ -207,7 +208,7 @@ public class BounceFly extends Module {
         if (!this.takeoff()) return;
         if (this.blocked()) return;
 
-        this.stuck();
+        this.stuck(AvgSpeed.speed());
     }
 
     //endregion
@@ -317,8 +318,8 @@ public class BounceFly extends Module {
     private void launch(Vec3d velocity) {
         if (this.mc.player.isOnGround()) {
             this.launch = this.started ||
-                this.mc.player.isSprinting() &&
-                velocity.horizontalLength() > 0.05;
+                AvgSpeed.speed() >= 1.0 &&
+                this.mc.player.isSprinting();
             this.jump = 0;
             return;
         }
@@ -441,11 +442,10 @@ public class BounceFly extends Module {
 
     /**
      * Detects slow movement and starts recovery pathing.
+     * 
+     * @param speed horizontal movement speed
      */
-    private void stuck() {
-        Vec3d motion = this.mc.player.getVelocity();
-        double speed = motion.horizontalLength() * ticks;
-
+    private void stuck(double speed) {
         if (!this.passer.get() || speed >= stop) {
             this.slow = 0;
             return;
@@ -672,14 +672,12 @@ public class BounceFly extends Module {
     private BlockPos collision() {
         Vec3d front = new Vec3d(this.nx, 0, this.nz);
         Vec3d side = new Vec3d(-front.z, 0, front.x);
-        Vec3d vel = this.mc.player.getVelocity();
-
         double px = this.mc.player.getX();
         double py = Math.floor(this.mc.player.getY());
         double pz = this.mc.player.getZ();
 
-        double scan = vel.horizontalLength();
-        scan = Math.max(1.0, scan * this.collision.get());
+        double scan = AvgSpeed.speed() / ticks;
+        scan = Math.max(3.0, scan * this.collision.get());
 
         double width = this.mc.player.getWidth() / 2.0;
         width *= Math.abs(side.x) + Math.abs(side.z);
