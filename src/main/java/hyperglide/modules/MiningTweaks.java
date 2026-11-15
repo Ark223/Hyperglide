@@ -50,6 +50,13 @@ public class MiningTweaks extends Module {
         .build()
     );
 
+    private final Setting<Boolean> swapback = this.general.add(new BoolSetting.Builder()
+        .name("swap-hand-back")
+        .description("Restores the main hotbar slot after mining finishes.")
+        .defaultValue(true)
+        .build()
+    );
+
     private final Setting<Integer> retries = this.general.add(new IntSetting.Builder()
         .name("maximum-retries")
         .description("Maximum mining retries after a block fails to break.")
@@ -59,12 +66,21 @@ public class MiningTweaks extends Module {
         .build()
     );
 
+    private final Setting<Integer> timeout = this.general.add(new IntSetting.Builder()
+        .name("packet-timeout")
+        .description("Ticks to wait for server to confirm a block was broken.")
+        .defaultValue(6)
+        .min(1)
+        .sliderMax(10)
+        .build()
+    );
+
     private final Setting<Integer> cooldown = this.general.add(new IntSetting.Builder()
         .name("retry-cooldown")
         .description("Delay in ticks before starting another mining attempt.")
-        .defaultValue(6)
+        .defaultValue(7)
         .min(1)
-        .sliderMax(12)
+        .sliderMax(10)
         .build()
     );
 
@@ -74,15 +90,6 @@ public class MiningTweaks extends Module {
         .defaultValue(3)
         .min(1)
         .sliderMax(5)
-        .build()
-    );
-
-    private final Setting<Integer> validation = this.general.add(new IntSetting.Builder()
-        .name("validation-wait")
-        .description("Checks whether the block was mined after this many ticks.")
-        .defaultValue(5)
-        .min(1)
-        .sliderMax(10)
         .build()
     );
 
@@ -166,6 +173,7 @@ public class MiningTweaks extends Module {
     private Request last;
 
     private int tick;
+    private int slot;
     private long ready;
     private long stopped;
     private boolean fast;
@@ -200,6 +208,7 @@ public class MiningTweaks extends Module {
             this.action(secondary, Action.ABORT_DESTROY_BLOCK, secondary.pos);
         }
 
+        this.restore();
         this.reset();
     }
 
@@ -230,7 +239,7 @@ public class MiningTweaks extends Module {
         this.update(this.primary);
 
         this.fill();
-        this.remine();
+        if (!this.remine()) this.restore();
     }
 
     /**
@@ -309,6 +318,7 @@ public class MiningTweaks extends Module {
         this.last = null;
 
         this.tick = 0;
+        this.slot = -1;
         this.ready = 0;
         this.stopped = 0;
 
@@ -498,12 +508,36 @@ public class MiningTweaks extends Module {
     }
 
     /**
+     * Parks the primary target while preserving mining progress.
+     */
+    private void park() {
+        Target target = this.primary;
+
+        this.advance(target);
+        this.action(target, Action.STOP_DESTROY_BLOCK, target.pos);
+
+        this.secondary = target;
+        this.primary = null;
+    }
+
+    /**
+     * Checks whether all mining operations have finished.
+     *
+     * @return true when no mining work remains
+     */
+    private boolean idle() {
+        return this.primary == null && this.secondary == null
+            && this.queue.isEmpty() && this.waiting.isEmpty();
+    }
+
+    /**
      * Checks whether another primary target may begin.
      *
-     * @return true when the restart delay has elapsed or fast mode is active
+     * @return true when the delay has elapsed or fast mode is active
      */
     private boolean startable() {
-        return this.fast || System.currentTimeMillis() - this.stopped > restart;
+        long timer = System.currentTimeMillis();
+        return this.fast || timer - this.stopped > restart;
     }
 
     /**
@@ -517,19 +551,6 @@ public class MiningTweaks extends Module {
             && this.primary != null && !this.primary.arming
             && !this.primary.finished && !this.primary.instant
             && this.progress(this.primary) < 1.0;
-    }
-
-    /**
-     * Parks the primary target while preserving mining progress.
-     */
-    private void park() {
-        Target target = this.primary;
-
-        this.advance(target);
-        this.action(target, Action.STOP_DESTROY_BLOCK, target.pos);
-
-        this.secondary = target;
-        this.primary = null;
     }
 
     //endregion
@@ -583,11 +604,11 @@ public class MiningTweaks extends Module {
      * @param target target to start
      */
     private void start(Target target) {
-        long now = System.currentTimeMillis();
+        long timer = System.currentTimeMillis();
 
         target.arming = false;
-        target.started = now;
-        target.updated = now;
+        target.started = timer;
+        target.updated = timer;
 
         target.delta = this.delta(target);
         target.work = Math.max(0.0, target.delta);
@@ -615,6 +636,7 @@ public class MiningTweaks extends Module {
     private void update(Target target) {
         if (target == null) return;
 
+        long timer = System.currentTimeMillis() - target.finish;
         BlockState state = this.mc.world.getBlockState(target.pos);
 
         if (state.isAir()) {
@@ -628,44 +650,49 @@ public class MiningTweaks extends Module {
         }
 
         if (target.arming) {
-            int slot = this.best(target.state, target.pos);
-            int selected = Hotbar.selected();
+            this.arm(target);
+        } else if (!target.finished) {
+            this.work(target);
+        } else if (timer >= this.timeout.get() * 50L) {
+            this.verify(target);
+        }
+    }
 
-            if (slot != target.slot || selected != slot) {
-                target.slot = slot;
-                this.select(slot);
+    /**
+     * Waits until the mining tool is ready before starting a target.
+     *
+     * @param target target waiting to start
+     */
+    private void arm(Target target) {
+        int slot = this.best(target.state, target.pos);
+        int selected = Hotbar.selected();
 
-                target.arm = this.tick + this.arming.get();
-                return;
-            }
+        if (slot != target.slot || selected != slot) {
+            target.slot = slot;
+            this.select(slot);
 
-            if (this.tick < target.arm) {
-                return;
-            }
-
-            this.start(target);
+            target.arm = this.tick + this.arming.get();
             return;
         }
 
-        if (target.finished) {
-            int mod = target == this.primary ? 1 : 2;
-            int delay = mod * this.validation.get();
+        if (this.tick >= target.arm) this.start(target);
+    }
 
-            if (this.tick - target.finish >= delay) {
-                this.verify(target);
-            }
-            return;
-        }
+    /**
+     * Updates mining progress and handles idle or finished targets.
+     *
+     * @param target active mining target
+     */
+    private void work(Target target) {
+        long timer = System.currentTimeMillis();
 
         int slot = this.best(target.state, target.pos);
         if (slot != target.slot) target.slot = slot;
 
         this.advance(target);
-
         double progress = this.progress(target);
-        long elapsed = System.currentTimeMillis() - target.started;
 
-        if (!target.burst && elapsed >= pause &&
+        if (!target.burst && timer - target.started >= pause &&
             this.expected(target) >= pause && progress < 1.0) {
             this.burst(target);
         }
@@ -679,8 +706,8 @@ public class MiningTweaks extends Module {
      * @param target target receiving accumulated work
      */
     private void advance(Target target) {
-        long now = System.currentTimeMillis();
-        long elapsed = Math.max(0, now - target.updated);
+        long timer = System.currentTimeMillis();
+        long elapsed = Math.max(0, timer - target.updated);
 
         target.delta = this.delta(target);
 
@@ -688,7 +715,7 @@ public class MiningTweaks extends Module {
             target.work += target.delta * elapsed / 50.0;
         }
 
-        target.updated = now;
+        target.updated = timer;
     }
 
     /**
@@ -726,18 +753,18 @@ public class MiningTweaks extends Module {
     private void finish(Target target) {
         if (target.finished) return;
 
+        long timer = System.currentTimeMillis();
         this.advance(target);
 
         target.finished = true;
-        target.finish = this.tick;
+        target.finish = timer;
 
-        this.fast = target.burst;
+        this.fast = target.burst || target.instant;
+        this.stopped = timer;
 
         if (target == this.primary && !target.instant) {
             this.action(target, Action.STOP_DESTROY_BLOCK, target.pos);
         }
-
-        this.stopped = System.currentTimeMillis();
     }
 
     /**
@@ -786,11 +813,11 @@ public class MiningTweaks extends Module {
             return;
         }
 
-        long ready = System.currentTimeMillis();
-        ready += this.cooldown.get() * 50L;
+        long timer = System.currentTimeMillis();
+        timer += this.cooldown.get() * 50L;
 
         this.waiting.addLast(new Retry(new Request(
-            target.pos, side, target.retry + 1), ready)
+            target.pos, side, target.retry + 1), timer)
         );
     }
 
@@ -1000,9 +1027,27 @@ public class MiningTweaks extends Module {
      * @param slot hotbar slot to select
      */
     private void select(int slot) {
-        if (Hotbar.selected() != slot) {
-            Hotbar.select(slot);
+        int selected = Hotbar.selected();
+        if (selected == slot) return;
+
+        if (this.swapback.get() && this.slot == -1) {
+            this.slot = selected;
         }
+
+        Hotbar.select(slot);
+    }
+
+    /**
+     * Returns to the original hotbar slot after mining.
+     */
+    private void restore() {
+        if (this.slot == -1 || !this.idle()) return;
+
+        if (this.swapback.get() && Client.ready()) {
+            Hotbar.select(this.slot);
+        }
+
+        this.slot = -1;
     }
 
     /**
@@ -1146,7 +1191,8 @@ public class MiningTweaks extends Module {
         double dy = Math.max(pos.getY(), py) - eye.y;
         double dz = Math.max(pos.getZ(), pz) - eye.z;
 
-        return dx * dx + dy * dy + dz * dz <= reach * reach;
+        double length = dx * dx + dy * dy + dz * dz;
+        return length <= reach * reach;
     }
 
     /**
@@ -1256,7 +1302,7 @@ public class MiningTweaks extends Module {
 
         private int slot;
         private int arm;
-        private int finish;
+        private long finish;
 
         private boolean arming;
         private boolean burst;
