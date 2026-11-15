@@ -1,5 +1,6 @@
 package hyperglide.navigation;
 
+import hyperglide.navigation.Route.Leg;
 import net.minecraft.util.math.Vec2f;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -8,11 +9,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.function.Function;
 
 public final class Search {
     private static final float epsilon = 0.05F;
 
     private final Graph graph;
+
+    //region Public API
 
     /**
      * Builds a search over the complete highway network.
@@ -40,50 +44,22 @@ public final class Search {
      * @return fastest available route
      */
     public Route find(Vec2f start, Vec2f end, float highway, float normal) {
-        float direct = this.distance(start, end);
+        Route undefined = new Route(List.of(), 0.0F, 0.0F);
 
-        if (direct <= epsilon) return new Route(List.of(), 0.0F, 0.0F);
+        if (this.distance(start, end) <= epsilon) return undefined;
         if (highway <= normal) return this.direct(start, end, normal);
 
         Network network = this.build(start, end, highway, normal);
-
-        Map<Graph.Node, Float> costs = new HashMap<>();
-        Map<Graph.Node, Link> previous = new HashMap<>();
-
-        PriorityQueue<State> queue = new PriorityQueue<>(
-            Comparator.comparingDouble(State::cost)
-        );
-
-        costs.put(network.start, 0.0F);
-        queue.add(new State(network.start, 0.0F));
-
-        while (!queue.isEmpty()) {
-            State state = queue.poll();
-            float known = costs.getOrDefault(state.node, Float.POSITIVE_INFINITY);
-
-            if (state.cost > known + epsilon) continue;
-            if (state.node.equals(network.end)) break;
-
-            for (Link link : network.links.getOrDefault(state.node, List.of())) {
-                float speed = link.type == Route.Type.Highway ? highway : normal;
-                float cost = state.cost + link.distance / speed;
-
-                float old = costs.getOrDefault(link.end, Float.POSITIVE_INFINITY);
-                if (cost >= old - epsilon) continue;
-
-                costs.put(link.end, cost);
-                previous.put(link.end, link);
-                queue.add(new State(link.end, cost));
-            }
-        }
-
+        Map<Graph.Node, Link> previous = this.search(network, highway, normal);
         return this.route(network.start, network.end, previous, highway, normal);
     }
+
+    //endregion
 
     //region Graph preparation
 
     /**
-     * Adds time-optimal entry and exit points to the highway graph.
+     * Adds optimal entry and exit points to the highway graph.
      *
      * @param start starting position
      * @param end destination position
@@ -109,40 +85,22 @@ public final class Search {
             this.add(points, edge.start());
             this.add(points, edge.end());
 
-            List<Graph.Node> starts = this.candidates(
+            this.attach(links, points, source, this.candidates(
                 nodes, segment, start, highway, normal
-            );
-
-            List<Graph.Node> ends = this.candidates(
-                nodes, segment, end, highway, normal
-            );
-
-            for (Graph.Node point : starts) {
-                this.add(points, point);
-                this.connect(links, source, point, null, Route.Type.Normal);
-            }
-
-            for (Graph.Node point : ends) {
-                this.add(points, point);
-                this.connect(links, target, point, null, Route.Type.Normal);
-            }
-
-            points.sort(Comparator.comparingDouble(
-                point -> segment.projection(point.pos())
             ));
 
-            for (int idx = 1; idx < points.size(); idx++) {
-                this.connect(links, points.get(idx - 1),
-                    points.get(idx), edge.road(), Route.Type.Highway
-                );
-            }
+            this.attach(links, points, target, this.candidates(
+                nodes, segment, end, highway, normal
+            ));
+
+            this.highway(links, points, segment, edge.road());
         }
 
         return new Network(source, target, links);
     }
 
     /**
-     * Calculates both time-optimal approach points on a highway edge.
+     * Calculates both approach points on a highway edge.
      *
      * @param nodes available route nodes
      * @param segment highway edge
@@ -160,9 +118,10 @@ public final class Search {
         float ratio = segment.projection(point);
         Vec2f projection = segment.line(ratio);
 
-        float height = this.distance(point, projection);
-        float divisor = (float) Math.sqrt(highway * highway - normal * normal);
+        float divisor = highway * highway - normal * normal;
+        divisor = (float) Math.sqrt(divisor);
 
+        float height = this.distance(point, projection);
         float shift = height * normal / divisor / length;
 
         Graph.Node first = this.node(nodes, segment.point(ratio - shift));
@@ -172,7 +131,50 @@ public final class Search {
     }
 
     /**
-     * Returns an existing nearby node or creates a temporary one.
+     * Connects approach points to an off-highway position.
+     *
+     * @param links temporary graph connections
+     * @param points highway segment points
+     * @param source off-highway position
+     * @param candidates calculated approach points
+     */
+    private void attach(Map<Graph.Node, List<Link>> links, List<Graph.Node>
+        points, Graph.Node source, List<Graph.Node> candidates) {
+
+        for (Graph.Node point : candidates) {
+            this.add(points, point);
+            this.connect(links, source, point, null, Route.Type.Normal);
+        }
+    }
+
+    /**
+     * Connects ordered points along a highway segment.
+     *
+     * @param links temporary graph connections
+     * @param points points belonging to the segment
+     * @param segment original highway segment
+     * @param road highway containing the segment
+     */
+    private void highway(Map<Graph.Node, List<Link>> links,
+        List<Graph.Node> points, Segment segment, Highways.Road road) {
+
+        points.sort(Comparator.comparingDouble(
+            point -> segment.projection(point.pos())
+        ));
+
+        for (int idx = 1; idx < points.size(); idx++) {
+            this.connect(links, points.get(idx - 1),
+                points.get(idx), road, Route.Type.Highway
+            );
+        }
+    }
+
+    //endregion
+
+    //region Graph representation
+
+    /**
+     * Returns a nearby node or creates a temporary one.
      *
      * @param nodes available nodes
      * @param point requested position
@@ -190,40 +192,16 @@ public final class Search {
     }
 
     /**
-     * Adds a node once to a temporary point list.
+     * Adds a candidate node once to a temporary point list.
      *
      * @param nodes destination node list
-     * @param node node to add
+     * @param candidate node to add
      */
-    private void add(List<Graph.Node> nodes, Graph.Node node) {
-        for (Graph.Node current : nodes) {
-            if (current == node || current.equals(node)) {
-                return;
-            }
+    private void add(List<Graph.Node> nodes, Graph.Node candidate) {
+        if (nodes.stream().noneMatch(node -> node ==
+            candidate || node.equals(candidate))) {
+            nodes.add(candidate);
         }
-        nodes.add(node);
-    }
-
-    /**
-     * Adds a route link unless an equivalent link already exists.
-     *
-     * @param links destination adjacency map
-     * @param link route link to add
-     */
-    private void add(Map<Graph.Node, List<Link>> links, Link link) {
-        List<Link> list = links.computeIfAbsent(
-            link.start, key -> new ArrayList<>()
-        );
-
-        for (Link current : list) {
-            if (current.end.equals(link.end) &&
-                current.road == link.road && current.type == link.type &&
-                Math.abs(current.distance - link.distance) <= epsilon) {
-                return;
-            }
-        }
-
-        list.add(link);
     }
 
     /**
@@ -246,70 +224,38 @@ public final class Search {
         this.add(links, new Link(end, start, road, type, distance));
     }
 
-    //endregion
-
-    //region Route reconstruction
-
     /**
-     * Reconstructs the selected route from Dijkstra predecessors.
+     * Adds a route link unless an equivalent link already exists.
      *
-     * @param start route start node
-     * @param end route destination node
-     * @param previous predecessor links
-     * @param highway highway travel speed
-     * @param normal standard travel speed
-     * @return reconstructed route
+     * @param links destination adjacency map
+     * @param link route link to add
      */
-    private Route route(Graph.Node start, Graph.Node end,
-        Map<Graph.Node, Link> previous, float highway, float normal) {
+    private void add(Map<Graph.Node, List<Link>> links, Link link) {
+        Function<Graph.Node, List<Link>> create = key -> new ArrayList<>();
 
-        List<Link> path = new ArrayList<>();
-        Graph.Node node = end;
-
-        while (!node.equals(start)) {
-            Link link = previous.get(node);
-            if (link == null) {
-                return this.direct(start.pos(), end.pos(), normal);
-            }
-
-            path.add(link);
-            node = link.start;
-        }
-
-        Collections.reverse(path);
-        List<Route.Leg> legs = new ArrayList<>();
-
-        float distance = 0.0F;
-        float time = 0.0F;
-
-        for (Link link : path) {
-            distance += link.distance;
-            time += link.distance / (link.type ==
-                Route.Type.Highway ? highway : normal
-            );
-
-            legs.add(new Route.Leg(link.start.pos(),
-                link.end.pos(), link.road, link.type
-            ));
-        }
-
-        return new Route(legs, distance, time);
+        List<Link> list = links.computeIfAbsent(link.start, create);
+        if (!this.duplicate(list, link)) list.add(link);
     }
 
     /**
-     * Creates a direct standard route.
+     * Checks whether an equivalent connection already exists.
      *
-     * @param start starting position
-     * @param end destination position
-     * @param speed standard speed
-     * @return direct route
+     * @param links existing connections
+     * @param link connection to check
+     * @return true if an equivalent connection exists
      */
-    private Route direct(Vec2f start, Vec2f end, float speed) {
-        float distance = this.distance(start, end);
+    private boolean duplicate(List<Link> links, Link link) {
+        if (link.type == Route.Type.Normal) return false;
 
-        return new Route(List.of(
-            new Route.Leg(start, end, null, Route.Type.Normal)
-        ), distance, distance / speed);
+        for (Link current : links) {
+            if (current.end.equals(link.end) &&
+                current.road == link.road && current.type == link.type &&
+                Math.abs(current.distance - link.distance) <= epsilon) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -325,24 +271,167 @@ public final class Search {
 
     //endregion
 
+    //region Route pathfinding
+
+    /**
+     * Finds the fastest connections through the network.
+     *
+     * @param network temporary routing graph
+     * @param highway highway travel speed
+     * @param normal standard travel speed
+     * @return predecessor links for the fastest route
+     */
+    private Map<Graph.Node, Link> search(
+        Network network, float highway, float normal) {
+
+        Map<Graph.Node, Float> costs = new HashMap<>();
+        Map<Graph.Node, Link> previous = new HashMap<>();
+
+        Graph.Node start = network.start, goal = network.end;
+        float time = this.estimate(start, goal, highway);
+
+        PriorityQueue<State> queue = new PriorityQueue<>(
+            Comparator.comparingDouble(State::priority)
+        );
+
+        queue.add(new State(start, 0.0F, time));
+        costs.put(start, 0.0F);
+
+        while (!queue.isEmpty()) {
+            State state = queue.poll();
+            float known = costs.getOrDefault(state.node, Float.POSITIVE_INFINITY);
+
+            if (state.cost > known + epsilon) continue;
+            if (state.node.equals(goal)) break;
+
+            for (Link link : network.links.getOrDefault(state.node, List.of())) {
+                float speed = link.type == Route.Type.Highway ? highway : normal;
+                float cost = state.cost + link.distance / speed;
+
+                float old = costs.getOrDefault(link.end, Float.POSITIVE_INFINITY);
+                if (cost >= old - epsilon) continue;
+
+                costs.put(link.end, cost);
+                previous.put(link.end, link);
+
+                time = this.estimate(link.end, goal, highway);
+                queue.add(new State(link.end, cost, cost + time));
+            }
+        }
+
+        return previous;
+    }
+
+    /**
+     * Estimates the minimum remaining travel time to a goal.
+     *
+     * @param node current graph node
+     * @param end destination graph node
+     * @param speed maximum travel speed
+     * @return estimated remaining travel time
+     */
+    private float estimate(Graph.Node node, Graph.Node end, float speed) {
+        return this.distance(node.pos(), end.pos()) / speed;
+    }
+
+    //endregion
+
+    //region Route reconstruction
+
+    /**
+     * Reconstructs the selected route from search predecessors.
+     *
+     * @param start route start node
+     * @param end route destination node
+     * @param previous predecessor links
+     * @param highway highway travel speed
+     * @param normal standard travel speed
+     * @return reconstructed route
+     */
+    private Route route(Graph.Node start, Graph.Node end,
+        Map<Graph.Node, Link> previous, float highway, float normal) {
+
+        List<Link> path = null;
+        if ((path = this.path(start, end, previous)) == null) {
+            return this.direct(start.pos(), end.pos(), normal);
+        }
+
+        float distance = 0.0F, time = 0.0F;
+        List<Route.Leg> legs = new ArrayList<>();
+
+        for (Link link : path) {
+            distance += link.distance;
+
+            boolean faster = link.type == Route.Type.Highway;
+            time += link.distance / (faster ? highway : normal);
+
+            legs.add(new Route.Leg(link.start.pos(),
+                link.end.pos(), link.road, link.type
+            ));
+        }
+
+        return new Route(legs, distance, time);
+    }
+
+    /**
+     * Traces the fastest route through predecessor links.
+     *
+     * @param start route starting node
+     * @param end route destination node
+     * @param previous predecessor links
+     * @return ordered links, or null if unreachable
+     */
+    private List<Link> path(Graph.Node start,
+        Graph.Node end, Map<Graph.Node, Link> previous) {
+
+        List<Link> path = new ArrayList<>();
+        Graph.Node node = end;
+
+        while (!node.equals(start)) {
+            Link link = previous.get(node);
+            if (link == null) return null;
+
+            path.add(link);
+            node = link.start;
+        }
+
+        Collections.reverse(path);
+        return path;
+    }
+
+    /**
+     * Creates a direct standard route using a normal speed.
+     *
+     * @param start starting position
+     * @param end destination position
+     * @param speed standard speed
+     * @return direct route
+     */
+    private Route direct(Vec2f start, Vec2f end, float speed) {
+        float distance = this.distance(start, end);
+        Leg leg = new Route.Leg(start, end, null, Route.Type.Normal);
+        return new Route(List.of(leg), distance, distance / speed);
+    }
+
+    //endregion
+
     //region Data structures
 
     /**
-     * Represents a directional connection used during route calculation.
+     * Represents a connection used during route calculation.
      *
      * @param start starting node
      * @param end ending node
-     * @param road highway used by the connection, or null for free flight
+     * @param road highway, or null for free flight
      * @param type travel type
      * @param distance connection distance
      */
-    private record Link(
-        Graph.Node start, Graph.Node end,
+    private record Link(Graph.Node start, Graph.Node end,
         Highways.Road road, Route.Type type, float distance
     ) {}
 
     /**
-     * Represents the temporary graph used for a route calculation.
+     * Represents the graph used for a route calculation.
      *
      * @param start starting node
      * @param end destination node
@@ -358,8 +447,11 @@ public final class Search {
      *
      * @param node graph node
      * @param cost accumulated travel time
+     * @param priority estimated total travel time
      */
-    private record State(Graph.Node node, float cost) {}
+    private record State(
+        Graph.Node node, float cost, float priority
+    ) {}
 
     //endregion
 }
