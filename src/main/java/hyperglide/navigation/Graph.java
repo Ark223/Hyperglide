@@ -68,7 +68,7 @@ public final class Graph {
     }
 
     /**
-     * Splits graph parts at every intersection or overlap boundary.
+     * Splits graph parts at every intersection or overlap.
      *
      * @param parts graph parts to split
      */
@@ -113,16 +113,16 @@ public final class Graph {
             Node current = this.node(nodes, point);
             if (current == previous) continue;
 
-            if (previous != null) {
-                edges.add(new Edge(previous, current, part.road));
-            }
+            if (previous != null) edges.add(
+                new Edge(previous, current, part.road)
+            );
 
             previous = current;
         }
     }
 
     /**
-     * Splits two graph parts at intersections or overlap boundaries.
+     * Splits two graph parts at intersections or overlaps.
      *
      * @param first first graph part
      * @param second second graph part
@@ -212,7 +212,7 @@ public final class Graph {
     }
 
     /**
-     * Represents an undirected highway connection between two graph nodes.
+     * Represents an undirected highway connection between nodes.
      *
      * @param start first node
      * @param end second node

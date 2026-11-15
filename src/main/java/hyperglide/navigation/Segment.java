@@ -106,7 +106,7 @@ public record Segment(Vec2f start, Vec2f end) {
     }
 
     /**
-     * Checks whether another segment lies on the same infinite line.
+     * Checks whether another segment lies on the same line.
      *
      * @param other segment to compare
      * @return true when both segments are collinear

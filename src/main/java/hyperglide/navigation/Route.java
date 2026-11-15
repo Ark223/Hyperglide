@@ -40,7 +40,6 @@ public record Route(List<Leg> legs, float distance, float time) {
         for (Leg leg : legs) {
             if (!result.isEmpty() && merge(result.getLast(), leg)) {
                 Leg previous = result.getLast();
-
                 result.set(result.size() - 1, new Leg(
                     previous.start(), leg.end(),
                     previous.road(), previous.type()

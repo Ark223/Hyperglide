@@ -11,7 +11,6 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.FireworksComponent;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -589,7 +588,7 @@ public class FD3Crafter extends Module {
     private boolean rocket(ItemStack stack) {
         if (!stack.isOf(Items.FIREWORK_ROCKET)) return false;
 
-        FireworksComponent component = stack.get(DataComponentTypes.FIREWORKS);
+        var component = stack.get(DataComponentTypes.FIREWORKS);
         return component != null && component.flightDuration() == 3;
     }
 

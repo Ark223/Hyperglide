@@ -478,7 +478,8 @@ public class SelfTrapper extends Module {
             (BlockPos pos) -> this.distance(pos))
             .thenComparingInt(BlockPos::getY)
             .thenComparingInt(BlockPos::getX)
-            .thenComparingInt(BlockPos::getZ));
+            .thenComparingInt(BlockPos::getZ)
+        );
 
         this.wanted.addAll(list);
     }
