@@ -52,13 +52,13 @@ Alternatively, use the corresponding Baritone library included in the `/libs` fo
 - **FD3 Crafter** - Strictly crafts all FD3 firework rockets from available inventory ingredients
 - **Force Log** - Disconnects when a whitelisted player sends the configured whisper message
 - **Mining Tweaks** - Enables packet mining, including fast remine and double-break support
+- **Multi Scanner** - Analyzes nether chunks to detect portal skips and optimize area coverage
 - **Navigation** - Provides a map of the nether highway network with interactive route planning
 - **No Coord Leak** - Prevents chat message containing coordinates from being sent by accident
 - **No Sprint FOV** - Removes vanilla sprinting zoom effects for a more consistent field of view
 - **Overview** - Displays a content icon on shulker boxes and bundles for quick identification
 - **Raid Starter** - Automatically drinks ominous bottles to start the raid for repeated farming
 - **Rocket Boost** - Enhances firework rocket acceleration during elytra flight for faster travel
-- **Scaffolding** - Places selected blocks beneath and ahead of the player for safer bridging
 - **Self Trapper** - Builds a configurable block trap around the player with queued placements
 - **Trigger Bot** - Attacks selected entities under the crosshair, including targets through walls
 
@@ -77,6 +77,7 @@ Hyperglide/
 │   │   │   ├── mixin/                   # Mixin classes
 │   │   │   ├── modules/                 # Client modules
 │   │   │   ├── navigation/              # Route planning
+│   │   │   ├── scanner/                 # Nether scanning
 │   │   │   ├── utilities/               # Utility classes
 │   │   │   └── Hyperglide.java          # Main entry point
 │   │   └── resources/
