@@ -17,13 +17,13 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.FireworksComponent;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.projectile.FireworkRocketEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
+import net.minecraft.util.Hand;
 import net.minecraft.util.math.Vec3d;
 
 public class RocketBoost extends Module {
@@ -47,7 +47,7 @@ public class RocketBoost extends Module {
         .description("Reduces boost time by milliseconds for ping variation.")
         .defaultValue(50)
         .min(0)
-        .sliderMax(250)
+        .sliderMax(150)
         .build()
     );
 
@@ -204,14 +204,15 @@ public class RocketBoost extends Module {
     private void use(PlayerInteractItemC2SPacket packet) {
         if (!this.mc.player.isGliding()) return;
 
-        ItemStack stack = this.mc.player.getStackInHand(packet.getHand());
+        Hand hand = packet.getHand();
+        ItemStack stack = this.mc.player.getStackInHand(hand);
         if (!stack.isOf(Items.FIREWORK_ROCKET)) return;
 
-        FireworksComponent fireworks = stack.get(DataComponentTypes.FIREWORKS);
+        var rockets = stack.get(DataComponentTypes.FIREWORKS);
         this.expiry = this.mc.player.age;
 
-        int duration = fireworks != null ? fireworks.flightDuration() : 1;
-        double time = Math.max(0.0, (duration + 1) * 500.0 - this.offset.get());
+        int duration = rockets != null ? rockets.flightDuration() : 1;
+        double time = (duration + 1) * 500.0 - this.offset.get();
 
         this.expiry += Math.max(1, (int) Math.ceil(time / 50.0));
     }
