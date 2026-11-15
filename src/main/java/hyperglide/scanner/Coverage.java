@@ -18,7 +18,7 @@ import java.util.concurrent.Executors;
  */
 public final class Coverage {
     private static final int maximum = 35;
-    private static final int minimum = 7;
+    private static final int minimum = 2;
     private static final int spacing = 11;
 
     private static final long[] circle = offsets(spacing);

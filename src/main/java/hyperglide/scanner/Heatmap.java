@@ -6,11 +6,11 @@ import net.minecraft.util.math.MathHelper;
  * Colors portal skip scores using three customizable colors.
  */
 public final class Heatmap {
-    private final int[] colors = new int[64];
+    private final int[] colors = new int[33];
     private static int neutral = 0xFFFFFF;
 
-    private static final int maximum = 63;
-    private static final int minimum = 6;
+    private static final int maximum = 32;
+    private static final int minimum = 1;
 
     private int limit, cold, mild, warm;
     private boolean prepared;
@@ -18,12 +18,13 @@ public final class Heatmap {
     /**
      * Prepares the palette when its settings change.
      *
-     * @param limit square width that reaches maximum heat
+     * @param limit skip score that reaches maximum heat
      * @param cold color for the lowest scores
      * @param mild color for the middle scores
      * @param warm color for the highest scores
      */
     public void palette(int limit, int cold, int mild, int warm) {
+        limit = MathHelper.clamp(limit, minimum + 1, maximum);
         if (this.matches(limit, cold, mild, warm)) return;
 
         this.limit = limit;
@@ -55,25 +56,22 @@ public final class Heatmap {
      * Creates the color for every possible heat score.
      */
     private void generate() {
-        int length = this.colors.length;
-
-        for (int width = minimum; width < length; width++) {
-            int value = Math.min(width, this.limit) - minimum;
-
-            float score = (float) (value) / (this.limit - minimum);
-            this.colors[width] = 0xE0000000 | this.gradient(score);
+        for (int score = minimum; score <= maximum; score++) {
+            int value = Math.min(score, this.limit) - minimum;
+            float heat = (float) value / (this.limit - minimum);
+            this.colors[score] = 0xE0000000 | this.gradient(heat);
         }
     }
 
     /**
      * Returns the color of a chunk's precomputed heat score.
      *
-     * @param width raw skip score, or zero for empty space
+     * @param value skip score, or zero for empty space
      * @return color, or transparent for empty space
      */
-    public int color(int width) {
-        int score = MathHelper.clamp(width, minimum, maximum);
-        return width != 0 ? this.colors[score] : 0;
+    public int color(int value) {
+        int score = MathHelper.clamp(value, minimum, maximum);
+        return value != 0 ? this.colors[score] : 0;
     }
 
     /**

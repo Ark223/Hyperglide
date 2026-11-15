@@ -16,8 +16,8 @@ import java.util.concurrent.CancellationException;
  * Calculates portal skip scores from nether terrain.
  */
 public final class Skipper {
-    private static final int radius = 31;
-    private static final int spacing = 12;
+    private static final int radius = 33;
+    private static final int spacing = 11;
 
     private static final int legacy = Xaero.Type.Legacy.mask;
     private static final int modern = Xaero.Type.Modern.mask;
@@ -394,8 +394,10 @@ public final class Skipper {
         if (!this.chunks.contains(key)) return;
 
         int count = this.influence.get(key);
-        int width = this.distances.get(key) * 2;
-        int score = count == 0 ? (width + 1) : 1;
+        int dist = this.distances.get(key);
+
+        int score = Math.max(1, dist - 1);
+        if (count != 0) score = 1;
 
         this.put(key, score);
     }
@@ -532,8 +534,8 @@ public final class Skipper {
             long pos = position(cx, cz, offset);
             if (!this.open(pos)) return 0;
 
-            int distance = this.distances.get(pos);
-            smallest = Math.min(smallest, distance);
+            int dist = this.distances.get(pos);
+            smallest = Math.min(smallest, dist);
         }
 
         return Math.min(radius, smallest + 1);

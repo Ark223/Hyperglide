@@ -188,10 +188,10 @@ public class MultiScanner extends Module {
 
     private final Setting<Integer> heat = this.heatmaps.add(new IntSetting.Builder()
         .name("max-heat")
-        .description("Square width for maximum heat.")
-        .defaultValue(15)
-        .min(7)
-        .sliderMax(63)
+        .description("Score that reaches maximum heat.")
+        .defaultValue(6)
+        .min(2)
+        .sliderMax(32)
         .onChanged(value -> { if (this.enabled.get()) this.reload(); })
         .visible(this.enabled::get)
         .build()
@@ -801,9 +801,9 @@ public class MultiScanner extends Module {
     }
 
     /**
-     * Returns the raw skip score used for meshing.
+     * Returns the skip score used for meshing.
      *
-     * @param value raw skip width
+     * @param value portal skip score
      * @return skip priority
      */
     private int intensity(int value) {
@@ -813,7 +813,7 @@ public class MultiScanner extends Module {
     /**
      * Returns the color of a heatmap cell.
      *
-     * @param value raw skip width
+     * @param value portal skip score
      * @return opaque ARGB color
      */
     private int gradient(int value) {
@@ -1104,7 +1104,7 @@ public class MultiScanner extends Module {
     }
 
     /**
-     * Displays the latest completed portal skip widths.
+     * Displays the latest calculated portal skip scores.
      */
     private void reload() {
         if (this.xaero == null) return;
