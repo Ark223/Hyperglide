@@ -5,7 +5,6 @@ import it.unimi.dsi.fastutil.longs.Long2ByteMap.Entry;
 import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
-import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
 import net.minecraft.util.math.ChunkPos;
@@ -22,8 +21,8 @@ public final class Skipper {
     private static final long[] backward = backward();
     private static final long[] neighbors = neighbors();
 
-    private static final long[] flows = offsets(12, 10);
-    private static final long[] portals = offsets(5, 4);
+    private static final long[] flows = offsets(8, 12);
+    private static final long[] portals = offsets(2, 3);
 
     private static final int legacy = Xaero.Type.Legacy.mask;
     private static final int modern = Xaero.Type.Modern.mask;
@@ -315,17 +314,10 @@ public final class Skipper {
 
             if (next == 0) this.influence.remove(pos);
             else this.influence.put(pos, next);
-
             if (!this.prepared) continue;
 
-            boolean before = (prev >>> 16) == 0;
-            boolean after = (next >>> 16) == 0;
-
-            if (before != after) {
-                this.wall(pos, after);
-            } else if (after && changed(prev, next)) {
-                this.dirty.add(pos);
-            }
+            boolean pre = prev == 0, post = next == 0;
+            if (pre != post) this.wall(pos, post);
         }
     }
 
@@ -355,7 +347,7 @@ public final class Skipper {
     }
 
     /**
-     * Updates a chunk's portal coverage.
+     * Updates a chunk when signal influence changes.
      *
      * @param key affected chunk position
      * @param open whether this chunk is usable again
@@ -373,25 +365,14 @@ public final class Skipper {
     }
 
     /**
-     * Checks whether a chunk is uncovered.
+     * Checks whether a chunk is free of nearby signals.
      *
      * @param key packed chunk position
      * @return true when the chunk can hold a skip
      */
     private boolean open(long key) {
-        if (!this.chunks.contains(key)) return false;
-        return (this.influence.get(key) >>> 16) == 0;
-    }
-
-    /**
-     * Checks whether signal presence has changed.
-     *
-     * @param prev previous influence count
-     * @param next updated influence count
-     * @return true when the result changes
-     */
-    private static boolean changed(int prev, int next) {
-        return (prev == 0) != (next == 0);
+        return this.chunks.contains(key)
+            && this.influence.get(key) == 0;
     }
 
     /**
@@ -400,15 +381,17 @@ public final class Skipper {
      * @param key terrain position
      */
     private void refresh(long key) {
-        if (!this.chunks.contains(key)) return;
+        if (!this.chunks.contains(key)) {
+            return;
+        }
 
-        int count = this.influence.get(key);
+        if (!this.open(key)) {
+            this.put(key, 1);
+            return;
+        }
+
         int dist = this.distances.get(key);
-
-        int score = Math.max(1, dist - 1);
-        if (count != 0) score = 1;
-
-        this.put(key, score);
+        this.put(key, Math.max(1, dist - 1));
     }
 
     /**
@@ -521,8 +504,7 @@ public final class Skipper {
             if (next == radius) this.distances.remove(key);
             else this.distances.put(key, (byte) next);
 
-            int count = this.influence.get(key);
-            if (count == 0) this.dirty.add(key);
+            this.dirty.add(key);
 
             this.adjacent(key);
         }
@@ -596,7 +578,7 @@ public final class Skipper {
 
     //endregion
 
-    //region Chunk coordinates
+    //region General utilities
 
     /**
      * Calculates a chunk position from an offset.
@@ -642,32 +624,27 @@ public final class Skipper {
     }
 
     /**
-     * Creates offsets around portal and lava signals.
+     * Creates a square footprint for artificial walls.
      *
-     * @param outer maximum horizontal or vertical offset
-     * @param inner maximum offset along both diagonal axes
+     * @param radius maximum offset along either axis
+     * @param limit maximum distance from the signal
      * @return packed relative chunk positions
      */
-    private static long[] offsets(int outer, int inner) {
-        LongArrayList data = new LongArrayList();
+    private static long[] offsets(int radius, int limit) {
+        int width = radius * 2 + 1, index = 0;
+        long[] result = new long[width * width];
 
-        int limit = outer - 2;
-        int range = limit * limit;
+        for (int dz = -radius; dz <= radius; dz++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                int length = Math.abs(dx) + Math.abs(dz);
+                if (length > limit) continue;
 
-        for (int dz = -outer; dz <= outer; dz++) {
-            for (int dx = -outer; dx <= outer; dx++) {
-                int px = Math.max(0, Math.abs(dx) - 3);
-                int pz = Math.max(0, Math.abs(dz) - 3);
-                if (px * px + pz * pz >= range) continue;
-
-                int value = Math.abs(dx) + Math.abs(dz);
-                if (value > inner + inner) continue;
-
-                data.add(ChunkPos.toLong(dx, dz));
+                long key = ChunkPos.toLong(dx, dz);
+                result[index++] = key;
             }
         }
 
-        return data.toLongArray();
+        return Arrays.copyOf(result, index);
     }
 
     //endregion

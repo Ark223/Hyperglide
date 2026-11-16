@@ -1,11 +1,11 @@
 package hyperglide.scanner;
 
-import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.Long2ByteMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import net.minecraft.util.math.ChunkPos;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.PriorityQueue;
 import java.util.function.LongPredicate;
@@ -20,7 +20,7 @@ public final class Coverage {
     private static final int maximum = 25;
     private static final int minimum = 2;
 
-    private static final long[] circle = offsets(5, 4);
+    private static final long[] space = offsets(5, 9);
 
     private final LongOpenHashSet spots = new LongOpenHashSet();
 
@@ -228,7 +228,7 @@ public final class Coverage {
         int pz = ChunkPos.getPackedZ(key);
         int gain = 0;
 
-        for (long offset : circle) {
+        for (long offset : space) {
             int cx = px + (int) offset;
             int cz = pz + (int) (offset >> 32);
 
@@ -250,7 +250,7 @@ public final class Coverage {
         int pz = ChunkPos.getPackedZ(key);
         int gain = 0;
 
-        for (long offset : circle) {
+        for (long offset : space) {
             int cx = px + (int) offset;
             int cz = pz + (int) (offset >> 32);
 
@@ -264,30 +264,25 @@ public final class Coverage {
     /**
      * Creates the coverage area around each portal.
      *
-     * @param outer maximum horizontal or vertical offset
-     * @param inner maximum offset along both diagonal axes
+     * @param radius maximum offset along either axis
+     * @param limit maximum distance from the center
      * @return packed relative chunk positions
      */
-    private static long[] offsets(int outer, int inner) {
-        LongArrayList data = new LongArrayList();
+    private static long[] offsets(int radius, int limit) {
+        int width = radius * 2 + 1, index = 0;
+        long[] result = new long[width * width];
 
-        int limit = outer - 2;
-        int range = limit * limit;
+        for (int dz = -radius; dz <= radius; dz++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                int length = Math.abs(dx) + Math.abs(dz);
+                if (length > limit) continue;
 
-        for (int dz = -outer; dz <= outer; dz++) {
-            for (int dx = -outer; dx <= outer; dx++) {
-                int px = Math.max(0, Math.abs(dx) - 3);
-                int pz = Math.max(0, Math.abs(dz) - 3);
-                if (px * px + pz * pz >= range) continue;
-
-                int value = Math.abs(dx) + Math.abs(dz);
-                if (value > inner + inner) continue;
-
-                data.add(ChunkPos.toLong(dx, dz));
+                long key = ChunkPos.toLong(dx, dz);
+                result[index++] = key;
             }
         }
 
-        return data.toLongArray();
+        return Arrays.copyOf(result, index);
     }
 
     //endregion
