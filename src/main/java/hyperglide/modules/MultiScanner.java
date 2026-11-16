@@ -165,7 +165,7 @@ public class MultiScanner extends Module {
     private final Setting<SettingColor> player = this.colors.add(new ColorSetting.Builder()
         .name("player")
         .description("Player position color.")
-        .defaultValue(new SettingColor(255, 128, 0, 255))
+        .defaultValue(new SettingColor(32, 255, 32, 255))
         .visible(this.render::get)
         .build()
     );
