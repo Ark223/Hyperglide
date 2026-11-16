@@ -6,12 +6,11 @@ import net.minecraft.util.math.MathHelper;
  * Colors portal skip scores using three customizable colors.
  */
 public final class Heatmap {
-    private final int[] colors = new int[33];
-    private static int neutral = 0xFFFFFF;
-
     private static final int maximum = 24;
     private static final int minimum = 1;
+    private static final int neutral = 0xFFFFFF;
 
+    private int[] colors = new int[maximum + 1];
     private int limit, cold, mild, warm;
     private boolean prepared;
 
