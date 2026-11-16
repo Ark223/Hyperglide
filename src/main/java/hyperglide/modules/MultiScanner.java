@@ -191,7 +191,7 @@ public class MultiScanner extends Module {
         .description("Score that reaches maximum heat.")
         .defaultValue(6)
         .min(2)
-        .sliderMax(32)
+        .sliderMax(24)
         .onChanged(value -> { if (this.enabled.get()) this.reload(); })
         .visible(this.enabled::get)
         .build()

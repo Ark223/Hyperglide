@@ -16,8 +16,14 @@ import java.util.concurrent.CancellationException;
  * Calculates portal skip scores from nether terrain.
  */
 public final class Skipper {
-    private static final int radius = 33;
-    private static final int spacing = 11;
+    private static final int radius = 25;
+
+    private static final long[] forward = forward();
+    private static final long[] backward = backward();
+    private static final long[] neighbors = neighbors();
+
+    private static final long[] flows = offsets(12, 10);
+    private static final long[] portals = offsets(5, 4);
 
     private static final int legacy = Xaero.Type.Legacy.mask;
     private static final int modern = Xaero.Type.Modern.mask;
@@ -26,19 +32,6 @@ public final class Skipper {
 
     private static final int terrain = legacy | modern;
     private static final int signal = flowing | portal;
-
-    private static final long[] forward = {
-        ChunkPos.toLong(-1, -1), ChunkPos.toLong(0, -1),
-        ChunkPos.toLong(1, -1), ChunkPos.toLong(-1, 0)
-    };
-
-    private static final long[] backward = {
-        ChunkPos.toLong(1, 1), ChunkPos.toLong(0, 1),
-        ChunkPos.toLong(-1, 1), ChunkPos.toLong(1, 0)
-    };
-
-    private static final long[] neighbors = offsets(1, false);
-    private static final long[] circle = offsets(spacing, true);
 
     private final Long2ByteOpenHashMap signals = new Long2ByteOpenHashMap();
     private final Long2IntOpenHashMap influence = new Long2IntOpenHashMap();
@@ -293,32 +286,44 @@ public final class Skipper {
      * @param change addition or removal direction
      */
     private void adjust(long key, int bits, int change) {
-        if (bits == 0) return;
+        if ((bits & flowing) != 0) {
+            this.affect(key, flows, change);
+        }
 
+        if ((bits & portal) != 0) {
+            this.affect(key, portals, change << 16);
+        }
+    }
+
+    /**
+     * Applies a signal to nearby tracked chunks.
+     *
+     * @param key signal position
+     * @param offsets affected chunk offsets
+     * @param change packed influence change
+     */
+    private void affect(long key, long[] offsets, int change) {
         int cx = ChunkPos.getPackedX(key);
         int cz = ChunkPos.getPackedZ(key);
 
-        int delta = ((bits & flowing) != 0 ? change : 0)
-            + ((bits & portal) != 0 ? change << 16 : 0);
-
-        for (long offset : circle) {
+        for (long offset : offsets) {
             long pos = position(cx, cz, offset);
             if (!this.chunks.contains(pos)) continue;
 
-            int old = this.influence.get(pos);
-            int next = old + delta;
+            int prev = this.influence.get(pos);
+            int next = prev + change;
 
             if (next == 0) this.influence.remove(pos);
             else this.influence.put(pos, next);
 
             if (!this.prepared) continue;
 
-            boolean before = (old >>> 16) == 0;
+            boolean before = (prev >>> 16) == 0;
             boolean after = (next >>> 16) == 0;
 
             if (before != after) {
                 this.wall(pos, after);
-            } else if (after && changed(old, next)) {
+            } else if (after && changed(prev, next)) {
                 this.dirty.add(pos);
             }
         }
@@ -332,14 +337,18 @@ public final class Skipper {
     private void count(long key) {
         int cx = ChunkPos.getPackedX(key);
         int cz = ChunkPos.getPackedZ(key);
-        int total = 0;
+        int bit = 1 << 16, total = 0;
 
-        for (long offset : circle) {
+        for (long offset : flows) {
             long pos = position(cx, cz, offset);
-            int bits = this.signals.get(pos);
+            byte signal = this.signals.get(pos);
+            if ((signal & flowing) != 0) total++;
+        }
 
-            if ((bits & flowing) != 0) total++;
-            if ((bits & portal) != 0) total += 1 << 16;
+        for (long offset : portals) {
+            long pos = position(cx, cz, offset);
+            byte signal = this.signals.get(pos);
+            if ((signal & portal) != 0) total += bit;
         }
 
         if (total != 0) this.influence.put(key, total);
@@ -377,12 +386,12 @@ public final class Skipper {
     /**
      * Checks whether signal presence has changed.
      *
-     * @param old previous influence count
+     * @param prev previous influence count
      * @param next updated influence count
      * @return true when the result changes
      */
-    private static boolean changed(int old, int next) {
-        return (old == 0) != (next == 0);
+    private static boolean changed(int prev, int next) {
+        return (prev == 0) != (next == 0);
     }
 
     /**
@@ -576,6 +585,15 @@ public final class Skipper {
         return key;
     }
 
+    /**
+     * Aborts work when the thread is interrupted.
+     */
+    private void check() {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new CancellationException();
+        }
+    }
+
     //endregion
 
     //region Chunk coordinates
@@ -595,38 +613,61 @@ public final class Skipper {
     }
 
     /**
-     * Creates reusable chunk offsets for repeated checks.
-     *
-     * @param radius neighborhood radius
-     * @param circular true for a circle
-     * @return packed relative offsets
+     * Returns offsets for the forward distance pass.
      */
-    private static long[] offsets(int radius, boolean circular) {
+    private static long[] forward() {
+        return new long[] {
+            ChunkPos.toLong(-1, -1), ChunkPos.toLong(0, -1),
+            ChunkPos.toLong(1, -1), ChunkPos.toLong(-1, 0)
+        };
+    }
+
+    /**
+     * Returns offsets for the backward distance pass.
+     */
+    private static long[] backward() {
+        return new long[] {
+            ChunkPos.toLong(1, 1), ChunkPos.toLong(0, 1),
+            ChunkPos.toLong(-1, 1), ChunkPos.toLong(1, 0)
+        };
+    }
+
+    /**
+     * Returns all eight neighboring chunk offsets.
+     */
+    private static long[] neighbors() {
+        long[] result = Arrays.copyOf(forward, 8);
+        System.arraycopy(backward, 0, result, 4, 4);
+        return result;
+    }
+
+    /**
+     * Creates offsets around portal and lava signals.
+     *
+     * @param outer maximum horizontal or vertical offset
+     * @param inner maximum offset along both diagonal axes
+     * @return packed relative chunk positions
+     */
+    private static long[] offsets(int outer, int inner) {
         LongArrayList data = new LongArrayList();
 
-        for (int dz = -radius; dz <= radius; dz++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                if (!circular && dx == 0 && dz == 0) {
-                    continue;
-                }
+        int limit = outer - 2;
+        int range = limit * limit;
 
-                int length = dx * dx + dz * dz;
-                if (!circular || length <= radius * radius) {
-                    data.add(ChunkPos.toLong(dx, dz));
-                }
+        for (int dz = -outer; dz <= outer; dz++) {
+            for (int dx = -outer; dx <= outer; dx++) {
+                int px = Math.max(0, Math.abs(dx) - 3);
+                int pz = Math.max(0, Math.abs(dz) - 3);
+                if (px * px + pz * pz >= range) continue;
+
+                int value = Math.abs(dx) + Math.abs(dz);
+                if (value > inner + inner) continue;
+
+                data.add(ChunkPos.toLong(dx, dz));
             }
         }
 
         return data.toLongArray();
-    }
-
-    /**
-     * Aborts work when the thread is interrupted.
-     */
-    private void check() {
-        if (Thread.currentThread().isInterrupted()) {
-            throw new CancellationException();
-        }
     }
 
     //endregion

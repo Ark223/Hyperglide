@@ -9,7 +9,7 @@ public final class Heatmap {
     private final int[] colors = new int[33];
     private static int neutral = 0xFFFFFF;
 
-    private static final int maximum = 32;
+    private static final int maximum = 24;
     private static final int minimum = 1;
 
     private int limit, cold, mild, warm;

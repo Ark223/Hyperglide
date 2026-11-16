@@ -17,11 +17,11 @@ import java.util.concurrent.Executors;
  * Selects portal locations that cover nearby valid skips.
  */
 public final class Coverage {
-    private static final int maximum = 35;
+    private static final int maximum = 25;
     private static final int minimum = 2;
-    private static final int spacing = 11;
 
-    private static final long[] circle = offsets(spacing);
+    private static final long[] circle = offsets(5, 4);
+
     private final LongOpenHashSet spots = new LongOpenHashSet();
 
     private final PriorityQueue<Spot> queue = new PriorityQueue<>((a, b) -> {
@@ -262,18 +262,27 @@ public final class Coverage {
     }
 
     /**
-     * Precomputes relative chunks within the spacing.
+     * Creates the coverage area around each portal.
      *
-     * @param radius spacing in chunks
+     * @param outer maximum horizontal or vertical offset
+     * @param inner maximum offset along both diagonal axes
      * @return packed relative chunk positions
      */
-    private static long[] offsets(int radius) {
+    private static long[] offsets(int outer, int inner) {
         LongArrayList data = new LongArrayList();
-        int squared = radius * radius;
 
-        for (int dz = 1 - radius; dz < radius; dz++) {
-            for (int dx = 1 - radius; dx < radius; dx++) {
-                if (dx * dx + dz * dz > squared) continue;
+        int limit = outer - 2;
+        int range = limit * limit;
+
+        for (int dz = -outer; dz <= outer; dz++) {
+            for (int dx = -outer; dx <= outer; dx++) {
+                int px = Math.max(0, Math.abs(dx) - 3);
+                int pz = Math.max(0, Math.abs(dz) - 3);
+                if (px * px + pz * pz >= range) continue;
+
+                int value = Math.abs(dx) + Math.abs(dz);
+                if (value > inner + inner) continue;
+
                 data.add(ChunkPos.toLong(dx, dz));
             }
         }
