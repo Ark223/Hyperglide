@@ -21,7 +21,10 @@ public abstract class ClientPlayerMixin {
     private boolean hyperglide$sprint(boolean gliding) {
         if (!gliding) return false;
 
-        BounceFly module = Modules.get().get(BounceFly.class);
+        Modules modules = Modules.get();
+        if (modules == null) return gliding;
+
+        BounceFly module = modules.get(BounceFly.class);
         return module == null || !module.enabled();
     }
 
@@ -37,7 +40,10 @@ public abstract class ClientPlayerMixin {
     private boolean hyperglide$slow(boolean using) {
         if (!using) return false;
 
-        BounceFly module = Modules.get().get(BounceFly.class);
+        Modules modules = Modules.get();
+        if (modules == null) return using;
+
+        BounceFly module = modules.get(BounceFly.class);
         return module == null || !module.enabled();
     }
 
@@ -53,7 +59,10 @@ public abstract class ClientPlayerMixin {
     private boolean hyperglide$use(boolean using) {
         if (!using) return false;
 
-        BounceFly module = Modules.get().get(BounceFly.class);
+        Modules modules = Modules.get();
+        if (modules == null) return using;
+
+        BounceFly module = modules.get(BounceFly.class);
         return module == null || !module.enabled();
     }
 }

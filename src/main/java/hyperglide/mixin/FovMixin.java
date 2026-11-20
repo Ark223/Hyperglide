@@ -27,7 +27,10 @@ public abstract class FovMixin {
 
         if (!player.isSprinting()) return scale;
 
-        NoSprintFov module = Modules.get().get(NoSprintFov.class);
+        Modules modules = Modules.get();
+        if (modules == null) return scale;
+
+        NoSprintFov module = modules.get(NoSprintFov.class);
         return module != null && module.isActive() ? 0.0F : scale;
     }
 }

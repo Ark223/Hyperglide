@@ -81,7 +81,7 @@ public class FD3Crafter extends Module {
         }
 
         if (this.mc.player.isCreative()) {
-            this.error("Crafter does not support creative mode.");
+            this.error("Creative mode is unsupported.");
             this.toggle();
             return;
         }

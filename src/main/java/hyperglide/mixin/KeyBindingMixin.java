@@ -21,8 +21,12 @@ public abstract class KeyBindingMixin {
     @Inject(method = "isPressed", at = @At("RETURN"), cancellable = true)
     private void hyperglide$pressed(CallbackInfoReturnable<Boolean> info) {
         MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.options == null) return;
 
-        BounceFly bounce = Modules.get().get(BounceFly.class);
+        Modules modules = Modules.get();
+        if (modules == null) return;
+
+        BounceFly bounce = modules.get(BounceFly.class);
         if (bounce != null && bounce.enabled()) {
             if ((Object) this == client.options.forwardKey) {
                 info.setReturnValue(true);
@@ -34,13 +38,13 @@ public abstract class KeyBindingMixin {
 
         if ((Object) this != client.options.jumpKey) return;
 
-        ControlFly control = Modules.get().get(ControlFly.class);
+        ControlFly control = modules.get(ControlFly.class);
         if (control != null && control.deploying()) {
             info.setReturnValue(control.jumping());
             return;
         }
 
-        ElytraTweaks tweaks = Modules.get().get(ElytraTweaks.class);
+        ElytraTweaks tweaks = modules.get(ElytraTweaks.class);
         if (tweaks != null && tweaks.deploying()) {
             info.setReturnValue(tweaks.jumping());
         }

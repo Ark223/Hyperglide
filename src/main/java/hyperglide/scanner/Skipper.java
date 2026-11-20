@@ -477,10 +477,12 @@ public final class Skipper {
         int next = this.distances.get(pos);
         for (long offset : offsets) {
             long other = position(cx, cz, offset);
-            if (!this.open(other)) {next = 0; break;}
 
-            byte length = this.distances.get(other);
-            next = Math.min(next, length + 1);
+            boolean free = this.open(other);
+            if (!free) { next = 0; break; }
+
+            byte dist = this.distances.get(other);
+            next = Math.min(next, dist + 1);
         }
 
         if (next >= radius) return;

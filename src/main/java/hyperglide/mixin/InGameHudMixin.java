@@ -24,10 +24,13 @@ public abstract class InGameHudMixin {
     private void hyperglide$render(DrawContext context,
         RenderTickCounter counter, CallbackInfo info) {
 
-        MultiScanner scanner = Modules.get().get(MultiScanner.class);
+        Modules modules = Modules.get();
+        if (modules == null) return;
+
+        MultiScanner scanner = modules.get(MultiScanner.class);
         if (scanner != null) scanner.render(context);
 
-        Navigation module = Modules.get().get(Navigation.class);
+        Navigation module = modules.get(Navigation.class);
         if (module != null) module.render(context);
     }
 }

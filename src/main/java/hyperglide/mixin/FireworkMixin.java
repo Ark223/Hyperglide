@@ -29,23 +29,27 @@ public abstract class FireworkMixin {
     @Inject(method = "tick", at = @At("HEAD"))
     private void hyperglide$track(CallbackInfo info) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || this.shooter != client.player) {
+        if (client == null || client.player == null ||
+            this.shooter != client.player) {
             return;
         }
 
+        Modules modules = Modules.get();
+        if (modules == null) return;
+
         FireworkRocketEntity rocket = (FireworkRocketEntity) (Object) this;
 
-        ControlFly control = Modules.get().get(ControlFly.class);
+        ControlFly control = modules.get(ControlFly.class);
         if (control != null && control.isActive()) {
             control.track(rocket);
         }
 
-        ElytraTweaks tweaks = Modules.get().get(ElytraTweaks.class);
+        ElytraTweaks tweaks = modules.get(ElytraTweaks.class);
         if (tweaks != null && tweaks.isActive()) {
             tweaks.track(rocket);
         }
 
-        RocketBoost boost = Modules.get().get(RocketBoost.class);
+        RocketBoost boost = modules.get(RocketBoost.class);
         if (boost != null && boost.isActive()) {
             boost.track(rocket);
         }
@@ -59,16 +63,25 @@ public abstract class FireworkMixin {
      * @param original original velocity invocation
      */
     @WrapOperation(method = "tick", at = @At(value = "INVOKE",
-        target = "Lnet/minecraft/entity/LivingEntity;setVelocity(Lnet/minecraft/util/math/Vec3d;)V"
+        target = "Lnet/minecraft/entity/LivingEntity;" +
+        "setVelocity(Lnet/minecraft/util/math/Vec3d;)V"
     ))
-    private void hyperglide$velocity(LivingEntity shooter, Vec3d velocity, Operation<Void> original) {
+    private void hyperglide$velocity(LivingEntity shooter,
+        Vec3d velocity, Operation<Void> original) {
+
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player != shooter) {
+        if (client == null || client.player != shooter) {
             original.call(shooter, velocity);
             return;
         }
 
-        RocketBoost boost = Modules.get().get(RocketBoost.class);
+        Modules modules = Modules.get();
+        if (modules == null) {
+            original.call(shooter, velocity);
+            return;
+        }
+
+        RocketBoost boost = modules.get(RocketBoost.class);
         if (boost == null || !boost.boost()) {
             original.call(shooter, velocity);
         }

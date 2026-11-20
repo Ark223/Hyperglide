@@ -19,7 +19,10 @@ public abstract class CameraMixin {
         target = "Lnet/minecraft/client/render/Camera;setRotation(FF)V"
     ))
     private void hyperglide$rotate(Args args) {
-        ControlFly module = Modules.get().get(ControlFly.class);
+        Modules modules = Modules.get();
+        if (modules == null) return;
+
+        ControlFly module = modules.get(ControlFly.class);
         if (module == null || !module.camera()) return;
 
         args.set(0, module.yaw());

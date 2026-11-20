@@ -50,11 +50,12 @@ public abstract class MiningTweaksMixin {
         Direction side, CallbackInfoReturnable<Boolean> info) {
 
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.player.isCreative()) {
-            return;
-        }
+        if (client == null || client.player == null) return;
 
-        MiningTweaks module = Modules.get().get(MiningTweaks.class);
+        Modules modules = Modules.get();
+        if (modules == null) return;
+
+        MiningTweaks module = modules.get(MiningTweaks.class);
         if (module == null || !module.isActive() || module.bypass(pos)) {
             return;
         }

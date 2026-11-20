@@ -21,9 +21,14 @@ public abstract class EntityMixin {
     @Inject(method = "changeLookDirection(DD)V", at = @At("HEAD"), cancellable = true)
     private void hyperglide$look(double px, double py, CallbackInfo info) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if ((Object) this != client.player) return;
+        if (client == null || (Object) this != client.player) {
+            return;
+        }
 
-        ControlFly module = Modules.get().get(ControlFly.class);
+        Modules modules = Modules.get();
+        if (modules == null) return;
+
+        ControlFly module = modules.get(ControlFly.class);
         if (module == null || !module.view()) return;
 
         module.look(px, py);

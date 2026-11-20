@@ -32,7 +32,10 @@ public abstract class ItemOverlayMixin {
     private void draw(LivingEntity entity, World world, ItemStack stack,
         int px, int py, int seed, int depth, CallbackInfo info) {
 
-        Overview module = Modules.get().get(Overview.class);
+        Modules modules = Modules.get();
+        if (modules == null) return;
+
+        Overview module = modules.get(Overview.class);
         if (module != null) {
             module.render((DrawContext) (Object) this, stack, px, py);
         }

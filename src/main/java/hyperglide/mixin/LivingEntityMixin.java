@@ -23,9 +23,14 @@ public abstract class LivingEntityMixin {
     @Inject(method = "tickMovement", at = @At("HEAD"))
     private void hyperglide$jump(CallbackInfo info) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if ((Object) this != client.player) return;
+        if (client == null || (Object) this != client.player) {
+            return;
+        }
 
-        BounceFly module = Modules.get().get(BounceFly.class);
+        Modules modules = Modules.get();
+        if (modules == null) return;
+
+        BounceFly module = modules.get(BounceFly.class);
         if (module != null && module.enabled()) {
             this.jumpingCooldown = 0;
         }

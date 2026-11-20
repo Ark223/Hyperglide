@@ -179,8 +179,10 @@ public final class Coverage {
             Spot spot = this.next();
             if (spot == null) break;
 
-            int gain = this.cover(spot.key());
-            spots.add(new Spot(spot.key(), gain));
+            long key = spot.key();
+            int gain = this.cover(key);
+
+            spots.add(new Spot(key, gain));
             covered += gain;
         }
 
@@ -196,18 +198,20 @@ public final class Coverage {
     private Spot next() {
         while (!this.queue.isEmpty()) {
             Spot spot = this.queue.poll();
-            if (!this.spots.contains(spot.key())) {
+
+            long key = spot.key();
+            if (!this.spots.contains(key)) {
                 continue;
             }
 
-            int gain = this.count(spot.key());
+            int gain = this.count(key);
             if (gain < spot.gain()) {
-                this.queue.add(new Spot(spot.key(), gain));
+                this.queue.add(new Spot(key, gain));
                 continue;
             }
 
             if (gain <= 0) return null;
-            return new Spot(spot.key(), gain);
+            return new Spot(key, gain);
         }
 
         return null;

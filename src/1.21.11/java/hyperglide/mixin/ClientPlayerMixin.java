@@ -17,7 +17,10 @@ public abstract class ClientPlayerMixin {
      */
     @ModifyReturnValue(method = "getActiveItemSpeedMultiplier", at = @At("RETURN"))
     private float hyperglide$slow(float speed) {
-        BounceFly module = Modules.get().get(BounceFly.class);
+        Modules modules = Modules.get();
+        if (modules == null) return speed;
+
+        BounceFly module = modules.get(BounceFly.class);
         return module != null && module.enabled() ? 1.0F : speed;
     }
 }
