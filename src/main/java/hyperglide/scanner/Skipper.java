@@ -21,7 +21,7 @@ public final class Skipper {
     private static final long[] backward = backward();
     private static final long[] neighbors = neighbors();
 
-    private static final long[] flows = offsets(8, 12);
+    private static final long[] flows = offsets(3, 6);
     private static final long[] portals = offsets(2, 3);
 
     private static final int legacy = Xaero.Type.Legacy.mask;
